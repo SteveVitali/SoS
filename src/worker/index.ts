@@ -23,7 +23,7 @@ async function main() {
   for (let i = 0; i < config.workers; i++) {
     const workerId = `${config.nodeId}:worker-${i}`;
     const controller = new AbortController();
-    setMaxListeners(config.workers + 10, controller.signal);
+    setMaxListeners(50, controller.signal);
     controllers.push(controller);
     promises.push(startWorkerLoop(workerId, config, api, controller.signal));
   }
