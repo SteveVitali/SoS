@@ -62,7 +62,10 @@ The web UI is available at `http://localhost:3000` (or `http://localhost:5173` i
 
 1. Go to [api.slack.com/apps](https://api.slack.com/apps) and create a new app.
 2. Under **Socket Mode**, enable it. Generate an **App-Level Token** with `connections:write` scope → this is your `SLACK_APP_TOKEN` (`xapp-...`).
-3. Under **Event Subscriptions**, enable events and subscribe to `app_mention` bot event.
+3. Under **Event Subscriptions**:
+   - **Toggle "Enable Events" to ON** (this is off by default and easy to miss!)
+   - Under "Subscribe to bot events", click "Add Bot User Event" and add `app_mention`
+   - Save changes
 4. Under **OAuth & Permissions**, add these Bot Token Scopes:
    - `app_mentions:read`
    - `chat:write`
