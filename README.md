@@ -69,12 +69,35 @@ The web UI is available at `http://localhost:3000` (or `http://localhost:5173` i
    - `channels:history` (optional, for thread fetching)
    - `groups:history` (optional, for private channels)
 5. Install the app to your workspace. Copy the **Bot User OAuth Token** → `SLACK_BOT_TOKEN` (`xoxb-...`).
-6. Find the bot's user ID:
-   - In Slack, click on your bot in a channel → "View app details" → the member ID is your `SLACK_BOT_USER_ID` (`U...`).
+6. Find the bot's user ID (choose one method):
+   - **Via API** (easiest): `curl -s -H "Authorization: Bearer xoxb-YOUR-TOKEN" https://slack.com/api/auth.test | jq .user_id`
+   - **Via Slack UI**: Click on your bot in a channel → "View app details" → copy the member ID
+   - This is your `SLACK_BOT_USER_ID` (`U...`).
+7. **Invite the bot** to any channels where you want to @-mention it.
 
 ### Finding Your Slack User ID
 
 Click your name in Slack → "Profile" → "⋯" → "Copy member ID". This is the `SOS_REQUESTED_BY_SLACK_USER` for the worker.
+
+### LLM-Powered Message Routing (Optional)
+
+By default, every @-mention of the bot creates a new coding job. If you set `ANTHROPIC_API_KEY`, the bot instead routes messages through an LLM ("Steve" — a snarky staff engineer persona) that classifies intent before acting:
+
+| Intent | Example | What happens |
+|--------|---------|--------------|
+| Coding task | "fix the login bug in auth module" | Creates a job |
+| Status check | "what's the status of abc123?" | Looks up the job and replies |
+| Cancel | "cancel that last job" | Cancels the job |
+| Retry | "retry abc123" | Re-queues a failed job |
+| List | "show me recent jobs" | Lists recent jobs |
+| Chat | "hey what can you do?" | Responds conversationally |
+
+To enable:
+1. Get an API key from [console.anthropic.com](https://console.anthropic.com)
+2. Add `ANTHROPIC_API_KEY=sk-ant-...` to your `.env`
+3. Restart the server
+
+Without the key, the bot still works — it just treats every message as a job creation request (the original behavior).
 
 ---
 
@@ -91,7 +114,7 @@ Click your name in Slack → "Profile" → "⋯" → "Copy member ID". This is t
 | `SLACK_APP_TOKEN` | **Yes** | Socket Mode app token (`xapp-...`) |
 | `SLACK_BOT_TOKEN` | **Yes** | Bot OAuth token (`xoxb-...`) |
 | `SLACK_BOT_USER_ID` | **Yes** | Bot's Slack user ID (`U...`) |
-| `ANTHROPIC_API_KEY` | No | Anthropic API key for LLM-powered Slack message routing. Without it, all @mentions create jobs directly. |
+| `ANTHROPIC_API_KEY` | No | Anthropic API key for LLM-powered Slack routing ([setup](#llm-powered-message-routing-optional)). Without it, all @mentions create jobs directly. |
 | `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |
