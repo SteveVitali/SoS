@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, execFileSync } from "child_process";
 import { createLogger } from "../../shared/logger.js";
 
 const log = createLogger("worker:git");
@@ -15,7 +15,13 @@ export function hasChanges(worktreePath: string): boolean {
 
 export function commitAll(worktreePath: string, message: string): string {
   exec("git add -A", worktreePath);
-  exec(`git commit -m "${message.replace(/"/g, '\\"')}"`, worktreePath);
+  // Use execFileSync to avoid shell interpretation of backticks, $, etc.
+  log.info("exec", { cmd: "git commit -m <message>", cwd: worktreePath });
+  execFileSync("git", ["commit", "-m", message], {
+    cwd: worktreePath,
+    encoding: "utf-8",
+    timeout: 60_000,
+  });
   const sha = exec("git rev-parse HEAD", worktreePath);
   log.info("Committed", { sha, message });
   return sha;
