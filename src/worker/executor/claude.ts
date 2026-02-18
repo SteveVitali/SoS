@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import { writeFileSync, readFileSync, mkdirSync, existsSync } from "fs";
+import { execSync, spawnSync } from "child_process";
+import { writeFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
 import { createLogger } from "../../shared/logger.js";
 import type { RepoEntry } from "./repoRegistry.js";
@@ -114,36 +114,35 @@ export async function runClaudeFix(
   ));
 }
 
-// Shared runner: uses `script` to preserve TTY for real-time output + log capture
+// Shared runner: spawnSync with stdio inherit for real-time terminal output
 function runClaudeProcess(
   command: string,
   cwd: string,
   logPath: string,
   timeoutMs: number
 ): ClaudeResult {
-  try {
-    execSync(
-      `script -q "${logPath}" ${command}`,
-      {
-        cwd,
-        stdio: "inherit",
-        timeout: timeoutMs,
-        shell: "/bin/bash",
-      }
-    );
+  log.info("Spawning Claude", { command: command.slice(0, 200) });
 
-    const output = readFileSync(logPath, "utf-8");
-    const summary = output.slice(-2000).trim();
-    log.info("Claude finished", { summary_len: summary.length });
-    return { success: true, summary, logPath };
-  } catch (err: any) {
-    let summary = "";
-    try {
-      summary = readFileSync(logPath, "utf-8").slice(-2000).trim();
-    } catch {
-      summary = err.message?.slice(0, 2000) || "Claude process failed";
-    }
-    log.error("Claude failed", { error: summary.slice(0, 500) });
-    return { success: false, summary, logPath };
+  const result = spawnSync(command, {
+    cwd,
+    stdio: "inherit",
+    timeout: timeoutMs,
+    shell: true,
+  });
+
+  if (result.error) {
+    const msg = result.error.message || "Claude process error";
+    log.error("Claude spawn error", { error: msg });
+    writeFileSync(logPath, msg, "utf-8");
+    return { success: false, summary: msg, logPath };
   }
+
+  const success = result.status === 0;
+  const summary = success
+    ? "Claude completed successfully"
+    : `Claude exited with code ${result.status}`;
+
+  log.info(success ? "Claude finished" : "Claude failed", { exitCode: result.status });
+  writeFileSync(logPath, summary, "utf-8");
+  return { success, summary, logPath };
 }
