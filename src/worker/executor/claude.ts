@@ -114,7 +114,7 @@ export async function runClaudeFix(
   ));
 }
 
-// Shared runner: uses stdio inherit + tee for real-time terminal output
+// Shared runner: uses `script` to preserve TTY for real-time output + log capture
 function runClaudeProcess(
   command: string,
   cwd: string,
@@ -123,7 +123,7 @@ function runClaudeProcess(
 ): ClaudeResult {
   try {
     execSync(
-      `${command} 2>&1 | tee "${logPath}"`,
+      `script -q "${logPath}" ${command}`,
       {
         cwd,
         stdio: "inherit",
