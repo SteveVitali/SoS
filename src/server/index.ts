@@ -21,13 +21,14 @@ async function main() {
   // Connect to MongoDB
   await connectMongo(config.mongoUri, config.mongoDb);
 
-  // Create Slack poster (only if tokens are configured)
+  // Create Slack poster (only if real tokens are configured, not placeholders)
+  const slackEnabled = config.slackBotToken.length > 20 && config.slackAppToken.length > 20;
   let slackPoster;
-  if (config.slackBotToken) {
+  if (slackEnabled) {
     slackPoster = createSlackPoster(config.slackBotToken);
     setSlackPoster(slackPoster);
   } else {
-    log.warn("SLACK_BOT_TOKEN not set — running without Slack integration");
+    log.warn("Slack tokens not configured — running without Slack integration");
   }
 
   // Start Express server
@@ -56,7 +57,7 @@ async function main() {
   });
 
   // Start Slack Socket Mode (only if tokens are configured)
-  if (config.slackAppToken && config.slackBotToken) {
+  if (slackEnabled) {
     try {
       await startSlackSocketMode(config);
     } catch (err: any) {
