@@ -1,5 +1,9 @@
 # Son of Steve 🤖
 
+[![CI](https://github.com/svitali/son-of-steve/actions/workflows/ci.yml/badge.svg)](https://github.com/svitali/son-of-steve/actions/workflows/ci.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
+[![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](.nvmrc)
+
 An internal coding agent tool: Slack mentions queue jobs to MongoDB, local Claude Code CLI workers execute them end-to-end (worktree → code → test → PR → CI), and a web dashboard provides visibility and control.
 
 ## Quick Start

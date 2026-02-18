@@ -6,10 +6,10 @@ Guide for human and AI agent contributors.
 
 ```bash
 # Install dependencies
-npm install --cache /tmp/npm-cache   # or just npm install if your npm cache is configured
+npm install
 
-# Start MongoDB locally (e.g., via brew or Docker)
-mongod --dbpath /tmp/mongo-data
+# Start MongoDB locally via Docker Compose
+docker compose up -d
 
 # Copy and fill environment
 cp .env.example .env
@@ -22,6 +22,19 @@ npm run server       # Express + Slack Socket Mode
 npm run worker       # Worker pool
 npm run dev:ui       # Vite dev server on :5173 with API proxy to :3000
 ```
+
+### Code Quality Commands
+
+```bash
+npm run check        # Biome lint + format check (CI uses this)
+npm run check:fix    # Auto-fix lint + format issues
+npm run typecheck    # TypeScript type checking
+npm test             # Run Vitest unit tests
+npm run test:watch   # Run tests in watch mode
+npm run test:coverage # Run tests with coverage report
+```
+
+Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --write` on staged files.
 
 ## Project Conventions
 
@@ -93,7 +106,13 @@ npm run dev:ui       # Vite dev server on :5173 with API proxy to :3000
 
 ## Testing
 
-> **Note:** The MVP does not yet include automated tests. This is a known gap — see "Future Work" below.
+Unit tests use [Vitest](https://vitest.dev/) and live alongside source files as `*.test.ts`.
+
+```bash
+npm test              # Run all tests once
+npm run test:watch    # Watch mode
+npm run test:coverage # With V8 coverage
+```
 
 When adding tests:
 - Place unit tests next to the source file as `*.test.ts`
@@ -129,7 +148,7 @@ See [docs/ARCHITECTURE.md](./ARCHITECTURE.md) for detailed design rationale.
 
 Tracked priorities for contributors:
 
-1. **Automated tests** — unit tests for jobRepo claim logic, integration tests for the API
+1. **More automated tests** — integration tests for the API, jobRepo claim logic tests
 2. **Cancellation check in worker** — workers should check job status before big steps (push, PR)
 3. **Worktree cleanup** — automated cleanup of worktrees older than N days
 4. **Jenkins CI provider** — currently a stub
