@@ -68,7 +68,7 @@ export async function runClaude(
   log.info("Running Claude Code CLI", { worktree: worktreePath });
 
   return runClaudeProcess(
-    ["claude", "-p", promptPath, "--output-format", "stream-json", "--dangerously-skip-permissions"],
+    ["claude", "-p", promptPath, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
     worktreePath,
     logPath,
     30 * 60 * 1000
@@ -107,7 +107,7 @@ export async function runClaudeFix(
   log.info("Running Claude Code CLI for CI fix", { worktree: worktreePath });
 
   return runClaudeProcess(
-    ["claude", "-p", promptPath, "--output-format", "stream-json", "--dangerously-skip-permissions"],
+    ["claude", "-p", promptPath, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
     worktreePath,
     logPath,
     15 * 60 * 1000
