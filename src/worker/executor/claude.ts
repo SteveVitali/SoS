@@ -1,5 +1,5 @@
-import { execSync, spawnSync } from "child_process";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { execSync, spawn } from "child_process";
+import { writeFileSync, mkdirSync, existsSync, createWriteStream } from "fs";
 import path from "path";
 import { createLogger } from "../../shared/logger.js";
 import type { RepoEntry } from "./repoRegistry.js";
@@ -67,12 +67,12 @@ export async function runClaude(
 
   log.info("Running Claude Code CLI", { worktree: worktreePath });
 
-  return Promise.resolve(runClaudeProcess(
-    `claude -p "${promptPath}" --output-format text --dangerously-skip-permissions`,
+  return runClaudeProcess(
+    ["claude", "-p", promptPath, "--output-format", "stream-json", "--dangerously-skip-permissions"],
     worktreePath,
     logPath,
     30 * 60 * 1000
-  ));
+  );
 }
 
 export async function runClaudeFix(
@@ -106,43 +106,86 @@ export async function runClaudeFix(
 
   log.info("Running Claude Code CLI for CI fix", { worktree: worktreePath });
 
-  return Promise.resolve(runClaudeProcess(
-    `claude -p "${promptPath}" --output-format text --dangerously-skip-permissions`,
+  return runClaudeProcess(
+    ["claude", "-p", promptPath, "--output-format", "stream-json", "--dangerously-skip-permissions"],
     worktreePath,
     logPath,
     15 * 60 * 1000
-  ));
+  );
 }
 
-// Shared runner: spawnSync with stdio inherit for real-time terminal output
+// Shared runner: streams Claude output to terminal in real-time via stream-json
 function runClaudeProcess(
-  command: string,
+  args: string[],
   cwd: string,
   logPath: string,
   timeoutMs: number
-): ClaudeResult {
-  log.info("Spawning Claude", { command: command.slice(0, 200) });
+): Promise<ClaudeResult> {
+  const [bin, ...rest] = args;
+  log.info("Spawning Claude", { bin, args: rest.join(" ").slice(0, 200) });
 
-  const result = spawnSync(command, {
-    cwd,
-    stdio: "inherit",
-    timeout: timeoutMs,
-    shell: true,
+  return new Promise((resolve) => {
+    const child = spawn(bin, rest, { cwd, stdio: ["ignore", "pipe", "pipe"] });
+    const logStream = createWriteStream(logPath, { encoding: "utf-8" });
+    const textChunks: string[] = [];
+    let lineBuf = "";
+
+    function processLine(line: string) {
+      if (!line.trim()) return;
+      try {
+        const obj = JSON.parse(line);
+        // Extract text from assistant message content blocks
+        if (obj.type === "content_block_delta" && obj.delta?.text) {
+          process.stdout.write(obj.delta.text);
+          textChunks.push(obj.delta.text);
+        } else if (obj.type === "content_block_start" && obj.content_block?.text) {
+          process.stdout.write(obj.content_block.text);
+          textChunks.push(obj.content_block.text);
+        } else if (obj.type === "result" && obj.result) {
+          // Final result message
+          process.stdout.write("\n");
+          textChunks.push(obj.result);
+        }
+      } catch {
+        // Not JSON — print raw
+        process.stdout.write(line + "\n");
+        textChunks.push(line);
+      }
+      logStream.write(line + "\n");
+    }
+
+    child.stdout?.on("data", (data: Buffer) => {
+      lineBuf += data.toString();
+      const lines = lineBuf.split("\n");
+      lineBuf = lines.pop() || "";
+      for (const line of lines) processLine(line);
+    });
+
+    child.stderr?.on("data", (data: Buffer) => {
+      process.stderr.write(data);
+      logStream.write(data.toString());
+    });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      if (lineBuf) processLine(lineBuf);
+      logStream.end();
+      process.stdout.write("\n");
+
+      const fullText = textChunks.join("");
+      const summary = fullText.slice(-2000).trim() || `Claude exited with code ${code}`;
+      const success = code === 0;
+
+      log.info(success ? "Claude finished" : "Claude failed", {
+        exitCode: code,
+        summary_len: summary.length,
+      });
+
+      resolve({ success, summary, logPath });
+    });
   });
-
-  if (result.error) {
-    const msg = result.error.message || "Claude process error";
-    log.error("Claude spawn error", { error: msg });
-    writeFileSync(logPath, msg, "utf-8");
-    return { success: false, summary: msg, logPath };
-  }
-
-  const success = result.status === 0;
-  const summary = success
-    ? "Claude completed successfully"
-    : `Claude exited with code ${result.status}`;
-
-  log.info(success ? "Claude finished" : "Claude failed", { exitCode: result.status });
-  writeFileSync(logPath, summary, "utf-8");
-  return { success, summary, logPath };
 }
