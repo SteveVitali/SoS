@@ -28,9 +28,16 @@ export async function resolveSlackUser(userId: string): Promise<SlackUser> {
   try {
     const result = await webClient.users.info({ user: userId });
     const u = result.user as any;
+    // display_name can be "" for users who haven't set one — fall through
+    const displayName =
+      (u?.profile?.display_name && u.profile.display_name.trim()) ||
+      u?.real_name ||
+      u?.profile?.real_name ||
+      u?.name ||
+      userId;
     const resolved: SlackUser = {
       id: userId,
-      displayName: u?.profile?.display_name || u?.name || userId,
+      displayName,
       realName: u?.real_name || u?.profile?.real_name || userId,
       avatar: u?.profile?.image_48,
     };
@@ -38,10 +45,14 @@ export async function resolveSlackUser(userId: string): Promise<SlackUser> {
     log.info("Resolved Slack user", { userId, displayName: resolved.displayName });
     return resolved;
   } catch (err: any) {
-    log.warn("Failed to resolve Slack user", { userId, error: err.message });
-    const fallback: SlackUser = { id: userId, displayName: userId, realName: userId };
-    cache.set(userId, fallback);
-    return fallback;
+    log.warn("Failed to resolve Slack user (not caching)", {
+      userId,
+      error: err.message,
+      code: err.code,
+      data: err.data,
+    });
+    // Don't cache failures — allow retries on next request
+    return { id: userId, displayName: userId, realName: userId };
   }
 }
 

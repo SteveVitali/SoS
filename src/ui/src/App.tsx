@@ -73,7 +73,7 @@ function requestSlackResolve(ids: string[]) {
           slackNameCache.set(id, user);
         }
         subscribers.forEach((cb) => cb());
-      } catch { /* best-effort */ }
+      } catch (err) { console.error("Slack user resolution failed:", err); }
     }, 50);
   }
 }
