@@ -1,4 +1,4 @@
-import { execSync } from "child_process";
+import { execSync, spawn as nodeSpawn } from "child_process";
 import { writeFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
 import { createLogger } from "../../shared/logger.js";
@@ -67,31 +67,12 @@ export async function runClaude(
 
   log.info("Running Claude Code CLI", { worktree: worktreePath });
 
-  try {
-    // Run claude with the prompt, piping output to log
-    const result = execSync(
-      `claude -p "${promptPath}" --output-format text 2>&1 | tee "${logPath}"`,
-      {
-        cwd: worktreePath,
-        encoding: "utf-8",
-        timeout: 30 * 60 * 1000, // 30 min timeout for Claude
-        shell: "/bin/bash",
-        maxBuffer: 50 * 1024 * 1024,
-      }
-    );
-
-    const summary = result.slice(-2000).trim();
-    log.info("Claude finished", { summary_len: summary.length });
-
-    return { success: true, summary, logPath };
-  } catch (err: any) {
-    const output = err.stdout || err.stderr || err.message;
-    const summary = String(output).slice(-2000).trim();
-    writeFileSync(logPath, summary, "utf-8");
-
-    log.error("Claude failed", { error: summary.slice(0, 500) });
-    return { success: false, summary, logPath };
-  }
+  return runClaudeProcess(
+    `claude -p "${promptPath}" --output-format text`,
+    worktreePath,
+    logPath,
+    30 * 60 * 1000
+  );
 }
 
 export async function runClaudeFix(
@@ -125,24 +106,56 @@ export async function runClaudeFix(
 
   log.info("Running Claude Code CLI for CI fix", { worktree: worktreePath });
 
-  try {
-    const result = execSync(
-      `claude -p "${promptPath}" --output-format text 2>&1 | tee "${logPath}"`,
-      {
-        cwd: worktreePath,
-        encoding: "utf-8",
-        timeout: 15 * 60 * 1000,
-        shell: "/bin/bash",
-        maxBuffer: 50 * 1024 * 1024,
-      }
-    );
+  return runClaudeProcess(
+    `claude -p "${promptPath}" --output-format text`,
+    worktreePath,
+    logPath,
+    15 * 60 * 1000
+  );
+}
 
-    const summary = result.slice(-2000).trim();
-    return { success: true, summary, logPath };
-  } catch (err: any) {
-    const output = err.stdout || err.stderr || err.message;
-    const summary = String(output).slice(-2000).trim();
-    writeFileSync(logPath, summary, "utf-8");
-    return { success: false, summary, logPath };
-  }
+// Shared runner: streams output to terminal in real-time while capturing for summary
+function runClaudeProcess(
+  command: string,
+  cwd: string,
+  logPath: string,
+  timeoutMs: number
+): Promise<ClaudeResult> {
+  return new Promise((resolve) => {
+    const child = nodeSpawn(command, {
+      cwd,
+      shell: "/bin/bash",
+      stdio: ["inherit", "pipe", "pipe"],
+    });
+
+    const chunks: Buffer[] = [];
+
+    child.stdout?.on("data", (data: Buffer) => {
+      process.stdout.write(data);
+      chunks.push(data);
+    });
+    child.stderr?.on("data", (data: Buffer) => {
+      process.stderr.write(data);
+      chunks.push(data);
+    });
+
+    const timer = setTimeout(() => {
+      child.kill("SIGTERM");
+    }, timeoutMs);
+
+    child.on("close", (code) => {
+      clearTimeout(timer);
+      const output = Buffer.concat(chunks).toString("utf-8");
+      writeFileSync(logPath, output, "utf-8");
+      const summary = output.slice(-2000).trim();
+
+      if (code === 0) {
+        log.info("Claude finished", { summary_len: summary.length });
+        resolve({ success: true, summary, logPath });
+      } else {
+        log.error("Claude failed", { code, error: summary.slice(0, 500) });
+        resolve({ success: false, summary, logPath });
+      }
+    });
+  });
 }
