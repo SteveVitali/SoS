@@ -1,4 +1,5 @@
 import "dotenv/config";
+import { setMaxListeners } from "events";
 import { createLogger } from "../shared/logger.js";
 import { loadWorkerConfig } from "./config.js";
 import { WorkerApiClient } from "./apiClient.js";
@@ -22,6 +23,7 @@ async function main() {
   for (let i = 0; i < config.workers; i++) {
     const workerId = `${config.nodeId}:worker-${i}`;
     const controller = new AbortController();
+    setMaxListeners(config.workers + 10, controller.signal);
     controllers.push(controller);
     promises.push(startWorkerLoop(workerId, config, api, controller.signal));
   }
