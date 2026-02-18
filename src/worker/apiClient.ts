@@ -115,6 +115,24 @@ export class WorkerApiClient {
     }
   }
 
+  async requeue(
+    taskId: string,
+    nodeId: string,
+    reason: string
+  ): Promise<JobDoc | null> {
+    try {
+      const res = await this.request<{ job: JobDoc }>(
+        "POST",
+        `/api/worker/jobs/${taskId}/requeue`,
+        { node_id: nodeId, reason }
+      );
+      return res.job;
+    } catch (err: any) {
+      if (err.status === 409) return null;
+      throw err;
+    }
+  }
+
   async fetchSlackThread(channelId: string, threadTs: string): Promise<any[]> {
     try {
       const data = await this.request<{ messages: any[] }>(

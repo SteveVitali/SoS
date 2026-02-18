@@ -4,10 +4,14 @@ import { createLogger } from "../../shared/logger.js";
 
 const log = createLogger("worker:repoRegistry");
 
+export type CleanMode = "light" | "full";
+
 export interface RepoEntry {
   id: string;
   clone: string;
   default_branch: string;
+  max_worktrees: number;
+  clean_mode: CleanMode;
   detect?: { keywords?: string[] };
   commands?: {
     lint?: string[];
@@ -39,6 +43,8 @@ export function loadRegistry(path: string): RepoRegistry {
           id,
           clone: e.clone,
           default_branch: e.default_branch || "main",
+          max_worktrees: typeof e.max_worktrees === "number" ? e.max_worktrees : 1,
+          clean_mode: e.clean_mode === "full" ? "full" : "light",
           detect: e.detect,
           commands: e.commands,
           pr: e.pr,

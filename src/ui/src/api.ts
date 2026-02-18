@@ -43,6 +43,7 @@ export interface Job {
   run_ended_at?: string;
   repos_resolved?: string[];
   branch_name?: string;
+  worktree_slot?: string;
   pr_urls?: string[];
   ci?: { provider?: string; runs?: Array<{ url: string; status: string; conclusion?: string; updated_at?: string }> };
   result_summary?: string;

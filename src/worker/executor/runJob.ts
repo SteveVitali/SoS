@@ -7,7 +7,8 @@ import { WorkerApiClient } from "../apiClient.js";
 import { EventEmitter } from "../events.js";
 import { loadRegistry } from "./repoRegistry.js";
 import { resolveRepo } from "./repoResolver.js";
-import { ensureClone, createWorktree } from "./workspace.js";
+import { ensureClone } from "./workspace.js";
+import { worktreePool, type WorktreeSlot } from "./worktreePool.js";
 import { runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
 import { hasChanges, commitAll, push, getDiff } from "./git.js";
 import { createPr } from "./pr.js";
@@ -99,6 +100,14 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
+/** Sentinel error to signal the job should be requeued, not failed. */
+class RequeueError extends Error {
+  constructor(public reason: string) {
+    super(reason);
+    this.name = "RequeueError";
+  }
+}
+
 export async function runJob(
   job: JobDoc,
   workerId: string,
@@ -108,6 +117,9 @@ export async function runJob(
   const events = new EventEmitter(api, workerId, job.task_id);
   const startTime = Date.now();
   const maxRuntimeMs = config.maxRuntimeMinutes * 60 * 1000;
+
+  let acquiredSlot: WorktreeSlot | null = null;
+  let resolvedRepoId: string | undefined;
 
   function checkTimeout() {
     if (Date.now() - startTime > maxRuntimeMs) {
@@ -129,6 +141,7 @@ export async function runJob(
     }
 
     const repo = resolved.repo;
+    resolvedRepoId = repo.id;
     await events.emit("REPO_RESOLVED", {
       repoId: repo.id,
       method: resolved.method,
@@ -136,19 +149,24 @@ export async function runJob(
     });
     checkTimeout();
 
-    // 2) Prepare workspace
+    // 2) Prepare workspace via worktree pool
     await events.emit("PHASE_STARTED", { phase: "prepare_workspace" });
     const clonePath = ensureClone(config.workspaceRoot, repo);
     const branch = `sos/${job.task_id.slice(0, 8)}-${slugify(job.task_text, 30)}`;
-    const workspace = createWorktree(
-      config.workspaceRoot,
-      workerId,
-      job.task_id,
-      repo,
+
+    acquiredSlot = worktreePool.acquire(repo, clonePath, job.task_id, branch);
+    if (!acquiredSlot) {
+      throw new RequeueError(
+        `No worktree slots available for ${repo.id} (max: ${repo.max_worktrees})`
+      );
+    }
+
+    const worktreePath = acquiredSlot.worktreePath;
+    await events.emit("WORKTREE_READY", {
+      path: worktreePath,
       branch,
-      clonePath
-    );
-    await events.emit("WORKTREE_READY", { path: workspace.worktreePath, branch });
+      worktree_slot: acquiredSlot.slotName,
+    });
     checkTimeout();
 
     // 3) Fetch Slack thread context (optional)
@@ -169,7 +187,7 @@ export async function runJob(
 
     // 4) Run Claude Code CLI
     await events.emit("CLAUDE_STARTED", {});
-    const claudeResult = await runClaude(workspace.worktreePath, job.task_text, repo, threadContext);
+    const claudeResult = await runClaude(worktreePath, job.task_text, repo, threadContext);
     await events.emit("CLAUDE_FINISHED", {
       summary: claudeResult.summary.slice(0, 1000),
     });
@@ -180,14 +198,14 @@ export async function runJob(
     }
 
     // 5) Check for changes
-    if (!hasChanges(workspace.worktreePath)) {
+    if (!hasChanges(worktreePath)) {
       throw new Error("Claude Code produced no changes. Task may already be done or was not actionable.");
     }
 
     // 6) Run local checks
     const testLevel = job.test_level || config.testLevelDefault;
     await events.emit("LOCAL_CHECKS_STARTED", { level: testLevel });
-    let checks = runLocalChecks(workspace.worktreePath, repo.commands, testLevel);
+    let checks = runLocalChecks(worktreePath, repo.commands, testLevel);
     await events.emit("LOCAL_CHECKS_FINISHED", { ok: checks.ok, summary: checks.summary.slice(0, 500) });
     checkTimeout();
 
@@ -195,12 +213,12 @@ export async function runJob(
       // One local fix attempt with Claude
       log.info("Local checks failed, attempting fix", { task_id: job.task_id });
       const fixResult = await runClaude(
-        workspace.worktreePath,
+        worktreePath,
         `Fix the following failures:\n${checks.summary}`,
         repo
       );
       if (fixResult.success) {
-        checks = runLocalChecks(workspace.worktreePath, repo.commands, testLevel);
+        checks = runLocalChecks(worktreePath, repo.commands, testLevel);
       }
       if (!checks.ok) {
         throw new Error(`Local checks failed after fix attempt:\n${checks.summary.slice(0, 1000)}`);
@@ -209,17 +227,17 @@ export async function runJob(
 
     // 7) Self-review
     await events.emit("SELF_REVIEW_STARTED", {});
-    const diff = getDiff(workspace.worktreePath);
+    const diff = getDiff(worktreePath);
     if (diff) {
-      const reviewResult = await runClaudeReview(workspace.worktreePath, repo, diff);
+      const reviewResult = await runClaudeReview(worktreePath, repo, diff);
       await events.emit("SELF_REVIEW_FINISHED", {
         success: reviewResult.success,
         summary: reviewResult.summary.slice(0, 1000),
       });
 
       // Re-run local checks after review changes
-      if (reviewResult.success && hasChanges(workspace.worktreePath)) {
-        const postReviewChecks = runLocalChecks(workspace.worktreePath, repo.commands, testLevel);
+      if (reviewResult.success && hasChanges(worktreePath)) {
+        const postReviewChecks = runLocalChecks(worktreePath, repo.commands, testLevel);
         if (!postReviewChecks.ok) {
           log.warn("Post-review local checks failed", { summary: postReviewChecks.summary.slice(0, 300) });
         }
@@ -233,20 +251,20 @@ export async function runJob(
     await events.emit("PHASE_STARTED", { phase: "commit_push" });
     const shortSummary = claudeResult.summary.split("\n")[0]?.slice(0, 60) || "automated changes";
     const sha = commitAll(
-      workspace.worktreePath,
+      worktreePath,
       `sos: ${shortSummary} (task ${job.task_id.slice(0, 8)})`
     );
     await events.emit("COMMIT_CREATED", { sha, message: shortSummary });
     checkTimeout();
 
-    push(workspace.worktreePath, branch);
+    push(worktreePath, branch);
     await events.emit("BRANCH_PUSHED", { branch });
     checkTimeout();
 
-    // 8) Create PR
+    // 9) Create PR
     await events.emit("PHASE_STARTED", { phase: "create_pr" });
     const prResult = createPr(
-      workspace.worktreePath,
+      worktreePath,
       repo,
       branch,
       job.task_id,
@@ -258,7 +276,7 @@ export async function runJob(
     await events.emit("PR_CREATED", { url: prResult.url });
     checkTimeout();
 
-    // 9) CI monitoring + fix loop
+    // 10) CI monitoring + fix loop
     const ciFixEnabled = job.ci_fix_enabled ?? true;
     const ciProvider: CIProvider = new GitHubActionsProvider();
     let ciAttempt = 0;
@@ -267,7 +285,7 @@ export async function runJob(
     // Wait for CI
     const ciResult = await waitForCI(
       ciProvider,
-      workspace.worktreePath,
+      worktreePath,
       branch,
       10 * 60 * 1000 // 10 min CI timeout
     );
@@ -291,29 +309,29 @@ export async function runJob(
         await events.emit("CI_FIX_STARTED", { attempt: ciAttempt });
 
         // Get failure details
-        const failureSummary = await ciProvider.getFailureSummary(workspace.worktreePath, branch);
+        const failureSummary = await ciProvider.getFailureSummary(worktreePath, branch);
 
         // Run Claude fix
-        const fixResult = await runClaudeFix(workspace.worktreePath, repo, failureSummary);
+        const fixResult = await runClaudeFix(worktreePath, repo, failureSummary);
         await events.emit("CI_FIX_FINISHED", {
           attempt: ciAttempt,
           summary: fixResult.summary.slice(0, 500),
         });
 
-        if (fixResult.success && hasChanges(workspace.worktreePath)) {
+        if (fixResult.success && hasChanges(worktreePath)) {
           // Re-run local checks
-          const fixChecks = runLocalChecks(workspace.worktreePath, repo.commands, testLevel);
+          const fixChecks = runLocalChecks(worktreePath, repo.commands, testLevel);
           if (fixChecks.ok || !config.requireLocalTestsBeforePr) {
             commitAll(
-              workspace.worktreePath,
+              worktreePath,
               `sos: CI fix attempt ${ciAttempt} (task ${job.task_id.slice(0, 8)})`
             );
-            push(workspace.worktreePath, branch);
+            push(worktreePath, branch);
 
             // Wait for CI again
             const retryResult = await waitForCI(
               ciProvider,
-              workspace.worktreePath,
+              worktreePath,
               branch,
               10 * 60 * 1000
             );
@@ -331,9 +349,9 @@ export async function runJob(
       }
     }
 
-    // 10) Complete or fail
+    // 11) Complete or fail
     const resultSummary = buildResultSummary(
-      workspace.worktreePath,
+      worktreePath,
       claudeResult.summary,
       checks.summary,
       prResult.url
@@ -354,6 +372,16 @@ export async function runJob(
       });
     }
   } catch (err: any) {
+    if (err instanceof RequeueError) {
+      log.info("Requeuing job", { task_id: job.task_id, reason: err.reason });
+      try {
+        await api.requeue(job.task_id, workerId, err.reason);
+      } catch (reqErr: any) {
+        log.error("Failed to requeue job", { task_id: job.task_id, error: reqErr.message });
+      }
+      return; // Don't release the slot — we never acquired one
+    }
+
     log.error("Job failed", { task_id: job.task_id, error: err.message });
     try {
       await events.emit("FAILED", { error: err.message });
@@ -372,6 +400,11 @@ export async function runJob(
         task_id: job.task_id,
         error: failErr.message,
       });
+    }
+  } finally {
+    // Always release the worktree slot back to the pool
+    if (acquiredSlot && resolvedRepoId) {
+      worktreePool.release(resolvedRepoId, acquiredSlot.slotName);
     }
   }
 }

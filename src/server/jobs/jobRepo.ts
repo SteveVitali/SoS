@@ -216,6 +216,30 @@ export async function failJob(
   return result as JobDoc | null;
 }
 
+export async function requeueJob(
+  taskId: string,
+  nodeId: string
+): Promise<JobDoc | null> {
+  const col = getJobsCollection();
+  const now = nowDate();
+  const result = await col.findOneAndUpdate(
+    {
+      task_id: taskId,
+      claimed_by: nodeId,
+      status: { $in: ["RUNNING", "FIXING_CI"] },
+    },
+    {
+      $set: {
+        status: "QUEUED" as JobStatus,
+        updated_at: now,
+      },
+      $unset: { claimed_by: "", lease_expires_at: "", heartbeat_at: "" },
+    },
+    { returnDocument: "after" }
+  );
+  return result as JobDoc | null;
+}
+
 export async function cancelJob(taskId: string): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();

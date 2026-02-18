@@ -123,6 +123,27 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
     }
   });
 
+  // POST /api/worker/jobs/:task_id/requeue
+  router.post("/jobs/:task_id/requeue", async (req: Request, res: Response) => {
+    try {
+      const nodeId = req.body?.node_id;
+      const reason = req.body?.reason || "no_worktree_slot";
+      if (!nodeId) {
+        res.status(400).json({ error: "node_id required" });
+        return;
+      }
+      const job = await jobService.requeue(pstr(req.params.task_id), nodeId, reason);
+      if (!job) {
+        res.status(409).json({ error: "Requeue failed: not owner or not active" });
+        return;
+      }
+      res.json({ job });
+    } catch (err: any) {
+      log.error("Requeue error", { error: err.message, task_id: pstr(req.params.task_id) });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // POST /api/worker/jobs/:task_id/fail
   router.post("/jobs/:task_id/fail", async (req: Request, res: Response) => {
     try {

@@ -4,12 +4,16 @@ import { createLogger } from "../shared/logger.js";
 import { loadWorkerConfig } from "./config.js";
 import { WorkerApiClient } from "./apiClient.js";
 import { startWorkerLoop } from "./poller.js";
+import { worktreePool } from "./executor/worktreePool.js";
 
 const log = createLogger("worker");
 
 async function main() {
   const config = loadWorkerConfig();
   const api = new WorkerApiClient(config.apiBaseUrl, config.apiToken);
+
+  // Initialize the shared worktree pool
+  worktreePool.init(config.workspaceRoot);
 
   log.info("Starting worker pool", {
     nodeId: config.nodeId,

@@ -12,6 +12,7 @@ import {
   completeJob as repoCompleteJob,
   failJob as repoFailJob,
   cancelJob as repoCancelJob,
+  requeueJob as repoRequeueJob,
   softDeleteJob as repoSoftDeleteJob,
   queryJobs,
   getDistinctRequestedBy,
@@ -161,8 +162,9 @@ export async function handleWorkerEvent(
       updates.repos_resolved = [...existing, payload.repoId];
     }
   }
-  if (type === "WORKTREE_READY" && payload?.branch) {
-    updates.branch_name = payload.branch;
+  if (type === "WORKTREE_READY") {
+    if (payload?.branch) updates.branch_name = payload.branch;
+    if (payload?.worktree_slot) updates.worktree_slot = payload.worktree_slot;
   }
   if (type === "CI_FIX_STARTED") {
     updates.status = "FIXING_CI";
@@ -208,6 +210,21 @@ export async function fail(
     if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
       await slackPoster.postFailed(job);
     }
+  }
+  return job;
+}
+
+// --- Requeue (worker releasing a claimed job back to QUEUED) ---
+export async function requeue(taskId: string, nodeId: string, reason: string) {
+  const job = await repoRequeueJob(taskId, nodeId);
+  if (job) {
+    await appendEvent(taskId, {
+      at: nowDate(),
+      node_id: nodeId,
+      type: "REQUEUED",
+      payload: { reason },
+    });
+    log.info("Job requeued", { task_id: taskId, reason });
   }
   return job;
 }

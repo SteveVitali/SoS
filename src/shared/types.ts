@@ -99,6 +99,7 @@ export interface JobDoc {
   // Outputs
   repos_resolved?: string[];
   branch_name?: string;
+  worktree_slot?: string;
   pr_urls?: string[];
   ci?: CIInfo;
   result_summary?: string;

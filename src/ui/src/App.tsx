@@ -324,7 +324,7 @@ function JobsList({
                   <th style={css.th}>User</th>
                   <th style={css.th}>Created</th>
                   <th style={css.th}>Repo</th>
-                  <th style={css.th}>Claimed By</th>
+                  <th style={css.th}>Worktree</th>
                   <th style={css.th}>PR</th>
                   <th style={css.th}>Actions</th>
                 </tr>
@@ -343,7 +343,7 @@ function JobsList({
                     <td style={{ ...css.td, fontSize: 13 }}>
                       {job.repos_resolved?.join(", ") || job.repo_hint || "—"}
                     </td>
-                    <td style={{ ...css.td, ...css.mono, fontSize: 12 }}>{job.claimed_by || "—"}</td>
+                    <td style={{ ...css.td, ...css.mono, fontSize: 12 }}>{job.worktree_slot || "—"}</td>
                     <td style={css.td}>
                       {job.pr_urls?.map((url, i) => (
                         <a key={i} href={url} target="_blank" rel="noopener" onClick={(e) => e.stopPropagation()}>
@@ -511,6 +511,7 @@ function JobDetail({
         <div style={{ display: "grid", gridTemplateColumns: "repeat(auto-fill, minmax(200px, 1fr))", gap: 12, fontSize: 13 }}>
           <div><span style={{ color: "var(--fg2)" }}>Claimed by:</span> <span style={css.mono}>{job.claimed_by || "—"}</span></div>
           <div><span style={{ color: "var(--fg2)" }}>Attempt:</span> {job.attempt || 0}</div>
+          <div><span style={{ color: "var(--fg2)" }}>Worktree:</span> <span style={css.mono}>{job.worktree_slot || "—"}</span></div>
           <div><span style={{ color: "var(--fg2)" }}>Branch:</span> <span style={css.mono}>{job.branch_name || "—"}</span></div>
           <div><span style={{ color: "var(--fg2)" }}>Repos:</span> {job.repos_resolved?.join(", ") || "—"}</div>
           {job.lease_expires_at && (
