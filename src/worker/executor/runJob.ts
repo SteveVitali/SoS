@@ -237,7 +237,9 @@ export async function runJob(
           checks = runLocalChecks(worktreePath, repo.commands, testLevel);
         }
         if (!checks.ok) {
-          throw new Error(`Local checks failed after fix attempt:\n${checks.summary.slice(0, 1000)}`);
+          throw new Error(
+            `Local checks failed after fix attempt:\n${checks.summary.slice(0, 1000)}`,
+          );
         }
       }
     }

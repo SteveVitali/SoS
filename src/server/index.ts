@@ -27,7 +27,7 @@ async function main() {
 
   // Create Slack poster (only if real tokens are configured, not placeholders)
   const slackEnabled = config.slackBotToken.length > 20 && config.slackAppToken.length > 20;
-  let slackPoster;
+  let slackPoster: ReturnType<typeof createSlackPoster> | undefined;
   if (slackEnabled) {
     slackPoster = createSlackPoster(config.slackBotToken, config.slackNotifyUser || undefined);
     setSlackPoster(slackPoster);

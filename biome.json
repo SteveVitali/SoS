@@ -25,13 +25,16 @@
         "useTemplate": "warn"
       },
       "suspicious": {
-        "noExplicitAny": "warn"
+        "noExplicitAny": "warn",
+        "noArrayIndexKey": "warn",
+        "useIterableCallbackReturn": "warn"
       },
       "a11y": {
         "useButtonType": "warn",
         "noLabelWithoutControl": "warn",
         "useKeyWithClickEvents": "warn",
-        "noNoninteractiveElementToInteractiveRole": "warn"
+        "noNoninteractiveElementToInteractiveRole": "warn",
+        "noStaticElementInteractions": "warn"
       }
     }
   },
