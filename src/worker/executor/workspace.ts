@@ -51,10 +51,28 @@ export function createWorktree(
   mkdirSync(worktreeBase, { recursive: true });
 
   log.info("Creating worktree", { branch, path: worktreePath });
-  exec(
-    `git worktree add ${worktreePath} -b ${branch} origin/${repo.default_branch}`,
-    clonePath
-  );
+
+  // Check if branch already exists (e.g. retry of a previously claimed job)
+  let branchExists = false;
+  try {
+    exec(`git rev-parse --verify ${branch}`, clonePath);
+    branchExists = true;
+  } catch { /* branch doesn't exist */ }
+
+  if (branchExists) {
+    // Clean up any stale worktree reference for this path
+    try { exec(`git worktree prune`, clonePath); } catch { /* best-effort */ }
+    log.info("Branch already exists, reusing", { branch });
+    exec(
+      `git worktree add ${worktreePath} ${branch}`,
+      clonePath
+    );
+  } else {
+    exec(
+      `git worktree add ${worktreePath} -b ${branch} origin/${repo.default_branch}`,
+      clonePath
+    );
+  }
 
   return { worktreePath, branch, clonePath };
 }
