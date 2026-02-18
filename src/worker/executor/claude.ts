@@ -3,6 +3,7 @@ import { writeFileSync, mkdirSync, existsSync, createWriteStream } from "fs";
 import path from "path";
 import { createLogger } from "../../shared/logger.js";
 import type { RepoEntry } from "./repoRegistry.js";
+import type { JobAttachment } from "../../shared/types.js";
 
 const log = createLogger("worker:claude");
 
@@ -12,10 +13,41 @@ export interface ClaudeResult {
   logPath: string;
 }
 
+function writeAttachments(
+  sosDir: string,
+  attachments: JobAttachment[],
+): string[] {
+  const attachDir = path.join(sosDir, "attachments");
+  if (!existsSync(attachDir)) mkdirSync(attachDir, { recursive: true });
+
+  const writtenPaths: string[] = [];
+  const usedNames = new Set<string>();
+
+  for (const att of attachments) {
+    // Deduplicate filenames by prepending file_id if needed
+    let filename = att.filename;
+    if (usedNames.has(filename)) {
+      filename = `${att.file_id}_${filename}`;
+    }
+    usedNames.add(filename);
+
+    const filePath = path.join(attachDir, filename);
+    writeFileSync(filePath, Buffer.from(att.base64, "base64"));
+    writtenPaths.push(`.sonofsteve/attachments/${filename}`);
+    log.info("Wrote attachment to worktree", {
+      filename,
+      size: att.size_bytes,
+    });
+  }
+
+  return writtenPaths;
+}
+
 function buildPrompt(
   taskText: string,
   repo: RepoEntry,
-  threadContext?: string
+  threadContext?: string,
+  attachmentPaths?: { path: string; mimetype: string; size_bytes: number }[],
 ): string {
   const lines: string[] = [];
   lines.push("# Task");
@@ -25,6 +57,21 @@ function buildPrompt(
   if (threadContext) {
     lines.push("# Slack Thread Context");
     lines.push(threadContext);
+    lines.push("");
+  }
+
+  if (attachmentPaths && attachmentPaths.length > 0) {
+    lines.push("# Attached Files");
+    lines.push("");
+    lines.push("The user attached the following files in the Slack thread. They have been");
+    lines.push("saved to the `.sonofsteve/attachments/` directory in this worktree:");
+    lines.push("");
+    for (const att of attachmentPaths) {
+      const sizeKb = Math.round(att.size_bytes / 1024);
+      lines.push(`- \`${att.path}\` (${att.mimetype}, ${sizeKb}KB)`);
+    }
+    lines.push("");
+    lines.push("Review these files for context before starting work.");
     lines.push("");
   }
 
@@ -54,16 +101,29 @@ export async function runClaude(
   worktreePath: string,
   taskText: string,
   repo: RepoEntry,
-  threadContext?: string
+  threadContext?: string,
+  attachments?: JobAttachment[],
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
   ensureSosGitignore(sosDir);
 
+  // Write attachments to disk
+  let attachmentPaths: { path: string; mimetype: string; size_bytes: number }[] | undefined;
+  if (attachments && attachments.length > 0) {
+    const writtenPaths = writeAttachments(sosDir, attachments);
+    attachmentPaths = attachments.map((att, i) => ({
+      path: writtenPaths[i],
+      mimetype: att.mimetype,
+      size_bytes: att.size_bytes,
+    }));
+    log.info("Attachments written to worktree", { count: attachments.length });
+  }
+
   const promptPath = path.join(sosDir, "prompt.md");
   const logPath = path.join(sosDir, "claude.log");
 
-  const prompt = buildPrompt(taskText, repo, threadContext);
+  const prompt = buildPrompt(taskText, repo, threadContext, attachmentPaths);
   writeFileSync(promptPath, prompt, "utf-8");
 
   log.info("Running Claude Code CLI", { worktree: worktreePath });

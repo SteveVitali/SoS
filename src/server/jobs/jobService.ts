@@ -60,12 +60,17 @@ export async function createJobFromSlack(input: CreateJobFromSlack): Promise<{ j
     test_level: input.test_level,
     ci_fix_enabled: input.ci_fix_enabled ?? true,
     reviewers: input.reviewers,
+    attachments: input.attachments,
     events: [{ at: now, type: "QUEUED", payload: { source: "slack" } }],
   };
 
   try {
     const job = await insertJob(doc);
-    log.info("Job created from Slack", { task_id: taskId, event_id: input.event_id });
+    log.info("Job created from Slack", {
+      task_id: taskId,
+      event_id: input.event_id,
+      attachments: input.attachments?.length || 0,
+    });
 
     // Post queued message to Slack
     if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {

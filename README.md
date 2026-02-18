@@ -72,6 +72,7 @@ The web UI is available at `http://localhost:3000` (or `http://localhost:5173` i
    - `chat:write` — post replies
    - `channels:history` — fetch thread messages in public channels (used when @-mentioned in a thread to read prior context)
    - `groups:history` — fetch thread messages in private channels
+   - `files:read` — **(required for attachments)** download files attached to Slack messages (screenshots, logs, etc.)
    - `users:read` — **(recommended)** resolve Slack user IDs to display names in the UI
 5. Install the app to your workspace. Copy the **Bot User OAuth Token** → `SLACK_BOT_TOKEN` (`xoxb-...`).
 6. Find the bot's user ID (choose one method):
@@ -132,6 +133,23 @@ The API key is sent via the standard `Authorization: Bearer <token>` header. Che
 
 Without any key, the bot still works — it just treats every @-mention as a job creation request (the original behavior).
 
+### Thread Context & File Attachments
+
+When someone @-mentions the bot in a Slack thread, the bot automatically:
+
+1. **Fetches thread history** — reads up to `SOS_MAX_THREAD_MESSAGES` (default 20) prior messages for context
+2. **Downloads file attachments** — images, logs, configs, etc. attached to thread messages, newest-first up to `SOS_MAX_ATTACHMENT_SIZE_MB` (default 10MB)
+3. **Sends images to the routing LLM** — the LLM can "see" screenshots via vision, helping it understand UI bugs and generate better task descriptions
+4. **Passes all files to the worker** — every attachment (regardless of type) is stored in the job document and written to `.sonofsteve/attachments/` in the worktree so Claude Code can inspect them
+
+```bash
+# .env (optional — these are the defaults)
+SOS_MAX_THREAD_MESSAGES=20        # max thread messages to fetch for context
+SOS_MAX_ATTACHMENT_SIZE_MB=10     # max total file size per job (newest files preferred)
+```
+
+> **Note:** File downloads require the `files:read` OAuth scope on your Slack bot. See step 4 in the Slack App Setup above.
+
 ---
 
 ## Environment Variables
@@ -152,6 +170,8 @@ Without any key, the bot still works — it just treats every @-mention as a job
 | `SOS_LLM_API_KEY` | No | API key for the LLM provider. Falls back to `ANTHROPIC_API_KEY` if not set. |
 | `SOS_LLM_BASE_URL` | Only for `openai_compatible` | Base URL for OpenAI-compatible endpoint (e.g., LiteLLM proxy) |
 | `SOS_SLACK_JOB_OWNER` | No | The `requested_by` value to assign to Slack-created jobs (defaults to `SOS_REQUESTED_BY_SLACK_USER`). Must match the worker's `SOS_REQUESTED_BY_SLACK_USER` so workers claim Slack jobs. The original Slack user is stored separately for attribution. |
+| `SOS_MAX_THREAD_MESSAGES` | No (default: 20) | Max Slack thread messages to fetch for context when @-mentioned in a thread |
+| `SOS_MAX_ATTACHMENT_SIZE_MB` | No (default: 10) | Max total file attachment size (MB) per job. Files collected newest-first; oldest dropped when limit reached. |
 | `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |

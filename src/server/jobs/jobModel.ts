@@ -13,6 +13,13 @@ export const CreateJobFromSlackSchema = z.object({
   test_level: TestLevel.optional(),
   ci_fix_enabled: z.boolean().optional(),
   reviewers: z.array(z.string()).optional(),
+  attachments: z.array(z.object({
+    file_id: z.string(),
+    filename: z.string(),
+    mimetype: z.string(),
+    size_bytes: z.number(),
+    base64: z.string(),
+  })).optional(),
 });
 export type CreateJobFromSlack = z.infer<typeof CreateJobFromSlackSchema>;
 

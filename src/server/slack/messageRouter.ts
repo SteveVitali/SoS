@@ -1,6 +1,7 @@
 import { createLogger } from "../../shared/logger.js";
 import { queryJobs } from "../jobs/jobService.js";
-import type { LLMProvider, ToolDefinition } from "../llm/index.js";
+import type { LLMProvider, ToolDefinition, ContentBlock } from "../llm/index.js";
+import type { JobAttachment } from "../../shared/types.js";
 
 const log = createLogger("server:slack:router");
 
@@ -163,10 +164,13 @@ export interface ThreadMessage {
   isBot: boolean;
 }
 
+const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
 export async function routeMessage(
   userMessage: string,
   slackUserId: string,
   threadMessages?: ThreadMessage[],
+  attachments?: JobAttachment[],
 ): Promise<RoutedAction> {
   if (!provider) {
     log.warn("LLM provider not initialized, treating as job creation");
@@ -181,7 +185,7 @@ export async function routeMessage(
   const systemPrompt = STEVE_SYSTEM_PROMPT.replace("{JOBS_CONTEXT}", jobsContext);
 
   // Build message history from thread context
-  const messages: { role: "user" | "assistant"; content: string }[] = [];
+  const messages: { role: "user" | "assistant"; content: string | ContentBlock[] }[] = [];
   if (threadMessages && threadMessages.length > 0) {
     for (const msg of threadMessages) {
       if (msg.isBot) {
@@ -195,6 +199,42 @@ export async function routeMessage(
     messages.push({
       role: "user",
       content: `<slack_user_id>${slackUserId}</slack_user_id>\n<message>${userMessage}</message>`,
+    });
+  }
+
+  // Append file attachments to the last user message
+  if (attachments && attachments.length > 0) {
+    const imageAttachments = attachments.filter((a) => IMAGE_MIMETYPES.has(a.mimetype));
+    const otherAttachments = attachments.filter((a) => !IMAGE_MIMETYPES.has(a.mimetype));
+
+    // Build content blocks for the last user message
+    const lastUserIdx = messages.length - 1;
+    const lastContent = messages[lastUserIdx].content;
+    const textContent = typeof lastContent === "string" ? lastContent : "";
+
+    const blocks: ContentBlock[] = [{ type: "text", text: textContent }];
+
+    // Add images as vision blocks
+    for (const img of imageAttachments) {
+      blocks.push({
+        type: "image",
+        mediaType: img.mimetype,
+        base64: img.base64,
+      });
+    }
+
+    // Add non-image files as text notes
+    if (otherAttachments.length > 0) {
+      const fileList = otherAttachments
+        .map((a) => `${a.filename} (${a.mimetype}, ${Math.round(a.size_bytes / 1024)}KB)`)
+        .join(", ");
+      blocks.push({ type: "text", text: `\n[Attached files: ${fileList}]` });
+    }
+
+    messages[lastUserIdx] = { role: "user", content: blocks };
+    log.info("Multimodal content built for routing LLM", {
+      images: imageAttachments.length,
+      otherFiles: otherAttachments.length,
     });
   }
 

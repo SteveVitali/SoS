@@ -7,6 +7,7 @@ import {
   queryJobs,
 } from "../jobs/jobService.js";
 import type { RoutedAction } from "./messageRouter.js";
+import type { JobAttachment } from "../../shared/types.js";
 
 const log = createLogger("server:slack:commands");
 
@@ -22,6 +23,7 @@ interface SlackContext {
   threadTs: string;
   messageTs: string;
   eventId: string;
+  attachments?: JobAttachment[];
 }
 
 async function resolveTaskId(partial: string): Promise<string | null> {
@@ -55,6 +57,7 @@ export async function executeCommand(
           repo_hint: args.repo_hint,
           test_level: args.test_level,
           reviewers: args.reviewers,
+          attachments: ctx.attachments,
         });
         return {
           reply: `${reply}\n\n📋 Task queued: \`${job.task_id.slice(0, 8)}…\``,

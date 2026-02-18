@@ -5,6 +5,21 @@ import { fmtQueued, fmtClaimed, fmtDone, fmtFailed, fmtCanceled, fmtEvent } from
 
 const log = createLogger("server:slack");
 
+export interface SlackFileInfo {
+  id: string;
+  name: string;
+  mimetype: string;
+  size: number;
+  url_private: string;
+}
+
+export interface SlackThreadMessage {
+  user: string;
+  text: string;
+  ts: string;
+  files: SlackFileInfo[];
+}
+
 export interface SlackPoster {
   postQueued(job: JobDoc): Promise<void>;
   postClaimed(job: JobDoc): Promise<void>;
@@ -12,7 +27,8 @@ export interface SlackPoster {
   postFailed(job: JobDoc): Promise<void>;
   postCanceled(job: JobDoc): Promise<void>;
   postEvent(job: JobDoc, type: string, payload?: any): Promise<void>;
-  fetchThread(channelId: string, threadTs: string, limit?: number): Promise<any[]>;
+  fetchThread(channelId: string, threadTs: string, limit?: number): Promise<SlackThreadMessage[]>;
+  downloadFile(urlPrivate: string): Promise<Buffer>;
 }
 
 export function createSlackPoster(botToken: string, notifyUserId?: string): SlackPoster {
@@ -65,7 +81,7 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
       await postToThread(job.slack.channel_id, job.slack.thread_ts, text);
     },
 
-    async fetchThread(channelId: string, threadTs: string, limit = 20): Promise<any[]> {
+    async fetchThread(channelId: string, threadTs: string, limit = 20): Promise<SlackThreadMessage[]> {
       try {
         const result = await client.conversations.replies({
           channel: channelId,
@@ -74,13 +90,31 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
         });
         return (result.messages || []).map((m: any) => ({
           user: m.user,
-          text: m.text?.slice(0, 2000),
+          text: m.text?.slice(0, 2000) || "",
           ts: m.ts,
+          files: (m.files || []).map((f: any) => ({
+            id: f.id,
+            name: f.name || "unknown",
+            mimetype: f.mimetype || "application/octet-stream",
+            size: f.size || 0,
+            url_private: f.url_private || "",
+          })).filter((f: SlackFileInfo) => f.url_private),
         }));
       } catch (err: any) {
         log.error("Failed to fetch Slack thread", { error: err.message });
         return [];
       }
+    },
+
+    async downloadFile(urlPrivate: string): Promise<Buffer> {
+      const response = await fetch(urlPrivate, {
+        headers: { Authorization: `Bearer ${botToken}` },
+      });
+      if (!response.ok) {
+        throw new Error(`Failed to download file: ${response.status} ${response.statusText}`);
+      }
+      const arrayBuffer = await response.arrayBuffer();
+      return Buffer.from(arrayBuffer);
     },
   };
 }

@@ -71,6 +71,15 @@ export const JobEvent = z.object({
 });
 export type JobEvent = z.infer<typeof JobEvent>;
 
+// --- Job Attachment ---
+export interface JobAttachment {
+  file_id: string;
+  filename: string;
+  mimetype: string;
+  size_bytes: number;
+  base64: string;
+}
+
 // --- Job Document ---
 export interface JobDoc {
   _id?: any;
@@ -104,6 +113,9 @@ export interface JobDoc {
   ci?: CIInfo;
   result_summary?: string;
   error?: JobError;
+
+  // Attachments (files from Slack thread)
+  attachments?: JobAttachment[];
 
   // Events
   events?: JobEvent[];

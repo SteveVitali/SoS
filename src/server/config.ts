@@ -42,6 +42,8 @@ export function loadServerConfig() {
     llmModel: process.env.SOS_LLM_MODEL || "claude-sonnet-4-20250514",
     llmApiKey: process.env.SOS_LLM_API_KEY || process.env.ANTHROPIC_API_KEY || "",
     llmBaseUrl: process.env.SOS_LLM_BASE_URL || "",
+    maxThreadMessages: optionalInt("SOS_MAX_THREAD_MESSAGES", 20),
+    maxAttachmentSizeMb: optionalInt("SOS_MAX_ATTACHMENT_SIZE_MB", 10),
   };
 }
 

@@ -32,4 +32,4 @@ export function createLLMProvider(config: LLMConfig): LLMProvider {
   }
 }
 
-export type { LLMProvider, LLMResponse, ChatMessage, ToolDefinition, ToolCall } from "./llmProvider.js";
+export type { LLMProvider, LLMResponse, ChatMessage, ContentBlock, ToolDefinition, ToolCall } from "./llmProvider.js";

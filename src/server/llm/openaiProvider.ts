@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { createLogger } from "../../shared/logger.js";
-import type { LLMProvider, LLMResponse, ChatMessage, ToolDefinition } from "./llmProvider.js";
+import type { LLMProvider, LLMResponse, ChatMessage, ToolDefinition, ContentBlock } from "./llmProvider.js";
 
 const log = createLogger("server:llm:openai");
 
@@ -34,10 +34,25 @@ export class OpenAICompatibleProvider implements LLMProvider {
 
     const messages: OpenAI.ChatCompletionMessageParam[] = [
       { role: "system", content: params.system },
-      ...params.messages.map((m) => ({
-        role: m.role as "user" | "assistant",
-        content: m.content,
-      })),
+      ...params.messages.map((m): OpenAI.ChatCompletionMessageParam => {
+        if (typeof m.content === "string") {
+          if (m.role === "assistant") {
+            return { role: "assistant", content: m.content };
+          }
+          return { role: "user", content: m.content };
+        }
+        // Multimodal content blocks — only valid for user messages
+        const parts: OpenAI.ChatCompletionContentPart[] = m.content.map((block) => {
+          if (block.type === "text") {
+            return { type: "text" as const, text: block.text };
+          }
+          return {
+            type: "image_url" as const,
+            image_url: { url: `data:${block.mediaType};base64,${block.base64}` },
+          };
+        });
+        return { role: "user", content: parts };
+      }),
     ];
 
     const response = await this.client.chat.completions.create({

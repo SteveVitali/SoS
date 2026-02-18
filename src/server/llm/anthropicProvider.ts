@@ -1,6 +1,6 @@
 import Anthropic from "@anthropic-ai/sdk";
 import { createLogger } from "../../shared/logger.js";
-import type { LLMProvider, LLMResponse, ChatMessage, ToolDefinition } from "./llmProvider.js";
+import type { LLMProvider, LLMResponse, ChatMessage, ToolDefinition, ContentBlock } from "./llmProvider.js";
 
 const log = createLogger("server:llm:anthropic");
 
@@ -36,7 +36,21 @@ export class AnthropicProvider implements LLMProvider {
       tools: anthropicTools,
       messages: params.messages.map((m) => ({
         role: m.role,
-        content: m.content,
+        content: typeof m.content === "string"
+          ? m.content
+          : m.content.map((block) => {
+              if (block.type === "text") {
+                return { type: "text" as const, text: block.text };
+              }
+              return {
+                type: "image" as const,
+                source: {
+                  type: "base64" as const,
+                  media_type: block.mediaType as "image/png" | "image/jpeg" | "image/gif" | "image/webp",
+                  data: block.base64,
+                },
+              };
+            }),
       })),
     });
 

@@ -187,7 +187,7 @@ export async function runJob(
 
     // 4) Run Claude Code CLI
     await events.emit("CLAUDE_STARTED", {});
-    const claudeResult = await runClaude(worktreePath, job.task_text, repo, threadContext);
+    const claudeResult = await runClaude(worktreePath, job.task_text, repo, threadContext, job.attachments);
     await events.emit("CLAUDE_FINISHED", {
       summary: claudeResult.summary.slice(0, 1000),
     });

@@ -4,7 +4,8 @@ import type { ServerConfig } from "../config.js";
 import { routeMessage } from "./messageRouter.js";
 import type { ThreadMessage } from "./messageRouter.js";
 import { executeCommand } from "./commandExecutor.js";
-import type { SlackPoster } from "./slackClient.js";
+import type { SlackPoster, SlackThreadMessage, SlackFileInfo } from "./slackClient.js";
+import type { JobAttachment } from "../../shared/types.js";
 
 const log = createLogger("server:slack:events");
 
@@ -46,26 +47,93 @@ export function parseModifiers(text: string): {
   return result;
 }
 
+const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+
 async function fetchThreadContext(
   slackPoster: SlackPoster | undefined,
   channelId: string,
   threadTs: string,
   botUserId: string,
-): Promise<ThreadMessage[]> {
-  if (!slackPoster) return [];
+  maxMessages: number,
+): Promise<{ messages: ThreadMessage[]; rawMessages: SlackThreadMessage[] }> {
+  if (!slackPoster) return { messages: [], rawMessages: [] };
 
   try {
-    const rawMessages = await slackPoster.fetchThread(channelId, threadTs, 20);
-    return rawMessages.map((m: any) => ({
+    const rawMessages = await slackPoster.fetchThread(channelId, threadTs, maxMessages);
+    const messages = rawMessages.map((m) => ({
       user: m.user || "unknown",
       text: m.text || "",
       ts: m.ts || "",
       isBot: m.user === botUserId,
     }));
+    return { messages, rawMessages };
   } catch (err: any) {
     log.warn("Failed to fetch thread context", { error: err.message });
-    return [];
+    return { messages: [], rawMessages: [] };
   }
+}
+
+async function downloadThreadAttachments(
+  slackPoster: SlackPoster,
+  rawMessages: SlackThreadMessage[],
+  maxSizeMb: number,
+): Promise<JobAttachment[]> {
+  const maxSizeBytes = maxSizeMb * 1024 * 1024;
+  const attachments: JobAttachment[] = [];
+  let totalSize = 0;
+
+  // Collect all files from messages, newest-first
+  const allFiles: SlackFileInfo[] = [];
+  for (let i = rawMessages.length - 1; i >= 0; i--) {
+    for (const file of rawMessages[i].files) {
+      allFiles.push(file);
+    }
+  }
+
+  if (allFiles.length === 0) return [];
+
+  log.info("Downloading thread attachments", {
+    fileCount: allFiles.length,
+    maxSizeMb,
+  });
+
+  for (const file of allFiles) {
+    // Stop if adding this file would exceed the budget
+    if (totalSize + file.size > maxSizeBytes) {
+      log.info("Attachment budget reached, skipping remaining files", {
+        totalSize,
+        skippedFile: file.name,
+        skippedFileSize: file.size,
+      });
+      break;
+    }
+
+    try {
+      const buffer = await slackPoster.downloadFile(file.url_private);
+      attachments.push({
+        file_id: file.id,
+        filename: file.name,
+        mimetype: file.mimetype,
+        size_bytes: buffer.length,
+        base64: buffer.toString("base64"),
+      });
+      totalSize += buffer.length;
+      log.info("Downloaded attachment", {
+        file_id: file.id,
+        filename: file.name,
+        size: buffer.length,
+        totalSize,
+      });
+    } catch (err: any) {
+      log.warn("Failed to download attachment, skipping", {
+        file_id: file.id,
+        filename: file.name,
+        error: err.message,
+      });
+    }
+  }
+
+  return attachments;
 }
 
 export function createAppMentionHandler(config: ServerConfig, slackPoster?: SlackPoster) {
@@ -96,13 +164,25 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
     };
 
     // Fetch thread context if this is a reply in an existing thread
-    const threadMessages = event.thread_ts
-      ? await fetchThreadContext(slackPoster, event.channel, threadTs, config.slackBotUserId)
-      : undefined;
+    let threadMessages: ThreadMessage[] | undefined;
+    let attachments: JobAttachment[] | undefined;
+
+    if (event.thread_ts && slackPoster) {
+      const { messages, rawMessages } = await fetchThreadContext(
+        slackPoster, event.channel, threadTs, config.slackBotUserId, config.maxThreadMessages,
+      );
+      if (messages.length > 0) threadMessages = messages;
+
+      // Download files from thread, newest-first, up to budget
+      const downloaded = await downloadThreadAttachments(
+        slackPoster, rawMessages, config.maxAttachmentSizeMb,
+      );
+      if (downloaded.length > 0) attachments = downloaded;
+    }
 
     try {
       // Route through LLM to classify intent and generate response
-      const action = await routeMessage(cleanText, event.user, threadMessages);
+      const action = await routeMessage(cleanText, event.user, threadMessages, attachments);
       log.info("Routed action", { command: action.command, event_id: eventId });
 
       if (action.command === "no_op") {
@@ -110,8 +190,8 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
         return "";
       }
 
-      // Execute the command
-      const result = await executeCommand(action, ctx);
+      // Execute the command (pass attachments for job creation)
+      const result = await executeCommand(action, { ...ctx, attachments });
       log.info("Command executed", { action: result.actionTaken, event_id: eventId });
 
       return result.reply;
