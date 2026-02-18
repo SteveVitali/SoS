@@ -1,5 +1,5 @@
-import { execSync, spawn as nodeSpawn } from "child_process";
-import { writeFileSync, mkdirSync, existsSync } from "fs";
+import { execSync } from "child_process";
+import { writeFileSync, readFileSync, mkdirSync, existsSync } from "fs";
 import path from "path";
 import { createLogger } from "../../shared/logger.js";
 import type { RepoEntry } from "./repoRegistry.js";
@@ -67,12 +67,12 @@ export async function runClaude(
 
   log.info("Running Claude Code CLI", { worktree: worktreePath });
 
-  return runClaudeProcess(
+  return Promise.resolve(runClaudeProcess(
     `claude -p "${promptPath}" --output-format text --dangerously-skip-permissions`,
     worktreePath,
     logPath,
     30 * 60 * 1000
-  );
+  ));
 }
 
 export async function runClaudeFix(
@@ -106,56 +106,44 @@ export async function runClaudeFix(
 
   log.info("Running Claude Code CLI for CI fix", { worktree: worktreePath });
 
-  return runClaudeProcess(
+  return Promise.resolve(runClaudeProcess(
     `claude -p "${promptPath}" --output-format text --dangerously-skip-permissions`,
     worktreePath,
     logPath,
     15 * 60 * 1000
-  );
+  ));
 }
 
-// Shared runner: streams output to terminal in real-time while capturing for summary
+// Shared runner: uses stdio inherit + tee for real-time terminal output
 function runClaudeProcess(
   command: string,
   cwd: string,
   logPath: string,
   timeoutMs: number
-): Promise<ClaudeResult> {
-  return new Promise((resolve) => {
-    const child = nodeSpawn(command, {
-      cwd,
-      shell: "/bin/bash",
-      stdio: ["inherit", "pipe", "pipe"],
-    });
-
-    const chunks: Buffer[] = [];
-
-    child.stdout?.on("data", (data: Buffer) => {
-      process.stdout.write(data);
-      chunks.push(data);
-    });
-    child.stderr?.on("data", (data: Buffer) => {
-      process.stderr.write(data);
-      chunks.push(data);
-    });
-
-    const timer = setTimeout(() => {
-      child.kill("SIGTERM");
-    }, timeoutMs);
-
-    child.on("close", (code) => {
-      clearTimeout(timer);
-      const output = Buffer.concat(chunks).toString("utf-8");
-      writeFileSync(logPath, output, "utf-8");
-      const summary = output.slice(-2000).trim();
-
-      if (code === 0) {
-        log.info("Claude finished", { summary_len: summary.length });
-        resolve({ success: true, summary, logPath });
-      } else {
-        log.error("Claude failed", { code, error: summary.slice(0, 500) });
-        resolve({ success: false, summary, logPath });
+): ClaudeResult {
+  try {
+    execSync(
+      `${command} 2>&1 | tee "${logPath}"`,
+      {
+        cwd,
+        stdio: "inherit",
+        timeout: timeoutMs,
+        shell: "/bin/bash",
       }
-    });
-  });
+    );
+
+    const output = readFileSync(logPath, "utf-8");
+    const summary = output.slice(-2000).trim();
+    log.info("Claude finished", { summary_len: summary.length });
+    return { success: true, summary, logPath };
+  } catch (err: any) {
+    let summary = "";
+    try {
+      summary = readFileSync(logPath, "utf-8").slice(-2000).trim();
+    } catch {
+      summary = err.message?.slice(0, 2000) || "Claude process failed";
+    }
+    log.error("Claude failed", { error: summary.slice(0, 500) });
+    return { success: false, summary, logPath };
+  }
 }
