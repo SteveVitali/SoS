@@ -141,26 +141,48 @@ function runClaudeProcess(
 
     function processLine(line: string) {
       if (!line.trim()) return;
+      logStream.write(line + "\n");
       try {
         const obj = JSON.parse(line);
-        // Extract text from assistant message content blocks
-        if (obj.type === "content_block_delta" && obj.delta?.text) {
-          process.stdout.write(obj.delta.text);
-          textChunks.push(obj.delta.text);
-        } else if (obj.type === "content_block_start" && obj.content_block?.text) {
-          process.stdout.write(obj.content_block.text);
-          textChunks.push(obj.content_block.text);
-        } else if (obj.type === "result" && obj.result) {
-          // Final result message
-          process.stdout.write("\n");
-          textChunks.push(obj.result);
+
+        if (obj.type === "system") {
+          // Init event — show model info
+          if (obj.subtype === "init") {
+            const info = `\n🤖 Claude (${obj.model || "unknown"}) session started\n`;
+            process.stdout.write(info);
+          }
+        } else if (obj.type === "assistant") {
+          // Assistant message with content blocks
+          const content = obj.message?.content || [];
+          for (const block of content) {
+            if (block.type === "text" && block.text) {
+              process.stdout.write(block.text);
+              textChunks.push(block.text);
+            } else if (block.type === "tool_use") {
+              const msg = `\n🔧 [${block.name}] ${JSON.stringify(block.input || {}).slice(0, 200)}\n`;
+              process.stdout.write(msg);
+            }
+          }
+        } else if (obj.type === "tool_result") {
+          // Tool output — show truncated result
+          const content = obj.content || "";
+          const preview = typeof content === "string" ? content.slice(0, 300) : JSON.stringify(content).slice(0, 300);
+          if (preview) {
+            process.stdout.write(`   → ${preview.split("\n")[0]}\n`);
+          }
+        } else if (obj.type === "result") {
+          // Final result
+          if (obj.result) {
+            process.stdout.write("\n--- Claude Result ---\n");
+            process.stdout.write(obj.result + "\n");
+            textChunks.push(obj.result);
+          }
         }
       } catch {
         // Not JSON — print raw
         process.stdout.write(line + "\n");
         textChunks.push(line);
       }
-      logStream.write(line + "\n");
     }
 
     child.stdout?.on("data", (data: Buffer) => {
