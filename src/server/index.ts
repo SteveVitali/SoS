@@ -42,7 +42,7 @@ async function main() {
   const uiDistPath = path.resolve(__dirname, "../../dist-ui");
   app.use(express.static(uiDistPath));
   // SPA fallback: serve index.html for any non-API route
-  app.get("*", (req, res, next) => {
+  app.get("*path", (req, res, next) => {
     if (req.path.startsWith("/api/")) return next();
     res.sendFile(path.join(uiDistPath, "index.html"), (err) => {
       if (err) {
