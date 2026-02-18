@@ -84,7 +84,7 @@ Click your name in Slack → "Profile" → "⋯" → "Copy member ID". This is t
 
 ### LLM-Powered Message Routing (Optional)
 
-By default, every @-mention of the bot creates a new coding job. If you set `ANTHROPIC_API_KEY`, the bot instead routes messages through an LLM ("Steve" — a snarky staff engineer persona) that classifies intent before acting:
+By default, every @-mention of the bot creates a new coding job. If you configure an LLM provider, the bot instead routes messages through an LLM ("Steve" — a snarky staff engineer persona) that classifies intent before acting:
 
 | Intent | Example | What happens |
 |--------|---------|--------------|
@@ -95,12 +95,40 @@ By default, every @-mention of the bot creates a new coding job. If you set `ANT
 | List | "show me recent jobs" | Lists recent jobs |
 | Chat | "hey what can you do?" | Responds conversationally |
 
-To enable:
+Son of Steve supports **two LLM provider backends** for message routing. Choose whichever fits your setup:
+
+#### Option A: Anthropic API (default)
+
+Best for open-source / individual users. Calls the Anthropic API directly.
+
+```bash
+# .env
+SOS_LLM_PROVIDER=anthropic                     # optional, this is the default
+SOS_LLM_MODEL=claude-sonnet-4-20250514       # optional, this is the default
+SOS_LLM_API_KEY=sk-ant-...                      # or set ANTHROPIC_API_KEY
+```
+
 1. Get an API key from [console.anthropic.com](https://console.anthropic.com)
-2. Add `ANTHROPIC_API_KEY=sk-ant-...` to your `.env`
+2. Add the key to your `.env` as shown above
 3. Restart the server
 
-Without the key, the bot still works — it just treats every message as a job creation request (the original behavior).
+#### Option B: OpenAI-Compatible / LiteLLM
+
+Best for teams that run a shared LLM proxy (e.g., [LiteLLM](https://docs.litellm.ai/)). Works with any service that exposes the OpenAI Chat Completions API with tool calling support.
+
+```bash
+# .env
+SOS_LLM_PROVIDER=openai_compatible
+SOS_LLM_MODEL=anthropic/claude-sonnet-4-20250514   # model string your proxy expects
+SOS_LLM_BASE_URL=https://litellm.example.com       # your LiteLLM / OpenAI-compatible endpoint
+SOS_LLM_API_KEY=your-bearer-token                   # sent as Authorization: Bearer <token>
+```
+
+The API key is sent via the standard `Authorization: Bearer <token>` header. Check with your proxy admin for the correct model string and endpoint URL.
+
+#### No LLM Key
+
+Without any key, the bot still works — it just treats every @-mention as a job creation request (the original behavior).
 
 ---
 
@@ -117,7 +145,10 @@ Without the key, the bot still works — it just treats every message as a job c
 | `SLACK_APP_TOKEN` | **Yes** | Socket Mode app token (`xapp-...`) |
 | `SLACK_BOT_TOKEN` | **Yes** | Bot OAuth token (`xoxb-...`) |
 | `SLACK_BOT_USER_ID` | **Yes** | Bot's Slack user ID (`U...`) |
-| `ANTHROPIC_API_KEY` | No | Anthropic API key for LLM-powered Slack routing ([setup](#llm-powered-message-routing-optional)). Without it, all @mentions create jobs directly. |
+| `SOS_LLM_PROVIDER` | No (default: `anthropic`) | LLM provider: `anthropic` or `openai_compatible` ([setup](#llm-powered-message-routing-optional)) |
+| `SOS_LLM_MODEL` | No (default: `claude-sonnet-4-20250514`) | Model name/string for the LLM provider |
+| `SOS_LLM_API_KEY` | No | API key for the LLM provider. Falls back to `ANTHROPIC_API_KEY` if not set. |
+| `SOS_LLM_BASE_URL` | Only for `openai_compatible` | Base URL for OpenAI-compatible endpoint (e.g., LiteLLM proxy) |
 | `SOS_SLACK_JOB_OWNER` | No | The `requested_by` value to assign to Slack-created jobs (defaults to `SOS_REQUESTED_BY_SLACK_USER`). Must match the worker's `SOS_REQUESTED_BY_SLACK_USER` so workers claim Slack jobs. The original Slack user is stored separately for attribution. |
 | `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |

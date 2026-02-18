@@ -1,0 +1,34 @@
+export interface ToolDefinition {
+  name: string;
+  description: string;
+  parameters: {
+    type: "object";
+    properties: Record<string, unknown>;
+    required?: string[];
+  };
+}
+
+export interface ToolCall {
+  name: string;
+  input: Record<string, any>;
+}
+
+export interface LLMResponse {
+  text: string;
+  toolCalls: ToolCall[];
+}
+
+export interface ChatMessage {
+  role: "user" | "assistant";
+  content: string;
+}
+
+export interface LLMProvider {
+  chat(params: {
+    system: string;
+    messages: ChatMessage[];
+    tools: ToolDefinition[];
+    maxTokens: number;
+    model: string;
+  }): Promise<LLMResponse>;
+}

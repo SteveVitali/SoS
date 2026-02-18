@@ -9,6 +9,8 @@ import { createSlackPoster } from "./slack/slackClient.js";
 import { startSlackSocketMode } from "./slack/socketMode.js";
 import { setSlackPoster } from "./jobs/jobService.js";
 import { initUserResolver } from "./slack/userResolver.js";
+import { initMessageRouter } from "./slack/messageRouter.js";
+import { createLLMProvider } from "./llm/index.js";
 import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
 import { createRouter } from "./api/router.js";
 
@@ -32,6 +34,23 @@ async function main() {
     initUserResolver(config.slackBotToken);
   } else {
     log.warn("Slack tokens not configured — running without Slack integration");
+  }
+
+  // Initialize LLM provider for Slack message routing
+  if (config.llmApiKey) {
+    try {
+      const llmProvider = createLLMProvider({
+        provider: config.llmProvider,
+        model: config.llmModel,
+        apiKey: config.llmApiKey,
+        baseUrl: config.llmBaseUrl || undefined,
+      });
+      initMessageRouter(llmProvider, config.llmModel);
+    } catch (err: any) {
+      log.warn("Failed to initialize LLM provider — message routing will treat all mentions as jobs", { error: err.message });
+    }
+  } else {
+    log.warn("No LLM API key configured (SOS_LLM_API_KEY / ANTHROPIC_API_KEY) — message routing disabled");
   }
 
   // Start Express server

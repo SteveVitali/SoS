@@ -1,6 +1,6 @@
-import Anthropic from "@anthropic-ai/sdk";
 import { createLogger } from "../../shared/logger.js";
-import { queryJobs, findJobByTaskId } from "../jobs/jobService.js";
+import { queryJobs } from "../jobs/jobService.js";
+import type { LLMProvider, ToolDefinition } from "../llm/index.js";
 
 const log = createLogger("server:slack:router");
 
@@ -35,12 +35,12 @@ You are the interface for "Son of Steve", a coding agent orchestrator. When some
 {JOBS_CONTEXT}
 `;
 
-const TOOLS: Anthropic.Tool[] = [
+const TOOLS: ToolDefinition[] = [
   {
     name: "create_job",
     description: "Create a new coding task for the agent to work on",
-    input_schema: {
-      type: "object" as const,
+    parameters: {
+      type: "object",
       properties: {
         task_text: { type: "string", description: "Clean task description" },
         repo_hint: { type: "string", description: "Repository ID hint (e.g. 'fsq-graph', 'foursquare.web')" },
@@ -57,8 +57,8 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "job_status",
     description: "Look up the status of a job by task_id",
-    input_schema: {
-      type: "object" as const,
+    parameters: {
+      type: "object",
       properties: {
         task_id: { type: "string", description: "Full or partial task_id" },
       },
@@ -68,8 +68,8 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "cancel_job",
     description: "Cancel a running or queued job",
-    input_schema: {
-      type: "object" as const,
+    parameters: {
+      type: "object",
       properties: {
         task_id: { type: "string", description: "Full or partial task_id" },
       },
@@ -79,8 +79,8 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "retry_job",
     description: "Retry a failed or canceled job",
-    input_schema: {
-      type: "object" as const,
+    parameters: {
+      type: "object",
       properties: {
         task_id: { type: "string", description: "Full or partial task_id" },
       },
@@ -90,8 +90,8 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "list_jobs",
     description: "List recent jobs",
-    input_schema: {
-      type: "object" as const,
+    parameters: {
+      type: "object",
       properties: {
         limit: { type: "number", description: "Max jobs to return (default 5)" },
       },
@@ -101,8 +101,8 @@ const TOOLS: Anthropic.Tool[] = [
   {
     name: "chat",
     description: "Just respond conversationally — no action needed. Put your full response in the 'response' field.",
-    input_schema: {
-      type: "object" as const,
+    parameters: {
+      type: "object",
       properties: {
         response: { type: "string", description: "Your conversational response to the user" },
       },
@@ -111,13 +111,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
 ];
 
-let client: Anthropic | null = null;
+let provider: LLMProvider | null = null;
+let configuredModel = "claude-sonnet-4-20250514";
 
-function getClient(): Anthropic {
-  if (!client) {
-    client = new Anthropic();
-  }
-  return client;
+export function initMessageRouter(llmProvider: LLMProvider, model: string) {
+  provider = llmProvider;
+  configuredModel = model;
+  log.info("Message router initialized", { model });
 }
 
 async function buildJobsContext(): Promise<string> {
@@ -139,14 +139,22 @@ async function buildJobsContext(): Promise<string> {
 }
 
 export async function routeMessage(userMessage: string, slackUserId: string): Promise<RoutedAction> {
+  if (!provider) {
+    log.warn("LLM provider not initialized, treating as job creation");
+    return {
+      command: "create_job",
+      args: { task_text: userMessage },
+      reply: "Got it — I'll take a look.",
+    };
+  }
+
   const jobsContext = await buildJobsContext();
   const systemPrompt = STEVE_SYSTEM_PROMPT.replace("{JOBS_CONTEXT}", jobsContext);
 
   try {
-    const anthropic = getClient();
-    const response = await anthropic.messages.create({
-      model: "claude-sonnet-4-20250514",
-      max_tokens: 1024,
+    const response = await provider.chat({
+      model: configuredModel,
+      maxTokens: 1024,
       system: systemPrompt,
       tools: TOOLS,
       messages: [
@@ -157,20 +165,17 @@ export async function routeMessage(userMessage: string, slackUserId: string): Pr
       ],
     });
 
-    let reply = "";
+    let reply = response.text;
     let command: RoutedAction["command"] = "chat";
     let args: Record<string, any> = {};
 
-    for (const block of response.content) {
-      if (block.type === "text") {
-        reply += block.text;
-      } else if (block.type === "tool_use") {
-        command = block.name as RoutedAction["command"];
-        args = (block.input as Record<string, any>) || {};
-      }
+    if (response.toolCalls.length > 0) {
+      const tc = response.toolCalls[0];
+      command = tc.name as RoutedAction["command"];
+      args = tc.input;
     }
 
-    // If no text block, check tool args for a response (e.g. chat tool)
+    // If no text, check tool args for a response (e.g. chat tool)
     if (!reply && args.response) {
       reply = args.response;
     }
