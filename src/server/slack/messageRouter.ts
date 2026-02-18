@@ -5,23 +5,28 @@ import type { LLMProvider, ToolDefinition } from "../llm/index.js";
 const log = createLogger("server:slack:router");
 
 export interface RoutedAction {
-  command: "create_job" | "job_status" | "cancel_job" | "retry_job" | "list_jobs" | "chat";
+  command: "create_job" | "job_status" | "cancel_job" | "retry_job" | "list_jobs" | "chat" | "no_op";
   args: Record<string, any>;
   reply: string;
 }
 
 const STEVE_SYSTEM_PROMPT = `You are Steve, a senior staff engineer / tech lead. You're sharp, slightly snarky, but ultimately helpful and competent. You speak concisely — no fluff. You have a dry sense of humor.
 
-You are the interface for "Son of Steve", a coding agent orchestrator. When someone @-mentions you in Slack, you decide what they want and take action.
+You are the interface for "Son of Steve", a coding agent orchestrator. People interact with you in Slack threads.
+
+## Thread Context
+
+You will receive the full conversation history from the Slack thread. Messages are labeled with the Slack user ID of who sent them. Messages from you (the bot) are labeled as "[bot]". Use this context to understand the conversation flow and respond appropriately.
 
 ## Available Actions (use the tools)
 
-- **create_job**: The user wants you to write code, fix a bug, implement a feature, etc. This is the most common action. Extract the task description, and optionally a repo hint, test level, and reviewers.
+- **create_job**: The user wants you to write code, fix a bug, implement a feature, etc. This is the most common action. Extract the task description, and optionally a repo hint, test level, and reviewers. Incorporate relevant context from the thread into the task description.
 - **job_status**: The user is asking about the status of a specific job. Extract the task_id (can be partial).
 - **cancel_job**: The user wants to cancel a running job. Extract the task_id.
 - **retry_job**: The user wants to retry a failed job. Extract the task_id.
 - **list_jobs**: The user wants to see recent jobs. Optionally extract a limit.
 - **chat**: The user is just talking, asking a question about you, saying hi, or their message doesn't map to any action. Just respond conversationally as Steve.
+- **no_op**: The latest message in the thread is NOT directed at you and doesn't require your response. Use this when people are having a side conversation in the thread, or when someone replies to someone else and it's clear the bot shouldn't chime in. When in doubt between chat and no_op, prefer no_op — don't be annoying.
 
 ## Guidelines
 
@@ -30,6 +35,8 @@ You are the interface for "Son of Steve", a coding agent orchestrator. When some
 - If someone asks what you can do, explain your capabilities naturally — don't just dump a help menu.
 - Reference job details from the context provided when answering status questions.
 - For create_job, clean up the task text — remove any @mentions, modifiers, and conversational fluff to extract just the actual task.
+- If the latest message is clearly not addressed to you (e.g., two humans talking to each other in the thread), use no_op.
+- If someone @-mentions you directly, always respond — never no_op a direct mention.
 
 ## Recent Jobs Context
 {JOBS_CONTEXT}
@@ -109,6 +116,17 @@ const TOOLS: ToolDefinition[] = [
       required: ["response"],
     },
   },
+  {
+    name: "no_op",
+    description: "The latest message does not require a response from the bot. Use when the message is not directed at you.",
+    parameters: {
+      type: "object",
+      properties: {
+        reason: { type: "string", description: "Brief reason why no response is needed" },
+      },
+      required: ["reason"],
+    },
+  },
 ];
 
 let provider: LLMProvider | null = null;
@@ -138,7 +156,18 @@ async function buildJobsContext(): Promise<string> {
   }
 }
 
-export async function routeMessage(userMessage: string, slackUserId: string): Promise<RoutedAction> {
+export interface ThreadMessage {
+  user: string;
+  text: string;
+  ts: string;
+  isBot: boolean;
+}
+
+export async function routeMessage(
+  userMessage: string,
+  slackUserId: string,
+  threadMessages?: ThreadMessage[],
+): Promise<RoutedAction> {
   if (!provider) {
     log.warn("LLM provider not initialized, treating as job creation");
     return {
@@ -151,18 +180,31 @@ export async function routeMessage(userMessage: string, slackUserId: string): Pr
   const jobsContext = await buildJobsContext();
   const systemPrompt = STEVE_SYSTEM_PROMPT.replace("{JOBS_CONTEXT}", jobsContext);
 
+  // Build message history from thread context
+  const messages: { role: "user" | "assistant"; content: string }[] = [];
+  if (threadMessages && threadMessages.length > 0) {
+    for (const msg of threadMessages) {
+      if (msg.isBot) {
+        messages.push({ role: "assistant", content: msg.text });
+      } else {
+        messages.push({ role: "user", content: `[${msg.user}]: ${msg.text}` });
+      }
+    }
+  } else {
+    // Single message, no thread context
+    messages.push({
+      role: "user",
+      content: `<slack_user_id>${slackUserId}</slack_user_id>\n<message>${userMessage}</message>`,
+    });
+  }
+
   try {
     const response = await provider.chat({
       model: configuredModel,
       maxTokens: 1024,
       system: systemPrompt,
       tools: TOOLS,
-      messages: [
-        {
-          role: "user",
-          content: `<slack_user_id>${slackUserId}</slack_user_id>\n<message>${userMessage}</message>`,
-        },
-      ],
+      messages,
     });
 
     let reply = response.text;

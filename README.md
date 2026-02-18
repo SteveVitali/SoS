@@ -64,13 +64,20 @@ The web UI is available at `http://localhost:3000` (or `http://localhost:5173` i
 2. Under **Socket Mode**, enable it. Generate an **App-Level Token** with `connections:write` scope → this is your `SLACK_APP_TOKEN` (`xapp-...`).
 3. Under **Event Subscriptions**:
    - **Toggle "Enable Events" to ON** (this is off by default and easy to miss!)
-   - Under "Subscribe to bot events", click "Add Bot User Event" and add `app_mention`
+   - Under "Subscribe to bot events", click "Add Bot User Event" and add these events:
+     - `app_mention` — **(required)** triggers when someone @-mentions the bot
+     - `message.channels` — **(required for thread context)** receives follow-up replies in public channel threads
+     - `message.groups` — **(required for thread context in private channels)** receives follow-up replies in private channel threads
    - Save changes
+
+   > **Why `message.*` events?** Without these, the bot only sees the initial @-mention. With them, the bot can follow the full conversation in a thread — reading earlier messages for context, responding to follow-ups, and deciding whether a reply is directed at it or is a side conversation between humans.
+
 4. Under **OAuth & Permissions**, add these Bot Token Scopes:
-   - `app_mentions:read`
-   - `chat:write`
-   - `channels:history` (optional, for thread fetching)
-   - `groups:history` (optional, for private channels)
+   - `app_mentions:read` — receive @-mentions
+   - `chat:write` — post replies
+   - `channels:history` — **(required)** fetch thread messages in public channels
+   - `groups:history` — **(required)** fetch thread messages in private channels
+   - `users:read` — **(recommended)** resolve Slack user IDs to display names in the UI
 5. Install the app to your workspace. Copy the **Bot User OAuth Token** → `SLACK_BOT_TOKEN` (`xoxb-...`).
 6. Find the bot's user ID (choose one method):
    - **Via API** (easiest): `curl -s -H "Authorization: Bearer xoxb-YOUR-TOKEN" https://slack.com/api/auth.test | jq .user_id`

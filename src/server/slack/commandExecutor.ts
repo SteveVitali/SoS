@@ -151,6 +151,9 @@ export async function executeCommand(
       };
     }
 
+    case "no_op":
+      return { reply: "", actionTaken: `no_op: ${args.reason || "not relevant"}` };
+
     case "chat":
     default:
       return { reply, actionTaken: "chat" };

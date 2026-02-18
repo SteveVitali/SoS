@@ -84,7 +84,7 @@ async function main() {
   // Start Slack Socket Mode (only if tokens are configured)
   if (slackEnabled) {
     try {
-      await startSlackSocketMode(config);
+      await startSlackSocketMode(config, slackPoster);
     } catch (err: any) {
       log.error("Failed to start Slack Socket Mode", { error: err.message });
       log.warn("Server will continue without Slack integration");
