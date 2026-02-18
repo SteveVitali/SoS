@@ -1,8 +1,8 @@
 import { createLogger } from "../shared/logger.js";
+import type { WorkerApiClient } from "./apiClient.js";
 import type { WorkerConfig } from "./config.js";
-import { WorkerApiClient } from "./apiClient.js";
-import { HeartbeatManager } from "./heartbeat.js";
 import { runJob } from "./executor/runJob.js";
+import { HeartbeatManager } from "./heartbeat.js";
 
 const log = createLogger("worker:poller");
 
@@ -10,13 +10,13 @@ export async function startWorkerLoop(
   workerId: string,
   config: WorkerConfig,
   api: WorkerApiClient,
-  signal: AbortSignal
+  signal: AbortSignal,
 ): Promise<void> {
   const heartbeatManager = new HeartbeatManager(
     api,
     workerId,
     config.leaseSeconds,
-    15_000 // heartbeat every 15s
+    15_000, // heartbeat every 15s
   );
 
   log.info("Worker loop started", { workerId, requestedBy: config.requestedBy });
@@ -39,7 +39,7 @@ export async function startWorkerLoop(
         target.task_id,
         config.requestedBy,
         workerId,
-        config.leaseSeconds
+        config.leaseSeconds,
       );
 
       if (!claimed) {
@@ -70,7 +70,9 @@ export async function startWorkerLoop(
               message: `Worker-level failure: ${jobErr.message}`,
             },
           });
-        } catch { /* truly nothing we can do */ }
+        } catch {
+          /* truly nothing we can do */
+        }
       } finally {
         heartbeatManager.stop(claimed.task_id);
       }
@@ -90,9 +92,13 @@ export async function startWorkerLoop(
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
   return new Promise((resolve) => {
     const timer = setTimeout(resolve, ms);
-    signal?.addEventListener("abort", () => {
-      clearTimeout(timer);
-      resolve();
-    }, { once: true });
+    signal?.addEventListener(
+      "abort",
+      () => {
+        clearTimeout(timer);
+        resolve();
+      },
+      { once: true },
+    );
   });
 }

@@ -1,5 +1,5 @@
 import { createLogger } from "../shared/logger.js";
-import { WorkerApiClient } from "./apiClient.js";
+import type { WorkerApiClient } from "./apiClient.js";
 
 const log = createLogger("worker:heartbeat");
 
@@ -10,7 +10,7 @@ export class HeartbeatManager {
     private api: WorkerApiClient,
     private nodeId: string,
     private extendSeconds: number,
-    private intervalMs: number
+    private intervalMs: number,
   ) {}
 
   start(taskId: string): void {

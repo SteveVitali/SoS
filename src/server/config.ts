@@ -24,7 +24,8 @@ export function loadServerConfig() {
   return {
     port: optionalInt("SOS_SERVER_PORT", 3000),
     internalApiToken: required("SOS_INTERNAL_API_TOKEN"),
-    mongoUri: process.env.MONGO_URI ||
+    mongoUri:
+      process.env.MONGO_URI ||
       `mongodb+srv://${optional("MONGO_USERNAME", "places-team")}:${required("MONGO_PASSWORD")}@${optional("MONGO_HOST", "places-crawl.i6g7m.mongodb.net")}`,
     mongoDb: optional("MONGO_DB", "son_of_steve"),
     slackAppToken: process.env.SLACK_APP_TOKEN || "",

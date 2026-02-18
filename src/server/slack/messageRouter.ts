@@ -1,12 +1,19 @@
 import { createLogger } from "../../shared/logger.js";
-import { queryJobs } from "../jobs/jobService.js";
-import type { LLMProvider, ToolDefinition, ContentBlock } from "../llm/index.js";
 import type { JobAttachment } from "../../shared/types.js";
+import { queryJobs } from "../jobs/jobService.js";
+import type { ContentBlock, LLMProvider, ToolDefinition } from "../llm/index.js";
 
 const log = createLogger("server:slack:router");
 
 export interface RoutedAction {
-  command: "create_job" | "job_status" | "cancel_job" | "retry_job" | "list_jobs" | "chat" | "no_op";
+  command:
+    | "create_job"
+    | "job_status"
+    | "cancel_job"
+    | "retry_job"
+    | "list_jobs"
+    | "chat"
+    | "no_op";
   args: Record<string, any>;
   reply: string;
 }
@@ -51,7 +58,10 @@ const TOOLS: ToolDefinition[] = [
       type: "object",
       properties: {
         task_text: { type: "string", description: "Clean task description" },
-        repo_hint: { type: "string", description: "Repository ID hint (e.g. 'fsq-graph', 'foursquare.web')" },
+        repo_hint: {
+          type: "string",
+          description: "Repository ID hint (e.g. 'fsq-graph', 'foursquare.web')",
+        },
         test_level: { type: "string", enum: ["fast", "full", "none"], description: "Test level" },
         reviewers: {
           type: "array",
@@ -108,7 +118,8 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: "chat",
-    description: "Just respond conversationally — no action needed. Put your full response in the 'response' field.",
+    description:
+      "Just respond conversationally — no action needed. Put your full response in the 'response' field.",
     parameters: {
       type: "object",
       properties: {
@@ -119,7 +130,8 @@ const TOOLS: ToolDefinition[] = [
   },
   {
     name: "no_op",
-    description: "The latest message does not require a response from the bot. Use when the message is not directed at you.",
+    description:
+      "The latest message does not require a response from the bot. Use when the message is not directed at you.",
     parameters: {
       type: "object",
       properties: {
@@ -265,7 +277,11 @@ export async function routeMessage(
       reply = "On it.";
     }
 
-    log.info("Message routed", { command, args: JSON.stringify(args).slice(0, 200), reply: reply.slice(0, 100) });
+    log.info("Message routed", {
+      command,
+      args: JSON.stringify(args).slice(0, 200),
+      reply: reply.slice(0, 100),
+    });
 
     return { command, reply, args };
   } catch (err: any) {

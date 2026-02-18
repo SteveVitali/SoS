@@ -1,22 +1,22 @@
-import { execSync } from "child_process";
-import { existsSync, mkdirSync, readdirSync } from "fs";
-import path from "path";
+import { execSync } from "node:child_process";
+import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import path from "node:path";
 import { createLogger } from "../../shared/logger.js";
 import type { RepoEntry } from "./repoRegistry.js";
 
 const log = createLogger("worker:worktreePool");
 
 export interface WorktreeSlot {
-  slotName: string;      // e.g. "fsq-graph-n-1"
-  slotIndex: number;     // 1-based
-  worktreePath: string;  // absolute path on disk
+  slotName: string; // e.g. "fsq-graph-n-1"
+  slotIndex: number; // 1-based
+  worktreePath: string; // absolute path on disk
   repoId: string;
 }
 
 interface SlotState {
   slot: WorktreeSlot;
-  inUse: boolean;         // true when a job is actively using it
-  taskId?: string;        // which task_id currently holds the slot
+  inUse: boolean; // true when a job is actively using it
+  taskId?: string; // which task_id currently holds the slot
 }
 
 /**
@@ -37,12 +37,7 @@ class WorktreePoolImpl {
    * Try to acquire a worktree slot for the given repo.
    * Returns the slot info or null if all slots are occupied and max is reached.
    */
-  acquire(
-    repo: RepoEntry,
-    clonePath: string,
-    taskId: string,
-    branch: string
-  ): WorktreeSlot | null {
+  acquire(repo: RepoEntry, clonePath: string, taskId: string, branch: string): WorktreeSlot | null {
     const states = this.getOrCreateStates(repo, clonePath);
 
     // 1) Find a free existing slot
@@ -112,7 +107,7 @@ class WorktreePoolImpl {
 
   // --- Internal ---
 
-  private getOrCreateStates(repo: RepoEntry, clonePath: string): SlotState[] {
+  private getOrCreateStates(repo: RepoEntry, _clonePath: string): SlotState[] {
     let states = this.slots.get(repo.id);
     if (states) return states;
 
@@ -121,14 +116,12 @@ class WorktreePoolImpl {
     const worktreeDir = path.join(this.workspaceRoot, "worktrees");
     if (existsSync(worktreeDir)) {
       const prefix = `${repo.id}-n-`;
-      const entries = readdirSync(worktreeDir).filter(
-        (e) => e.startsWith(prefix)
-      );
+      const entries = readdirSync(worktreeDir).filter((e) => e.startsWith(prefix));
       entries.sort(); // ensure deterministic order
       for (const entry of entries) {
         const idxStr = entry.slice(prefix.length);
         const idx = parseInt(idxStr, 10);
-        if (!isNaN(idx)) {
+        if (!Number.isNaN(idx)) {
           const worktreePath = path.join(worktreeDir, entry);
           states.push({
             slot: {
@@ -154,14 +147,10 @@ class WorktreePoolImpl {
     repo: RepoEntry,
     clonePath: string,
     slotIndex: number,
-    branch: string
+    branch: string,
   ): WorktreeSlot {
     const slotName = `${repo.id}-n-${slotIndex}`;
-    const worktreePath = path.join(
-      this.workspaceRoot,
-      "worktrees",
-      slotName
-    );
+    const worktreePath = path.join(this.workspaceRoot, "worktrees", slotName);
 
     mkdirSync(path.dirname(worktreePath), { recursive: true });
 
@@ -171,7 +160,7 @@ class WorktreePoolImpl {
     log.info("Creating worktree slot", { slotName, worktreePath, branch });
     this.gitExec(
       `git worktree add ${worktreePath} -b ${branch} origin/${repo.default_branch}`,
-      clonePath
+      clonePath,
     );
 
     return { slotName, slotIndex, worktreePath, repoId: repo.id };
@@ -181,7 +170,7 @@ class WorktreePoolImpl {
     slot: WorktreeSlot,
     repo: RepoEntry,
     clonePath: string,
-    branch: string
+    branch: string,
   ): void {
     const { worktreePath } = slot;
 
@@ -192,7 +181,7 @@ class WorktreePoolImpl {
       mkdirSync(path.dirname(worktreePath), { recursive: true });
       this.gitExec(
         `git worktree add ${worktreePath} -b ${branch} origin/${repo.default_branch}`,
-        clonePath
+        clonePath,
       );
       return;
     }
@@ -200,10 +189,7 @@ class WorktreePoolImpl {
     log.info("Resetting worktree slot", { slot: slot.slotName, branch });
 
     // Detach HEAD and reset to remote default branch (clone was already fetched by ensureClone)
-    this.gitExec(
-      `git checkout origin/${repo.default_branch} --detach`,
-      worktreePath
-    );
+    this.gitExec(`git checkout origin/${repo.default_branch} --detach`, worktreePath);
 
     // Clean working tree
     if (repo.clean_mode === "full") {
@@ -218,7 +204,9 @@ class WorktreePoolImpl {
     // Delete old local branch if it exists, then create fresh one
     try {
       this.gitExec(`git branch -D ${branch}`, worktreePath);
-    } catch { /* branch may not exist */ }
+    } catch {
+      /* branch may not exist */
+    }
 
     this.gitExec(`git checkout -b ${branch}`, worktreePath);
   }

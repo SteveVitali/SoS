@@ -1,7 +1,7 @@
 import { WebClient } from "@slack/web-api";
 import { createLogger } from "../../shared/logger.js";
 import type { JobDoc } from "../../shared/types.js";
-import { fmtQueued, fmtClaimed, fmtDone, fmtFailed, fmtCanceled, fmtEvent } from "./formatting.js";
+import { fmtCanceled, fmtClaimed, fmtDone, fmtEvent, fmtFailed, fmtQueued } from "./formatting.js";
 
 const log = createLogger("server:slack");
 
@@ -81,7 +81,11 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
       await postToThread(job.slack.channel_id, job.slack.thread_ts, text);
     },
 
-    async fetchThread(channelId: string, threadTs: string, limit = 20): Promise<SlackThreadMessage[]> {
+    async fetchThread(
+      channelId: string,
+      threadTs: string,
+      limit = 20,
+    ): Promise<SlackThreadMessage[]> {
       try {
         const result = await client.conversations.replies({
           channel: channelId,
@@ -92,13 +96,15 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
           user: m.user,
           text: m.text?.slice(0, 2000) || "",
           ts: m.ts,
-          files: (m.files || []).map((f: any) => ({
-            id: f.id,
-            name: f.name || "unknown",
-            mimetype: f.mimetype || "application/octet-stream",
-            size: f.size || 0,
-            url_private: f.url_private || "",
-          })).filter((f: SlackFileInfo) => f.url_private),
+          files: (m.files || [])
+            .map((f: any) => ({
+              id: f.id,
+              name: f.name || "unknown",
+              mimetype: f.mimetype || "application/octet-stream",
+              size: f.size || 0,
+              url_private: f.url_private || "",
+            }))
+            .filter((f: SlackFileInfo) => f.url_private),
         }));
       } catch (err: any) {
         log.error("Failed to fetch Slack thread", { error: err.message });

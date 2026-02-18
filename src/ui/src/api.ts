@@ -45,7 +45,10 @@ export interface Job {
   branch_name?: string;
   worktree_slot?: string;
   pr_urls?: string[];
-  ci?: { provider?: string; runs?: Array<{ url: string; status: string; conclusion?: string; updated_at?: string }> };
+  ci?: {
+    provider?: string;
+    runs?: Array<{ url: string; status: string; conclusion?: string; updated_at?: string }>;
+  };
   result_summary?: string;
   error?: { code?: string; message: string; details?: any };
   events?: Array<{ at: string; node_id?: string; type: string; payload?: any }>;
@@ -106,14 +109,10 @@ export interface SlackUser {
   avatar?: string;
 }
 
-export async function resolveSlackUsers(
-  userIds: string[]
-): Promise<Record<string, SlackUser>> {
+export async function resolveSlackUsers(userIds: string[]): Promise<Record<string, SlackUser>> {
   if (userIds.length === 0) return {};
-  const res = await request<{ users: Record<string, SlackUser> }>(
-    "POST",
-    "/slack/users",
-    { user_ids: userIds }
-  );
+  const res = await request<{ users: Record<string, SlackUser> }>("POST", "/slack/users", {
+    user_ids: userIds,
+  });
   return res.users;
 }

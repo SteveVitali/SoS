@@ -1,10 +1,10 @@
-import { Filter, Sort } from "mongodb";
-import { getJobsCollection } from "../mongo.js";
-import type { JobDoc, JobStatus, WebJobsQuery } from "../../shared/types.js";
-import { nowDate, addSeconds } from "../../shared/time.js";
+import type { Filter, Sort } from "mongodb";
 import { createLogger } from "../../shared/logger.js";
+import { addSeconds, nowDate } from "../../shared/time.js";
+import type { JobDoc, JobStatus, WebJobsQuery } from "../../shared/types.js";
+import { getJobsCollection } from "../mongo.js";
 
-const log = createLogger("server:jobRepo");
+const _log = createLogger("server:jobRepo");
 
 export async function insertJob(doc: JobDoc): Promise<JobDoc> {
   const col = getJobsCollection();
@@ -35,18 +35,14 @@ export async function findPollableJobs(requestedBy: string, limit: number): Prom
       },
     ],
   };
-  return col
-    .find(filter)
-    .sort({ created_at: 1 })
-    .limit(limit)
-    .toArray() as Promise<JobDoc[]>;
+  return col.find(filter).sort({ created_at: 1 }).limit(limit).toArray() as Promise<JobDoc[]>;
 }
 
 export async function atomicClaim(
   taskId: string,
   requestedBy: string,
   nodeId: string,
-  leaseSeconds: number
+  leaseSeconds: number,
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
@@ -75,14 +71,14 @@ export async function atomicClaim(
       $inc: { attempt: 1 },
       $setOnInsert: { run_started_at: now },
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
 
   // $setOnInsert doesn't work on update — use a second pass if run_started_at is not set
   if (result && !result.run_started_at) {
     await col.updateOne(
       { task_id: taskId, run_started_at: { $exists: false } },
-      { $set: { run_started_at: now } }
+      { $set: { run_started_at: now } },
     );
     result.run_started_at = now;
   }
@@ -93,7 +89,7 @@ export async function atomicClaim(
 export async function updateHeartbeat(
   taskId: string,
   nodeId: string,
-  extendSeconds: number
+  extendSeconds: number,
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
@@ -112,7 +108,7 @@ export async function updateHeartbeat(
         updated_at: now,
       },
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
 
   return result as JobDoc | null;
@@ -120,7 +116,7 @@ export async function updateHeartbeat(
 
 export async function appendEvent(
   taskId: string,
-  event: { at: Date; node_id?: string; type: string; payload?: any }
+  event: { at: Date; node_id?: string; type: string; payload?: any },
 ): Promise<void> {
   const col = getJobsCollection();
   // Truncate payload if too large (safely handle slice breaking JSON)
@@ -128,9 +124,10 @@ export async function appendEvent(
   if (payload) {
     try {
       const serialized = JSON.stringify(payload);
-      payload = serialized.length > 10000
-        ? { _truncated: true, preview: serialized.slice(0, 2000) }
-        : payload;
+      payload =
+        serialized.length > 10000
+          ? { _truncated: true, preview: serialized.slice(0, 2000) }
+          : payload;
     } catch {
       payload = { _error: "unserializable payload" };
     }
@@ -141,19 +138,19 @@ export async function appendEvent(
     {
       $push: { events: { ...event, payload } } as any,
       $set: { updated_at: nowDate() },
-    }
+    },
   );
 }
 
 export async function updateJobFields(
   taskId: string,
-  fields: Partial<JobDoc>
+  fields: Partial<JobDoc>,
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const result = await col.findOneAndUpdate(
     { task_id: taskId },
     { $set: { ...fields, updated_at: nowDate() } },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
   return result as JobDoc | null;
 }
@@ -161,7 +158,7 @@ export async function updateJobFields(
 export async function completeJob(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any }
+  data: { result_summary: string; pr_urls?: string[]; ci?: any },
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
@@ -182,7 +179,7 @@ export async function completeJob(
       },
       $unset: { claimed_by: "", lease_expires_at: "" },
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
   return result as JobDoc | null;
 }
@@ -190,7 +187,7 @@ export async function completeJob(
 export async function failJob(
   taskId: string,
   nodeId: string,
-  data: { error: any; pr_urls?: string[]; ci?: any }
+  data: { error: any; pr_urls?: string[]; ci?: any },
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
@@ -211,15 +208,12 @@ export async function failJob(
       },
       $unset: { claimed_by: "", lease_expires_at: "" },
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
   return result as JobDoc | null;
 }
 
-export async function requeueJob(
-  taskId: string,
-  nodeId: string
-): Promise<JobDoc | null> {
+export async function requeueJob(taskId: string, nodeId: string): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
   const result = await col.findOneAndUpdate(
@@ -235,7 +229,7 @@ export async function requeueJob(
       },
       $unset: { claimed_by: "", lease_expires_at: "", heartbeat_at: "" },
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
   return result as JobDoc | null;
 }
@@ -255,7 +249,7 @@ export async function cancelJob(taskId: string): Promise<JobDoc | null> {
         updated_at: now,
       },
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
   return result as JobDoc | null;
 }
@@ -273,7 +267,7 @@ export async function softDeleteJob(taskId: string): Promise<JobDoc | null> {
         updated_at: nowDate(),
       },
     },
-    { returnDocument: "after" }
+    { returnDocument: "after" },
   );
   return result as JobDoc | null;
 }
@@ -302,7 +296,9 @@ export async function queryJobs(query: WebJobsQuery): Promise<{ jobs: JobDoc[]; 
   const offset = query.offset || 0;
 
   const ALLOWED_SORT_FIELDS = ["created_at", "updated_at", "status", "requested_by"];
-  const sortField = ALLOWED_SORT_FIELDS.includes(query.sort_by || "") ? query.sort_by! : "created_at";
+  const sortField = ALLOWED_SORT_FIELDS.includes(query.sort_by || "")
+    ? query.sort_by!
+    : "created_at";
   const sortOrder = query.sort_order === "asc" ? 1 : -1;
   const sort: Sort = { [sortField]: sortOrder };
 

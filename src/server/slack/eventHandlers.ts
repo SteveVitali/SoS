@@ -1,11 +1,11 @@
 import { createLogger } from "../../shared/logger.js";
-import { createJobFromSlack } from "../jobs/jobService.js";
-import type { ServerConfig } from "../config.js";
-import { routeMessage } from "./messageRouter.js";
-import type { ThreadMessage } from "./messageRouter.js";
-import { executeCommand } from "./commandExecutor.js";
-import type { SlackPoster, SlackThreadMessage, SlackFileInfo } from "./slackClient.js";
 import type { JobAttachment } from "../../shared/types.js";
+import type { ServerConfig } from "../config.js";
+import { createJobFromSlack } from "../jobs/jobService.js";
+import { executeCommand } from "./commandExecutor.js";
+import type { ThreadMessage } from "./messageRouter.js";
+import { routeMessage } from "./messageRouter.js";
+import type { SlackFileInfo, SlackPoster, SlackThreadMessage } from "./slackClient.js";
 
 const log = createLogger("server:slack:events");
 
@@ -17,6 +17,7 @@ interface SlackMentionEvent {
   ts: string;
   thread_ts?: string;
   event_ts: string;
+  files?: Array<{ id: string; name: string; mimetype: string; size: number; url_private: string }>;
 }
 
 export function parseModifiers(text: string): {
@@ -47,7 +48,7 @@ export function parseModifiers(text: string): {
   return result;
 }
 
-const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const _IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 async function fetchThreadContext(
   slackPoster: SlackPoster | undefined,
@@ -169,15 +170,43 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
 
     if (event.thread_ts && slackPoster) {
       const { messages, rawMessages } = await fetchThreadContext(
-        slackPoster, event.channel, threadTs, config.slackBotUserId, config.maxThreadMessages,
+        slackPoster,
+        event.channel,
+        threadTs,
+        config.slackBotUserId,
+        config.maxThreadMessages,
       );
       if (messages.length > 0) threadMessages = messages;
 
       // Download files from thread, newest-first, up to budget
       const downloaded = await downloadThreadAttachments(
-        slackPoster, rawMessages, config.maxAttachmentSizeMb,
+        slackPoster,
+        rawMessages,
+        config.maxAttachmentSizeMb,
       );
       if (downloaded.length > 0) attachments = downloaded;
+    } else if (event.files && event.files.length > 0 && slackPoster) {
+      // Top-level message with files — build a synthetic message list
+      const eventFiles: SlackFileInfo[] = event.files
+        .filter((f) => f.url_private)
+        .map((f) => ({
+          id: f.id,
+          name: f.name || "unknown",
+          mimetype: f.mimetype || "application/octet-stream",
+          size: f.size || 0,
+          url_private: f.url_private,
+        }));
+      if (eventFiles.length > 0) {
+        const syntheticMessages: SlackThreadMessage[] = [
+          { user: event.user, text: cleanText, ts: event.ts, files: eventFiles },
+        ];
+        const downloaded = await downloadThreadAttachments(
+          slackPoster,
+          syntheticMessages,
+          config.maxAttachmentSizeMb,
+        );
+        if (downloaded.length > 0) attachments = downloaded;
+      }
     }
 
     try {
@@ -232,4 +261,3 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
     }
   };
 }
-

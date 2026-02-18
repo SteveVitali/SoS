@@ -1,4 +1,4 @@
-import { execSync, execFileSync } from "child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
 
 const log = createLogger("worker:git");
@@ -11,6 +11,25 @@ function exec(cmd: string, cwd: string): string {
 export function hasChanges(worktreePath: string): boolean {
   const status = exec("git status --porcelain", worktreePath);
   return status.length > 0;
+}
+
+export function hasNewCommits(worktreePath: string, baseBranch: string): boolean {
+  try {
+    const commits = exec(`git log origin/${baseBranch}..HEAD --oneline`, worktreePath);
+    return commits.length > 0;
+  } catch {
+    return false;
+  }
+}
+
+export function hasUnpushedCommits(worktreePath: string, branch: string): boolean {
+  try {
+    const commits = exec(`git log origin/${branch}..HEAD --oneline`, worktreePath);
+    return commits.length > 0;
+  } catch {
+    // Remote branch may not exist yet — that means everything is unpushed
+    return true;
+  }
 }
 
 export function commitAll(worktreePath: string, message: string): string {

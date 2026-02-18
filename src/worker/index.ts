@@ -1,10 +1,10 @@
 import "dotenv/config";
-import { setMaxListeners } from "events";
+import { setMaxListeners } from "node:events";
 import { createLogger } from "../shared/logger.js";
-import { loadWorkerConfig } from "./config.js";
 import { WorkerApiClient } from "./apiClient.js";
-import { startWorkerLoop } from "./poller.js";
+import { loadWorkerConfig } from "./config.js";
 import { worktreePool } from "./executor/worktreePool.js";
+import { startWorkerLoop } from "./poller.js";
 
 const log = createLogger("worker");
 

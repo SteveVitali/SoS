@@ -1,26 +1,26 @@
 import { v4 as uuidv4 } from "uuid";
-import { nowDate } from "../../shared/time.js";
 import { createLogger } from "../../shared/logger.js";
+import { nowDate } from "../../shared/time.js";
 import type { JobDoc, JobEvent } from "../../shared/types.js";
 import { SLACK_NOTIFY_EVENTS } from "../../shared/types.js";
+import type { SlackPoster } from "../slack/slackClient.js";
+import { checkIdempotent } from "./idempotency.js";
+import type { CreateJobFromSlack, CreateJobFromWeb } from "./jobModel.js";
 import {
-  insertJob,
+  appendEvent,
   findJobByTaskId,
   findPollableJobs,
-  appendEvent,
-  updateJobFields,
+  getDistinctRequestedBy,
+  insertJob,
+  queryJobs,
+  cancelJob as repoCancelJob,
   completeJob as repoCompleteJob,
   failJob as repoFailJob,
-  cancelJob as repoCancelJob,
   requeueJob as repoRequeueJob,
   softDeleteJob as repoSoftDeleteJob,
-  queryJobs,
-  getDistinctRequestedBy,
+  updateJobFields,
 } from "./jobRepo.js";
-import { checkIdempotent } from "./idempotency.js";
 import { claimJob, extendLease } from "./lease.js";
-import type { CreateJobFromSlack, CreateJobFromWeb } from "./jobModel.js";
-import type { SlackPoster } from "../slack/slackClient.js";
 
 const log = createLogger("server:jobService");
 
@@ -31,11 +31,16 @@ export function setSlackPoster(poster: SlackPoster) {
 }
 
 // --- Create from Slack ---
-export async function createJobFromSlack(input: CreateJobFromSlack): Promise<{ job: JobDoc; created: boolean }> {
+export async function createJobFromSlack(
+  input: CreateJobFromSlack,
+): Promise<{ job: JobDoc; created: boolean }> {
   // Idempotency check
   const existing = await checkIdempotent(input.event_id);
   if (existing) {
-    log.info("Duplicate Slack event, returning existing job", { event_id: input.event_id, task_id: existing.task_id });
+    log.info("Duplicate Slack event, returning existing job", {
+      event_id: input.event_id,
+      task_id: existing.task_id,
+    });
     return { job: existing, created: false };
   }
 
@@ -119,7 +124,12 @@ export async function pollJobs(requestedBy: string, limit: number) {
 }
 
 // --- Claim ---
-export async function claim(taskId: string, requestedBy: string, nodeId: string, leaseSeconds: number) {
+export async function claim(
+  taskId: string,
+  requestedBy: string,
+  nodeId: string,
+  leaseSeconds: number,
+) {
   const job = await claimJob(taskId, requestedBy, nodeId, leaseSeconds);
   if (job && slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
     await slackPoster.postClaimed(job);
@@ -137,7 +147,7 @@ export async function handleWorkerEvent(
   taskId: string,
   nodeId: string,
   type: string,
-  payload?: any
+  payload?: any,
 ) {
   const now = nowDate();
   const event: JobEvent = { at: now, node_id: nodeId, type, payload };
@@ -145,9 +155,7 @@ export async function handleWorkerEvent(
 
   // Fetch job once for field updates and Slack notifications
   const needsJob =
-    type === "PR_CREATED" ||
-    type === "REPO_RESOLVED" ||
-    SLACK_NOTIFY_EVENTS.includes(type);
+    type === "PR_CREATED" || type === "REPO_RESOLVED" || SLACK_NOTIFY_EVENTS.includes(type);
   const job = needsJob ? await findJobByTaskId(taskId) : null;
 
   // Update job fields based on event type
@@ -191,11 +199,16 @@ export async function handleWorkerEvent(
 export async function complete(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any }
+  data: { result_summary: string; pr_urls?: string[]; ci?: any },
 ) {
   const job = await repoCompleteJob(taskId, nodeId, data);
   if (job) {
-    await appendEvent(taskId, { at: nowDate(), node_id: nodeId, type: "DONE", payload: { summary: data.result_summary } });
+    await appendEvent(taskId, {
+      at: nowDate(),
+      node_id: nodeId,
+      type: "DONE",
+      payload: { summary: data.result_summary },
+    });
     if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
       await slackPoster.postDone(job);
     }
@@ -207,11 +220,16 @@ export async function complete(
 export async function fail(
   taskId: string,
   nodeId: string,
-  data: { error: any; pr_urls?: string[]; ci?: any }
+  data: { error: any; pr_urls?: string[]; ci?: any },
 ) {
   const job = await repoFailJob(taskId, nodeId, data);
   if (job) {
-    await appendEvent(taskId, { at: nowDate(), node_id: nodeId, type: "FAILED", payload: data.error });
+    await appendEvent(taskId, {
+      at: nowDate(),
+      node_id: nodeId,
+      type: "FAILED",
+      payload: data.error,
+    });
     if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
       await slackPoster.postFailed(job);
     }
@@ -262,9 +280,7 @@ export async function retry(taskId: string): Promise<JobDoc | null> {
 
   const doc: JobDoc = {
     task_id: newTaskId,
-    source: original.source.event_id
-      ? { type: original.source.type }
-      : original.source,
+    source: original.source.event_id ? { type: original.source.type } : original.source,
     requested_by: original.requested_by,
     status: "QUEUED",
     created_at: now,

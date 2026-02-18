@@ -1,27 +1,27 @@
-import { execSync } from "child_process";
+import { execSync } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
 import { slugify } from "../../shared/slug.js";
 import type { JobDoc } from "../../shared/types.js";
+import type { WorkerApiClient } from "../apiClient.js";
 import type { WorkerConfig } from "../config.js";
-import { WorkerApiClient } from "../apiClient.js";
 import { EventEmitter } from "../events.js";
+import type { CIProvider } from "./ci/ciProvider.js";
+import { GitHubActionsProvider } from "./ci/githubActions.js";
+import { runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
+import { commitAll, getDiff, hasChanges, hasNewCommits, hasUnpushedCommits, push } from "./git.js";
+import { createPr, detectExistingPr } from "./pr.js";
 import { loadRegistry } from "./repoRegistry.js";
 import { resolveRepo } from "./repoResolver.js";
-import { ensureClone } from "./workspace.js";
-import { worktreePool, type WorktreeSlot } from "./worktreePool.js";
-import { runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
-import { hasChanges, commitAll, push, getDiff } from "./git.js";
-import { createPr } from "./pr.js";
-import { GitHubActionsProvider } from "./ci/githubActions.js";
-import type { CIProvider } from "./ci/ciProvider.js";
 import { buildResultSummary } from "./summarize.js";
+import { ensureClone } from "./workspace.js";
+import { type WorktreeSlot, worktreePool } from "./worktreePool.js";
 
 const log = createLogger("worker:runJob");
 
 function runLocalChecks(
   worktreePath: string,
   commands: { lint?: string[]; test_fast?: string[]; test_full?: string[] } | undefined,
-  level: "fast" | "full" | "none"
+  level: "fast" | "full" | "none",
 ): { ok: boolean; summary: string } {
   if (level === "none" || !commands) {
     return { ok: true, summary: "Checks skipped" };
@@ -68,7 +68,7 @@ async function waitForCI(
   provider: CIProvider,
   worktreePath: string,
   branch: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<{ success: boolean; summary: string; url?: string }> {
   const start = Date.now();
   const pollInterval = 30_000; // 30s
@@ -112,7 +112,7 @@ export async function runJob(
   job: JobDoc,
   workerId: string,
   config: WorkerConfig,
-  api: WorkerApiClient
+  api: WorkerApiClient,
 ): Promise<void> {
   const events = new EventEmitter(api, workerId, job.task_id);
   const startTime = Date.now();
@@ -136,7 +136,7 @@ export async function runJob(
     if (!resolved) {
       throw new Error(
         "Could not resolve a repository. Please specify repo=<id> in your request. " +
-          `Available repos: ${[...registry.repos.keys()].join(", ")}`
+          `Available repos: ${[...registry.repos.keys()].join(", ")}`,
       );
     }
 
@@ -157,7 +157,7 @@ export async function runJob(
     acquiredSlot = worktreePool.acquire(repo, clonePath, job.task_id, branch);
     if (!acquiredSlot) {
       throw new RequeueError(
-        `No worktree slots available for ${repo.id} (max: ${repo.max_worktrees})`
+        `No worktree slots available for ${repo.id} (max: ${repo.max_worktrees})`,
       );
     }
 
@@ -187,7 +187,13 @@ export async function runJob(
 
     // 4) Run Claude Code CLI
     await events.emit("CLAUDE_STARTED", {});
-    const claudeResult = await runClaude(worktreePath, job.task_text, repo, threadContext, job.attachments);
+    const claudeResult = await runClaude(
+      worktreePath,
+      job.task_text,
+      repo,
+      threadContext,
+      job.attachments,
+    );
     await events.emit("CLAUDE_FINISHED", {
       summary: claudeResult.summary.slice(0, 1000),
     });
@@ -197,83 +203,117 @@ export async function runJob(
       throw new Error(`Claude Code failed: ${claudeResult.summary.slice(0, 500)}`);
     }
 
-    // 5) Check for changes
-    if (!hasChanges(worktreePath)) {
-      throw new Error("Claude Code produced no changes. Task may already be done or was not actionable.");
-    }
-
-    // 6) Run local checks
-    const testLevel = job.test_level || config.testLevelDefault;
-    await events.emit("LOCAL_CHECKS_STARTED", { level: testLevel });
-    let checks = runLocalChecks(worktreePath, repo.commands, testLevel);
-    await events.emit("LOCAL_CHECKS_FINISHED", { ok: checks.ok, summary: checks.summary.slice(0, 500) });
-    checkTimeout();
-
-    if (!checks.ok && config.requireLocalTestsBeforePr) {
-      // One local fix attempt with Claude
-      log.info("Local checks failed, attempting fix", { task_id: job.task_id });
-      const fixResult = await runClaude(
-        worktreePath,
-        `Fix the following failures:\n${checks.summary}`,
-        repo
+    // 5) Check for changes (uncommitted or already-committed by Claude)
+    const uncommitted = hasChanges(worktreePath);
+    const newCommits = hasNewCommits(worktreePath, repo.default_branch);
+    if (!uncommitted && !newCommits) {
+      throw new Error(
+        "Claude Code produced no changes. Task may already be done or was not actionable.",
       );
-      if (fixResult.success) {
-        checks = runLocalChecks(worktreePath, repo.commands, testLevel);
-      }
-      if (!checks.ok) {
-        throw new Error(`Local checks failed after fix attempt:\n${checks.summary.slice(0, 1000)}`);
-      }
     }
+    log.info("Post-Claude change detection", { uncommitted, newCommits });
 
-    // 7) Self-review
-    await events.emit("SELF_REVIEW_STARTED", {});
-    const diff = getDiff(worktreePath);
-    if (diff) {
-      const reviewResult = await runClaudeReview(worktreePath, repo, diff);
-      await events.emit("SELF_REVIEW_FINISHED", {
-        success: reviewResult.success,
-        summary: reviewResult.summary.slice(0, 1000),
+    // 6) Run local checks (only if there are uncommitted changes to validate)
+    const testLevel = job.test_level || config.testLevelDefault;
+    let checks = { ok: true, summary: "Checks skipped (Claude already committed)" };
+    if (uncommitted) {
+      await events.emit("LOCAL_CHECKS_STARTED", { level: testLevel });
+      checks = runLocalChecks(worktreePath, repo.commands, testLevel);
+      await events.emit("LOCAL_CHECKS_FINISHED", {
+        ok: checks.ok,
+        summary: checks.summary.slice(0, 500),
       });
+      checkTimeout();
 
-      // Re-run local checks after review changes
-      if (reviewResult.success && hasChanges(worktreePath)) {
-        const postReviewChecks = runLocalChecks(worktreePath, repo.commands, testLevel);
-        if (!postReviewChecks.ok) {
-          log.warn("Post-review local checks failed", { summary: postReviewChecks.summary.slice(0, 300) });
+      if (!checks.ok && config.requireLocalTestsBeforePr) {
+        // One local fix attempt with Claude
+        log.info("Local checks failed, attempting fix", { task_id: job.task_id });
+        const fixResult = await runClaude(
+          worktreePath,
+          `Fix the following failures:\n${checks.summary}`,
+          repo,
+        );
+        if (fixResult.success) {
+          checks = runLocalChecks(worktreePath, repo.commands, testLevel);
+        }
+        if (!checks.ok) {
+          throw new Error(
+            `Local checks failed after fix attempt:\n${checks.summary.slice(0, 1000)}`,
+          );
         }
       }
+    }
+
+    // 7) Self-review (only if there are uncommitted changes to review)
+    if (uncommitted || hasChanges(worktreePath)) {
+      await events.emit("SELF_REVIEW_STARTED", {});
+      const diff = getDiff(worktreePath);
+      if (diff) {
+        const reviewResult = await runClaudeReview(worktreePath, repo, diff);
+        await events.emit("SELF_REVIEW_FINISHED", {
+          success: reviewResult.success,
+          summary: reviewResult.summary.slice(0, 1000),
+        });
+
+        // Re-run local checks after review changes
+        if (reviewResult.success && hasChanges(worktreePath)) {
+          const postReviewChecks = runLocalChecks(worktreePath, repo.commands, testLevel);
+          if (!postReviewChecks.ok) {
+            log.warn("Post-review local checks failed", {
+              summary: postReviewChecks.summary.slice(0, 300),
+            });
+          }
+        }
+      } else {
+        await events.emit("SELF_REVIEW_FINISHED", { success: true, summary: "No diff to review" });
+      }
     } else {
-      await events.emit("SELF_REVIEW_FINISHED", { success: true, summary: "No diff to review" });
+      await events.emit("SELF_REVIEW_FINISHED", {
+        success: true,
+        summary: "Skipped (Claude already committed)",
+      });
     }
     checkTimeout();
 
-    // 8) Commit + push
+    // 8) Commit + push (skip steps Claude already performed)
     await events.emit("PHASE_STARTED", { phase: "commit_push" });
     const shortSummary = claudeResult.summary.split("\n")[0]?.slice(0, 60) || "automated changes";
-    const sha = commitAll(
-      worktreePath,
-      `sos: ${shortSummary} (task ${job.task_id.slice(0, 8)})`
-    );
-    await events.emit("COMMIT_CREATED", { sha, message: shortSummary });
+    if (hasChanges(worktreePath)) {
+      const sha = commitAll(worktreePath, `sos: ${shortSummary} (task ${job.task_id.slice(0, 8)})`);
+      await events.emit("COMMIT_CREATED", { sha, message: shortSummary });
+    } else {
+      log.info("Skipping commit — Claude already committed all changes");
+    }
     checkTimeout();
 
-    push(worktreePath, branch);
-    await events.emit("BRANCH_PUSHED", { branch });
+    if (hasUnpushedCommits(worktreePath, branch)) {
+      push(worktreePath, branch);
+      await events.emit("BRANCH_PUSHED", { branch });
+    } else {
+      log.info("Skipping push — branch already up to date with remote");
+    }
     checkTimeout();
 
-    // 9) Create PR
+    // 9) Create PR (detect if Claude already created one)
     await events.emit("PHASE_STARTED", { phase: "create_pr" });
-    const prResult = createPr(
-      worktreePath,
-      repo,
-      branch,
-      job.task_id,
-      job.task_text,
-      checks.summary,
-      job.slack?.permalink,
-      job.reviewers
-    );
-    await events.emit("PR_CREATED", { url: prResult.url });
+    let prUrl = detectExistingPr(worktreePath, branch);
+    if (prUrl) {
+      log.info("Using existing PR created by Claude", { url: prUrl });
+      await events.emit("PR_CREATED", { url: prUrl, claude_created: true });
+    } else {
+      const prResult = createPr(
+        worktreePath,
+        repo,
+        branch,
+        job.task_id,
+        job.task_text,
+        checks.summary,
+        job.slack?.permalink,
+        job.reviewers,
+      );
+      prUrl = prResult.url;
+      await events.emit("PR_CREATED", { url: prUrl });
+    }
     checkTimeout();
 
     // 10) CI monitoring + fix loop
@@ -287,7 +327,7 @@ export async function runJob(
       ciProvider,
       worktreePath,
       branch,
-      10 * 60 * 1000 // 10 min CI timeout
+      10 * 60 * 1000, // 10 min CI timeout
     );
     await events.emit("CI_STATUS", {
       status: ciResult.success ? "success" : "failure",
@@ -324,17 +364,12 @@ export async function runJob(
           if (fixChecks.ok || !config.requireLocalTestsBeforePr) {
             commitAll(
               worktreePath,
-              `sos: CI fix attempt ${ciAttempt} (task ${job.task_id.slice(0, 8)})`
+              `sos: CI fix attempt ${ciAttempt} (task ${job.task_id.slice(0, 8)})`,
             );
             push(worktreePath, branch);
 
             // Wait for CI again
-            const retryResult = await waitForCI(
-              ciProvider,
-              worktreePath,
-              branch,
-              10 * 60 * 1000
-            );
+            const retryResult = await waitForCI(ciProvider, worktreePath, branch, 10 * 60 * 1000);
             await events.emit("CI_STATUS", {
               status: retryResult.success ? "success" : "failure",
               conclusion: retryResult.success ? "success" : "failure",
@@ -354,20 +389,20 @@ export async function runJob(
       worktreePath,
       claudeResult.summary,
       checks.summary,
-      prResult.url
+      prUrl,
     );
 
     if (!ciPassed && ciFixEnabled && ciAttempt > 0) {
       // CI still failing after attempts, but PR exists — complete with warning
       await api.complete(job.task_id, workerId, {
         result_summary: `${resultSummary}\n\n⚠️ CI still failing after ${ciAttempt} fix attempts.`,
-        pr_urls: [prResult.url],
+        pr_urls: [prUrl],
         ci: { provider: ciProvider.name },
       });
     } else {
       await api.complete(job.task_id, workerId, {
         result_summary: resultSummary,
-        pr_urls: [prResult.url],
+        pr_urls: [prUrl],
         ci: { provider: ciProvider.name },
       });
     }
@@ -385,7 +420,9 @@ export async function runJob(
     log.error("Job failed", { task_id: job.task_id, error: err.message });
     try {
       await events.emit("FAILED", { error: err.message });
-    } catch { /* best-effort */ }
+    } catch {
+      /* best-effort */
+    }
 
     try {
       await api.fail(job.task_id, workerId, {

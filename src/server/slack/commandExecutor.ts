@@ -1,13 +1,13 @@
 import { createLogger } from "../../shared/logger.js";
+import type { JobAttachment } from "../../shared/types.js";
 import {
-  createJobFromSlack,
   cancel,
-  retry,
+  createJobFromSlack,
   findJobByTaskId,
   queryJobs,
+  retry,
 } from "../jobs/jobService.js";
 import type { RoutedAction } from "./messageRouter.js";
-import type { JobAttachment } from "../../shared/types.js";
 
 const log = createLogger("server:slack:commands");
 
@@ -39,7 +39,7 @@ async function resolveTaskId(partial: string): Promise<string | null> {
 
 export async function executeCommand(
   action: RoutedAction,
-  ctx: SlackContext
+  ctx: SlackContext,
 ): Promise<CommandResult> {
   const { command, args, reply } = action;
 
@@ -156,8 +156,6 @@ export async function executeCommand(
 
     case "no_op":
       return { reply: "", actionTaken: `no_op: ${args.reason || "not relevant"}` };
-
-    case "chat":
     default:
       return { reply, actionTaken: "chat" };
   }

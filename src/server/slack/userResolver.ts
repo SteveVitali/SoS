@@ -30,7 +30,7 @@ export async function resolveSlackUser(userId: string): Promise<SlackUser> {
     const u = result.user as any;
     // display_name can be "" for users who haven't set one — fall through
     const displayName =
-      (u?.profile?.display_name && u.profile.display_name.trim()) ||
+      u?.profile?.display_name?.trim() ||
       u?.real_name ||
       u?.profile?.real_name ||
       u?.name ||

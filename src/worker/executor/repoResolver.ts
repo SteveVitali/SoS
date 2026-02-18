@@ -1,5 +1,5 @@
 import { createLogger } from "../../shared/logger.js";
-import type { RepoRegistry, RepoEntry } from "./repoRegistry.js";
+import type { RepoEntry, RepoRegistry } from "./repoRegistry.js";
 
 const log = createLogger("worker:repoResolver");
 
@@ -13,7 +13,7 @@ export interface ResolveResult {
 export function resolveRepo(
   registry: RepoRegistry,
   taskText: string,
-  repoHint?: string
+  repoHint?: string,
 ): ResolveResult | null {
   // If hint matches a repoId directly
   if (repoHint) {

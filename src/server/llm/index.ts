@@ -1,6 +1,6 @@
 import { createLogger } from "../../shared/logger.js";
-import type { LLMProvider } from "./llmProvider.js";
 import { AnthropicProvider } from "./anthropicProvider.js";
+import type { LLMProvider } from "./llmProvider.js";
 import { OpenAICompatibleProvider } from "./openaiProvider.js";
 
 const log = createLogger("server:llm");
@@ -24,7 +24,10 @@ export function createLLMProvider(config: LLMConfig): LLMProvider {
       if (!config.baseUrl) {
         throw new Error("SOS_LLM_BASE_URL is required for openai_compatible provider");
       }
-      log.info("Using OpenAI-compatible LLM provider", { model: config.model, baseUrl: config.baseUrl });
+      log.info("Using OpenAI-compatible LLM provider", {
+        model: config.model,
+        baseUrl: config.baseUrl,
+      });
       return new OpenAICompatibleProvider(config.apiKey, config.baseUrl);
 
     default:
@@ -32,4 +35,11 @@ export function createLLMProvider(config: LLMConfig): LLMProvider {
   }
 }
 
-export type { LLMProvider, LLMResponse, ChatMessage, ContentBlock, ToolDefinition, ToolCall } from "./llmProvider.js";
+export type {
+  ChatMessage,
+  ContentBlock,
+  LLMProvider,
+  LLMResponse,
+  ToolCall,
+  ToolDefinition,
+} from "./llmProvider.js";

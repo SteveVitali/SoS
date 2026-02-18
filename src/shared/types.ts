@@ -13,7 +13,12 @@ export const JobStatus = z.enum([
 ]);
 export type JobStatus = z.infer<typeof JobStatus>;
 
-export const TERMINAL_STATUSES: readonly JobStatus[] = ["DONE", "FAILED", "CANCELED", "DELETED"] as const;
+export const TERMINAL_STATUSES: readonly JobStatus[] = [
+  "DONE",
+  "FAILED",
+  "CANCELED",
+  "DELETED",
+] as const;
 export const ACTIVE_STATUSES: readonly JobStatus[] = ["RUNNING", "FIXING_CI"] as const;
 
 // --- Test Level ---

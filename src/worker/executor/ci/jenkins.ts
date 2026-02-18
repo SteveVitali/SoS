@@ -1,5 +1,5 @@
 import { createLogger } from "../../../shared/logger.js";
-import type { CIProvider, CICheckResult } from "./ciProvider.js";
+import type { CICheckResult, CIProvider } from "./ciProvider.js";
 
 const log = createLogger("worker:ci:jenkins");
 
