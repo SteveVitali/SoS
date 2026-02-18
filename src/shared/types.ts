@@ -77,6 +77,7 @@ export interface JobDoc {
   task_id: string;
   source: JobSource;
   requested_by: string;
+  slack_requester?: string;
   status: JobStatus;
   created_at: Date;
   updated_at: Date;

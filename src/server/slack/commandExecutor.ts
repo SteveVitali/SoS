@@ -17,6 +17,7 @@ export interface CommandResult {
 
 interface SlackContext {
   userId: string;
+  ownerId: string;
   channelId: string;
   threadTs: string;
   messageTs: string;
@@ -45,7 +46,8 @@ export async function executeCommand(
       try {
         const { job } = await createJobFromSlack({
           event_id: ctx.eventId,
-          requested_by: ctx.userId,
+          requested_by: ctx.ownerId || ctx.userId,
+          slack_requester: ctx.userId,
           task_text: args.task_text || "(no task description)",
           channel_id: ctx.channelId,
           thread_ts: ctx.threadTs,

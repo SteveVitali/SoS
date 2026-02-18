@@ -45,6 +45,7 @@ export async function createJobFromSlack(input: CreateJobFromSlack): Promise<{ j
     task_id: taskId,
     source: { type: "slack_app_mention", event_id: input.event_id },
     requested_by: input.requested_by,
+    slack_requester: input.slack_requester,
     status: "QUEUED",
     created_at: now,
     updated_at: now,

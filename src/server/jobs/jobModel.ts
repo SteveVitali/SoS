@@ -4,6 +4,7 @@ import { JobStatus, TestLevel, JobSourceType } from "../../shared/types.js";
 export const CreateJobFromSlackSchema = z.object({
   event_id: z.string(),
   requested_by: z.string(),
+  slack_requester: z.string().optional(),
   task_text: z.string(),
   channel_id: z.string(),
   thread_ts: z.string(),

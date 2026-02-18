@@ -118,6 +118,7 @@ Without the key, the bot still works — it just treats every message as a job c
 | `SLACK_BOT_TOKEN` | **Yes** | Bot OAuth token (`xoxb-...`) |
 | `SLACK_BOT_USER_ID` | **Yes** | Bot's Slack user ID (`U...`) |
 | `ANTHROPIC_API_KEY` | No | Anthropic API key for LLM-powered Slack routing ([setup](#llm-powered-message-routing-optional)). Without it, all @mentions create jobs directly. |
+| `SOS_SLACK_JOB_OWNER` | No | The `requested_by` value to assign to Slack-created jobs (defaults to `SOS_REQUESTED_BY_SLACK_USER`). Must match the worker's `SOS_REQUESTED_BY_SLACK_USER` so workers claim Slack jobs. The original Slack user is stored separately for attribution. |
 | `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |

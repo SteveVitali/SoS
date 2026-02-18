@@ -1,7 +1,8 @@
 import type { JobDoc } from "../../shared/types.js";
 
 export function fmtQueued(job: JobDoc): string {
-  const user = job.requested_by ? `<@${job.requested_by}>` : "unknown";
+  const userId = job.slack_requester || job.requested_by;
+  const user = userId ? `<@${userId}>` : "unknown";
   return `Queued ✅ \`task_id=${job.task_id}\` (workers: local, user: ${user})${
     job.parent_task_id ? `\n_Retry of \`${job.parent_task_id}\`_` : ""
   }`;

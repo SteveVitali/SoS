@@ -100,11 +100,13 @@ const TOOLS: Anthropic.Tool[] = [
   },
   {
     name: "chat",
-    description: "Just respond conversationally — no action needed",
+    description: "Just respond conversationally — no action needed. Put your full response in the 'response' field.",
     input_schema: {
       type: "object" as const,
-      properties: {},
-      required: [],
+      properties: {
+        response: { type: "string", description: "Your conversational response to the user" },
+      },
+      required: ["response"],
     },
   },
 ];
@@ -168,6 +170,10 @@ export async function routeMessage(userMessage: string, slackUserId: string): Pr
       }
     }
 
+    // If no text block, check tool args for a response (e.g. chat tool)
+    if (!reply && args.response) {
+      reply = args.response;
+    }
     if (!reply) {
       reply = "On it.";
     }

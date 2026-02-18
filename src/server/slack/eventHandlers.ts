@@ -62,6 +62,7 @@ export function createAppMentionHandler(config: ServerConfig) {
 
     const ctx = {
       userId: event.user,
+      ownerId: config.slackJobOwner,
       channelId: event.channel,
       threadTs: event.thread_ts ?? event.ts,
       messageTs: event.ts,
@@ -99,7 +100,8 @@ export function createAppMentionHandler(config: ServerConfig) {
       try {
         const { job } = await createJobFromSlack({
           event_id: eventId,
-          requested_by: event.user,
+          requested_by: config.slackJobOwner || event.user,
+          slack_requester: event.user,
           task_text: taskText,
           channel_id: event.channel,
           thread_ts: event.thread_ts ?? event.ts,
