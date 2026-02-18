@@ -32,7 +32,7 @@ async function ensureIndexes(db: Db) {
     { "source.event_id": 1 },
     {
       unique: true,
-      partialFilterExpression: { "source.event_id": { $exists: true, $ne: null } },
+      partialFilterExpression: { "source.event_id": { $exists: true } },
       name: "idx_source_event_id_unique",
     }
   );
