@@ -1,7 +1,7 @@
-import { getJobsCollection } from "../mongo.js";
-import { nowDate } from "../../shared/time.js";
 import { createLogger } from "../../shared/logger.js";
+import { nowDate } from "../../shared/time.js";
 import type { JobDoc, JobStatus } from "../../shared/types.js";
+import { getJobsCollection } from "../mongo.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 
 const log = createLogger("server:leaseReaper");
@@ -33,10 +33,12 @@ async function reapStaleJobs() {
     const now = nowDate();
     const cutoff = new Date(now.getTime() - GRACE_PERIOD_MS);
 
-    const staleJobs = await col.find({
-      status: { $in: ["RUNNING", "FIXING_CI"] as JobStatus[] },
-      lease_expires_at: { $lt: cutoff },
-    }).toArray() as JobDoc[];
+    const staleJobs = (await col
+      .find({
+        status: { $in: ["RUNNING", "FIXING_CI"] as JobStatus[] },
+        lease_expires_at: { $lt: cutoff },
+      })
+      .toArray()) as JobDoc[];
 
     for (const job of staleJobs) {
       const result = await col.findOneAndUpdate(
@@ -60,7 +62,7 @@ async function reapStaleJobs() {
           } as any,
           $unset: { claimed_by: "", lease_expires_at: "" },
         },
-        { returnDocument: "after" }
+        { returnDocument: "after" },
       );
 
       if (result) {
@@ -73,7 +75,9 @@ async function reapStaleJobs() {
         if (slackPoster && result.slack?.channel_id && result.slack?.thread_ts) {
           try {
             await slackPoster.postFailed(result);
-          } catch { /* best-effort */ }
+          } catch {
+            /* best-effort */
+          }
         }
       }
     }

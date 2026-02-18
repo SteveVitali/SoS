@@ -1,4 +1,4 @@
-import { MongoClient, Db, Collection } from "mongodb";
+import { type Collection, type Db, MongoClient } from "mongodb";
 import { createLogger } from "../shared/logger.js";
 import type { JobDoc } from "../shared/types.js";
 
@@ -34,20 +34,17 @@ async function ensureIndexes(db: Db) {
       unique: true,
       partialFilterExpression: { "source.event_id": { $exists: true } },
       name: "idx_source_event_id_unique",
-    }
+    },
   );
 
   await col.createIndex({ task_id: 1 }, { unique: true, name: "idx_task_id_unique" });
 
   await col.createIndex(
     { requested_by: 1, status: 1, created_at: -1 },
-    { name: "idx_requested_by_status_created" }
+    { name: "idx_requested_by_status_created" },
   );
 
-  await col.createIndex(
-    { status: 1, lease_expires_at: 1 },
-    { name: "idx_status_lease" }
-  );
+  await col.createIndex({ status: 1, lease_expires_at: 1 }, { name: "idx_status_lease" });
 
   log.info("Indexes ensured");
 }

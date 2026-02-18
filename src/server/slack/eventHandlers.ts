@@ -1,11 +1,11 @@
 import { createLogger } from "../../shared/logger.js";
-import { createJobFromSlack } from "../jobs/jobService.js";
-import type { ServerConfig } from "../config.js";
-import { routeMessage } from "./messageRouter.js";
-import type { ThreadMessage } from "./messageRouter.js";
-import { executeCommand } from "./commandExecutor.js";
-import type { SlackPoster, SlackThreadMessage, SlackFileInfo } from "./slackClient.js";
 import type { JobAttachment } from "../../shared/types.js";
+import type { ServerConfig } from "../config.js";
+import { createJobFromSlack } from "../jobs/jobService.js";
+import { executeCommand } from "./commandExecutor.js";
+import type { ThreadMessage } from "./messageRouter.js";
+import { routeMessage } from "./messageRouter.js";
+import type { SlackFileInfo, SlackPoster, SlackThreadMessage } from "./slackClient.js";
 
 const log = createLogger("server:slack:events");
 
@@ -47,7 +47,7 @@ export function parseModifiers(text: string): {
   return result;
 }
 
-const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
+const _IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 async function fetchThreadContext(
   slackPoster: SlackPoster | undefined,
@@ -169,13 +169,19 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
 
     if (event.thread_ts && slackPoster) {
       const { messages, rawMessages } = await fetchThreadContext(
-        slackPoster, event.channel, threadTs, config.slackBotUserId, config.maxThreadMessages,
+        slackPoster,
+        event.channel,
+        threadTs,
+        config.slackBotUserId,
+        config.maxThreadMessages,
       );
       if (messages.length > 0) threadMessages = messages;
 
       // Download files from thread, newest-first, up to budget
       const downloaded = await downloadThreadAttachments(
-        slackPoster, rawMessages, config.maxAttachmentSizeMb,
+        slackPoster,
+        rawMessages,
+        config.maxAttachmentSizeMb,
       );
       if (downloaded.length > 0) attachments = downloaded;
     }
@@ -232,4 +238,3 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
     }
   };
 }
-

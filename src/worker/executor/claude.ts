@@ -1,9 +1,9 @@
-import { execSync, spawn } from "child_process";
-import { writeFileSync, mkdirSync, existsSync, createWriteStream } from "fs";
-import path from "path";
+import { spawn } from "node:child_process";
+import { createWriteStream, existsSync, mkdirSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { createLogger } from "../../shared/logger.js";
-import type { RepoEntry } from "./repoRegistry.js";
 import type { JobAttachment } from "../../shared/types.js";
+import type { RepoEntry } from "./repoRegistry.js";
 
 const log = createLogger("worker:claude");
 
@@ -13,10 +13,7 @@ export interface ClaudeResult {
   logPath: string;
 }
 
-function writeAttachments(
-  sosDir: string,
-  attachments: JobAttachment[],
-): string[] {
+function writeAttachments(sosDir: string, attachments: JobAttachment[]): string[] {
   const attachDir = path.join(sosDir, "attachments");
   if (!existsSync(attachDir)) mkdirSync(attachDir, { recursive: true });
 
@@ -83,8 +80,10 @@ function buildPrompt(
   if (repo.commands) {
     lines.push("# Available Commands");
     if (repo.commands.lint) lines.push(`- Lint: \`${repo.commands.lint.join(" ")}\``);
-    if (repo.commands.test_fast) lines.push(`- Test (fast): \`${repo.commands.test_fast.join(" ")}\``);
-    if (repo.commands.test_full) lines.push(`- Test (full): \`${repo.commands.test_full.join(" ")}\``);
+    if (repo.commands.test_fast)
+      lines.push(`- Test (fast): \`${repo.commands.test_fast.join(" ")}\``);
+    if (repo.commands.test_full)
+      lines.push(`- Test (full): \`${repo.commands.test_full.join(" ")}\``);
     lines.push("");
   }
 
@@ -129,17 +128,25 @@ export async function runClaude(
   log.info("Running Claude Code CLI", { worktree: worktreePath });
 
   return runClaudeProcess(
-    ["claude", "-p", promptPath, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
+    [
+      "claude",
+      "-p",
+      promptPath,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+    ],
     worktreePath,
     logPath,
-    30 * 60 * 1000
+    30 * 60 * 1000,
   );
 }
 
 export async function runClaudeFix(
   worktreePath: string,
   repo: RepoEntry,
-  failureSummary: string
+  failureSummary: string,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -169,17 +176,25 @@ export async function runClaudeFix(
   log.info("Running Claude Code CLI for CI fix", { worktree: worktreePath });
 
   return runClaudeProcess(
-    ["claude", "-p", promptPath, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
+    [
+      "claude",
+      "-p",
+      promptPath,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+    ],
     worktreePath,
     logPath,
-    15 * 60 * 1000
+    15 * 60 * 1000,
   );
 }
 
 export async function runClaudeReview(
   worktreePath: string,
   repo: RepoEntry,
-  diff: string
+  diff: string,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -224,10 +239,18 @@ export async function runClaudeReview(
   log.info("Running Claude Code CLI for self-review", { worktree: worktreePath });
 
   return runClaudeProcess(
-    ["claude", "-p", promptPath, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
+    [
+      "claude",
+      "-p",
+      promptPath,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+    ],
     worktreePath,
     logPath,
-    15 * 60 * 1000
+    15 * 60 * 1000,
   );
 }
 
@@ -241,7 +264,7 @@ function runClaudeProcess(
   args: string[],
   cwd: string,
   logPath: string,
-  timeoutMs: number
+  timeoutMs: number,
 ): Promise<ClaudeResult> {
   const [bin, ...rest] = args;
   log.info("Spawning Claude", { bin, args: rest.join(" ").slice(0, 200) });
@@ -256,14 +279,17 @@ function runClaudeProcess(
     // Heartbeat: log every 10s while waiting for first output
     const heartbeat = setInterval(() => {
       if (!receivedOutput) {
-        log.info("Claude is working...", { pid: child.pid, elapsed: `${Math.round((Date.now() - startTime) / 1000)}s` });
+        log.info("Claude is working...", {
+          pid: child.pid,
+          elapsed: `${Math.round((Date.now() - startTime) / 1000)}s`,
+        });
       }
     }, 10_000);
     const startTime = Date.now();
 
     function processLine(line: string) {
       if (!line.trim()) return;
-      logStream.write(line + "\n");
+      logStream.write(`${line}\n`);
       try {
         const obj = JSON.parse(line);
 
@@ -288,7 +314,10 @@ function runClaudeProcess(
         } else if (obj.type === "tool_result") {
           // Tool output — show truncated result
           const content = obj.content || "";
-          const preview = typeof content === "string" ? content.slice(0, 300) : JSON.stringify(content).slice(0, 300);
+          const preview =
+            typeof content === "string"
+              ? content.slice(0, 300)
+              : JSON.stringify(content).slice(0, 300);
           if (preview) {
             process.stdout.write(`   → ${preview.split("\n")[0]}\n`);
           }
@@ -296,13 +325,13 @@ function runClaudeProcess(
           // Final result
           if (obj.result) {
             process.stdout.write("\n--- Claude Result ---\n");
-            process.stdout.write(obj.result + "\n");
+            process.stdout.write(`${obj.result}\n`);
             textChunks.push(obj.result);
           }
         }
       } catch {
         // Not JSON — print raw
-        process.stdout.write(line + "\n");
+        process.stdout.write(`${line}\n`);
         textChunks.push(line);
       }
     }

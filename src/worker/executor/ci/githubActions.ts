@@ -1,6 +1,6 @@
-import { execSync } from "child_process";
+import { execSync } from "node:child_process";
 import { createLogger } from "../../../shared/logger.js";
-import type { CIProvider, CICheckResult } from "./ciProvider.js";
+import type { CICheckResult, CIProvider } from "./ciProvider.js";
 
 const log = createLogger("worker:ci:github");
 
@@ -30,14 +30,10 @@ export class GitHubActionsProvider implements CIProvider {
       }
 
       const hasPending = checks.some(
-        (c) => c.bucket === "pending" || c.state === "PENDING" || c.state === "QUEUED"
+        (c) => c.bucket === "pending" || c.state === "PENDING" || c.state === "QUEUED",
       );
-      const hasFailed = checks.some(
-        (c) => c.bucket === "fail"
-      );
-      const allSuccess = checks.every(
-        (c) => c.bucket === "pass" || c.bucket === "skipping"
-      );
+      const hasFailed = checks.some((c) => c.bucket === "fail");
+      const allSuccess = checks.every((c) => c.bucket === "pass" || c.bucket === "skipping");
 
       const url = checks[0]?.link;
 
@@ -80,9 +76,7 @@ export class GitHubActionsProvider implements CIProvider {
       const failed = checks.filter((c) => c.bucket === "fail");
       if (failed.length === 0) return "No failed checks found.";
 
-      const lines = failed.map(
-        (c) => `- ${c.name}: ${c.bucket} (${c.link})`
-      );
+      const lines = failed.map((c) => `- ${c.name}: ${c.bucket} (${c.link})`);
       return `Failed CI checks:\n${lines.join("\n")}`;
     } catch (err: any) {
       log.warn("Failed to get CI failure summary", { error: err.message });

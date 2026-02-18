@@ -1,18 +1,18 @@
 import "dotenv/config";
+import path from "node:path";
+import { fileURLToPath } from "node:url";
 import express from "express";
-import path from "path";
-import { fileURLToPath } from "url";
 import { createLogger } from "../shared/logger.js";
+import { createRouter } from "./api/router.js";
 import { loadServerConfig } from "./config.js";
-import { connectMongo, closeMongo } from "./mongo.js";
+import { setSlackPoster } from "./jobs/jobService.js";
+import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
+import { createLLMProvider } from "./llm/index.js";
+import { closeMongo, connectMongo } from "./mongo.js";
+import { initMessageRouter } from "./slack/messageRouter.js";
 import { createSlackPoster } from "./slack/slackClient.js";
 import { startSlackSocketMode } from "./slack/socketMode.js";
-import { setSlackPoster } from "./jobs/jobService.js";
 import { initUserResolver } from "./slack/userResolver.js";
-import { initMessageRouter } from "./slack/messageRouter.js";
-import { createLLMProvider } from "./llm/index.js";
-import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
-import { createRouter } from "./api/router.js";
 
 const log = createLogger("server");
 
@@ -47,10 +47,15 @@ async function main() {
       });
       initMessageRouter(llmProvider, config.llmModel);
     } catch (err: any) {
-      log.warn("Failed to initialize LLM provider — message routing will treat all mentions as jobs", { error: err.message });
+      log.warn(
+        "Failed to initialize LLM provider — message routing will treat all mentions as jobs",
+        { error: err.message },
+      );
     }
   } else {
-    log.warn("No LLM API key configured (SOS_LLM_API_KEY / ANTHROPIC_API_KEY) — message routing disabled");
+    log.warn(
+      "No LLM API key configured (SOS_LLM_API_KEY / ANTHROPIC_API_KEY) — message routing disabled",
+    );
   }
 
   // Start Express server

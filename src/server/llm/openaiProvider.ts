@@ -1,6 +1,6 @@
 import OpenAI from "openai";
 import { createLogger } from "../../shared/logger.js";
-import type { LLMProvider, LLMResponse, ChatMessage, ToolDefinition, ContentBlock } from "./llmProvider.js";
+import type { ChatMessage, LLMProvider, LLMResponse, ToolDefinition } from "./llmProvider.js";
 
 const log = createLogger("server:llm:openai");
 

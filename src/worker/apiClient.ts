@@ -1,12 +1,12 @@
 import { createLogger } from "../shared/logger.js";
-import type { JobDoc, WorkerEventType, JobError, CIInfo } from "../shared/types.js";
+import type { CIInfo, JobDoc, JobError, WorkerEventType } from "../shared/types.js";
 
 const log = createLogger("worker:apiClient");
 
 export class WorkerApiClient {
   constructor(
     private baseUrl: string,
-    private token: string
+    private token: string,
   ) {}
 
   private async request<T>(method: string, path: string, body?: any): Promise<T> {
@@ -33,7 +33,7 @@ export class WorkerApiClient {
   async poll(requestedBy: string, limit = 10): Promise<JobDoc[]> {
     const data = await this.request<{ jobs: JobDoc[] }>(
       "GET",
-      `/api/worker/jobs/poll?requested_by=${encodeURIComponent(requestedBy)}&limit=${limit}`
+      `/api/worker/jobs/poll?requested_by=${encodeURIComponent(requestedBy)}&limit=${limit}`,
     );
     return data.jobs;
   }
@@ -42,14 +42,14 @@ export class WorkerApiClient {
     taskId: string,
     requestedBy: string,
     nodeId: string,
-    leaseSeconds: number
+    leaseSeconds: number,
   ): Promise<JobDoc | null> {
     try {
-      const data = await this.request<{ job: JobDoc }>(
-        "POST",
-        `/api/worker/jobs/${taskId}/claim`,
-        { requested_by: requestedBy, node_id: nodeId, lease_seconds: leaseSeconds }
-      );
+      const data = await this.request<{ job: JobDoc }>("POST", `/api/worker/jobs/${taskId}/claim`, {
+        requested_by: requestedBy,
+        node_id: nodeId,
+        lease_seconds: leaseSeconds,
+      });
       return data.job;
     } catch (err: any) {
       if (err.status === 409) return null;
@@ -71,7 +71,12 @@ export class WorkerApiClient {
     }
   }
 
-  async sendEvent(taskId: string, nodeId: string, type: WorkerEventType, payload?: any): Promise<void> {
+  async sendEvent(
+    taskId: string,
+    nodeId: string,
+    type: WorkerEventType,
+    payload?: any,
+  ): Promise<void> {
     await this.request("POST", `/api/worker/jobs/${taskId}/events`, {
       node_id: nodeId,
       type,
@@ -82,13 +87,13 @@ export class WorkerApiClient {
   async complete(
     taskId: string,
     nodeId: string,
-    data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo }
+    data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo },
   ): Promise<JobDoc | null> {
     try {
       const res = await this.request<{ job: JobDoc }>(
         "POST",
         `/api/worker/jobs/${taskId}/complete`,
-        { node_id: nodeId, ...data }
+        { node_id: nodeId, ...data },
       );
       return res.job;
     } catch (err: any) {
@@ -100,14 +105,13 @@ export class WorkerApiClient {
   async fail(
     taskId: string,
     nodeId: string,
-    data: { error: JobError; pr_urls?: string[]; ci?: CIInfo }
+    data: { error: JobError; pr_urls?: string[]; ci?: CIInfo },
   ): Promise<JobDoc | null> {
     try {
-      const res = await this.request<{ job: JobDoc }>(
-        "POST",
-        `/api/worker/jobs/${taskId}/fail`,
-        { node_id: nodeId, ...data }
-      );
+      const res = await this.request<{ job: JobDoc }>("POST", `/api/worker/jobs/${taskId}/fail`, {
+        node_id: nodeId,
+        ...data,
+      });
       return res.job;
     } catch (err: any) {
       if (err.status === 409) return null;
@@ -115,16 +119,12 @@ export class WorkerApiClient {
     }
   }
 
-  async requeue(
-    taskId: string,
-    nodeId: string,
-    reason: string
-  ): Promise<JobDoc | null> {
+  async requeue(taskId: string, nodeId: string, reason: string): Promise<JobDoc | null> {
     try {
       const res = await this.request<{ job: JobDoc }>(
         "POST",
         `/api/worker/jobs/${taskId}/requeue`,
-        { node_id: nodeId, reason }
+        { node_id: nodeId, reason },
       );
       return res.job;
     } catch (err: any) {
@@ -137,7 +137,7 @@ export class WorkerApiClient {
     try {
       const data = await this.request<{ messages: any[] }>(
         "GET",
-        `/api/worker/slack/thread?channel_id=${encodeURIComponent(channelId)}&thread_ts=${encodeURIComponent(threadTs)}`
+        `/api/worker/slack/thread?channel_id=${encodeURIComponent(channelId)}&thread_ts=${encodeURIComponent(threadTs)}`,
       );
       return data.messages;
     } catch (err: any) {

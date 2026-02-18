@@ -1,5 +1,5 @@
-import { execSync } from "child_process";
-import { writeFileSync } from "fs";
+import { execSync } from "node:child_process";
+import { writeFileSync } from "node:fs";
 import { createLogger } from "../../shared/logger.js";
 import type { RepoEntry } from "./repoRegistry.js";
 
@@ -14,6 +14,19 @@ export interface PrCreateResult {
   url: string;
 }
 
+export function detectExistingPr(worktreePath: string, branch: string): string | null {
+  try {
+    const url = exec(`gh pr view ${branch} --json url -q .url`, worktreePath);
+    if (url && url.startsWith("http")) {
+      log.info("Detected existing PR for branch", { branch, url });
+      return url;
+    }
+    return null;
+  } catch {
+    return null;
+  }
+}
+
 export function createPr(
   worktreePath: string,
   repo: RepoEntry,
@@ -22,7 +35,7 @@ export function createPr(
   taskText: string,
   checksSummary: string,
   slackPermalink?: string,
-  reviewers?: string[]
+  reviewers?: string[],
 ): PrCreateResult {
   const title = `sos: ${taskText.slice(0, 72)}`;
 
@@ -53,24 +66,18 @@ export function createPr(
 
   const prUrl = exec(
     `gh pr create --title "${title.replace(/"/g, '\\"')}" --body-file "${bodyFile}" --head "${branch}" --base "${repo.default_branch}"`,
-    worktreePath
+    worktreePath,
   );
 
   log.info("PR created", { url: prUrl });
 
   // Add reviewers if specified
-  const allReviewers = [
-    ...(reviewers || []),
-    ...(repo.pr?.reviewers_default || []),
-  ];
+  const allReviewers = [...(reviewers || []), ...(repo.pr?.reviewers_default || [])];
   const uniqueReviewers = [...new Set(allReviewers)].filter(Boolean);
 
   if (uniqueReviewers.length > 0) {
     try {
-      exec(
-        `gh pr edit "${prUrl}" --add-reviewer ${uniqueReviewers.join(",")}`,
-        worktreePath
-      );
+      exec(`gh pr edit "${prUrl}" --add-reviewer ${uniqueReviewers.join(",")}`, worktreePath);
       log.info("Reviewers added", { reviewers: uniqueReviewers });
     } catch (err: any) {
       log.warn("Failed to add reviewers", { error: err.message });

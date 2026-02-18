@@ -1,11 +1,11 @@
-import { Router, Request, Response } from "express";
+import { type Request, type Response, Router } from "express";
 import { createLogger } from "../../shared/logger.js";
 import {
   ClaimJobSchema,
-  HeartbeatSchema,
-  WorkerEventSchema,
   CompleteJobSchema,
   FailJobSchema,
+  HeartbeatSchema,
+  WorkerEventSchema,
 } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
 import type { SlackPoster } from "../slack/slackClient.js";
@@ -30,7 +30,7 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         res.status(400).json({ error: "requested_by query param required" });
         return;
       }
-      const limit = Math.min(parseInt(qstr(req.query.limit)) || 10, 50);
+      const limit = Math.min(parseInt(qstr(req.query.limit), 10) || 10, 50);
       const jobs = await jobService.pollJobs(requestedBy, limit);
       res.json({ jobs });
     } catch (err: any) {
@@ -48,7 +48,12 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       const { requested_by, node_id, lease_seconds } = parsed.data;
-      const job = await jobService.claim(pstr(req.params.task_id), requested_by, node_id, lease_seconds);
+      const job = await jobService.claim(
+        pstr(req.params.task_id),
+        requested_by,
+        node_id,
+        lease_seconds,
+      );
       if (!job) {
         res.status(409).json({ error: "Claim failed: job not eligible or already claimed" });
         return;

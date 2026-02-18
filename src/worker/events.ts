@@ -1,6 +1,6 @@
-import { WorkerApiClient } from "./apiClient.js";
-import type { WorkerEventType } from "../shared/types.js";
 import { createLogger } from "../shared/logger.js";
+import type { WorkerEventType } from "../shared/types.js";
+import type { WorkerApiClient } from "./apiClient.js";
 
 const log = createLogger("worker:events");
 
@@ -8,7 +8,7 @@ export class EventEmitter {
   constructor(
     private api: WorkerApiClient,
     private nodeId: string,
-    private taskId: string
+    private taskId: string,
   ) {}
 
   async emit(type: WorkerEventType, payload?: any): Promise<void> {

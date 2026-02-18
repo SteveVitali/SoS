@@ -1,4 +1,4 @@
-import { Router, Request, Response } from "express";
+import { type Request, type Response, Router } from "express";
 import { createLogger } from "../../shared/logger.js";
 import { CreateJobFromWebSchema } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
@@ -23,8 +23,8 @@ export function createWebRoutes(): Router {
         status: qstr(req.query.status) || undefined,
         requested_by: qstr(req.query.requested_by) || undefined,
         q: qstr(req.query.q) || undefined,
-        limit: parseInt(qstr(req.query.limit)) || 50,
-        offset: parseInt(qstr(req.query.offset)) || 0,
+        limit: parseInt(qstr(req.query.limit), 10) || 50,
+        offset: parseInt(qstr(req.query.offset), 10) || 0,
         sort_by: qstr(req.query.sort_by) || undefined,
         sort_order: qstr(req.query.sort_order) as "asc" | "desc" | undefined,
       });
@@ -141,7 +141,7 @@ export function createWebRoutes(): Router {
       await Promise.all(
         ids.map(async (id) => {
           results[id] = await resolveSlackUser(id);
-        })
+        }),
       );
       res.json({ users: results });
     } catch (err: any) {

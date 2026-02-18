@@ -1,5 +1,5 @@
 import { z } from "zod";
-import { JobStatus, TestLevel, JobSourceType } from "../../shared/types.js";
+import { TestLevel } from "../../shared/types.js";
 
 export const CreateJobFromSlackSchema = z.object({
   event_id: z.string(),
@@ -13,13 +13,17 @@ export const CreateJobFromSlackSchema = z.object({
   test_level: TestLevel.optional(),
   ci_fix_enabled: z.boolean().optional(),
   reviewers: z.array(z.string()).optional(),
-  attachments: z.array(z.object({
-    file_id: z.string(),
-    filename: z.string(),
-    mimetype: z.string(),
-    size_bytes: z.number(),
-    base64: z.string(),
-  })).optional(),
+  attachments: z
+    .array(
+      z.object({
+        file_id: z.string(),
+        filename: z.string(),
+        mimetype: z.string(),
+        size_bytes: z.number(),
+        base64: z.string(),
+      }),
+    )
+    .optional(),
 });
 export type CreateJobFromSlack = z.infer<typeof CreateJobFromSlackSchema>;
 
@@ -64,7 +68,7 @@ export const CompleteJobSchema = z.object({
             status: z.string(),
             conclusion: z.string().optional(),
             updated_at: z.coerce.date().optional(),
-          })
+          }),
         )
         .optional(),
     })
@@ -89,7 +93,7 @@ export const FailJobSchema = z.object({
             status: z.string(),
             conclusion: z.string().optional(),
             updated_at: z.coerce.date().optional(),
-          })
+          }),
         )
         .optional(),
     })
