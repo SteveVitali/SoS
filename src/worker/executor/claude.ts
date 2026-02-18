@@ -129,6 +129,15 @@ function runClaudeProcess(
     const logStream = createWriteStream(logPath, { encoding: "utf-8" });
     const textChunks: string[] = [];
     let lineBuf = "";
+    let receivedOutput = false;
+
+    // Heartbeat: log every 10s while waiting for first output
+    const heartbeat = setInterval(() => {
+      if (!receivedOutput) {
+        log.info("Claude is working...", { pid: child.pid, elapsed: `${Math.round((Date.now() - startTime) / 1000)}s` });
+      }
+    }, 10_000);
+    const startTime = Date.now();
 
     function processLine(line: string) {
       if (!line.trim()) return;
@@ -155,6 +164,7 @@ function runClaudeProcess(
     }
 
     child.stdout?.on("data", (data: Buffer) => {
+      receivedOutput = true;
       lineBuf += data.toString();
       const lines = lineBuf.split("\n");
       lineBuf = lines.pop() || "";
@@ -172,6 +182,7 @@ function runClaudeProcess(
 
     child.on("close", (code) => {
       clearTimeout(timer);
+      clearInterval(heartbeat);
       if (lineBuf) processLine(lineBuf);
       logStream.end();
       process.stdout.write("\n");
