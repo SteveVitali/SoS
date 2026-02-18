@@ -9,6 +9,7 @@ import { createSlackPoster } from "./slack/slackClient.js";
 import { startSlackSocketMode } from "./slack/socketMode.js";
 import { setSlackPoster } from "./jobs/jobService.js";
 import { initUserResolver } from "./slack/userResolver.js";
+import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
 import { createRouter } from "./api/router.js";
 
 const log = createLogger("server");
@@ -58,6 +59,9 @@ async function main() {
     log.info(`Server listening on port ${config.port}`);
   });
 
+  // Start lease reaper (transitions stale RUNNING jobs to FAILED)
+  startLeaseReaper(slackPoster);
+
   // Start Slack Socket Mode (only if tokens are configured)
   if (slackEnabled) {
     try {
@@ -71,6 +75,7 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     log.info("Shutting down...");
+    stopLeaseReaper();
     await closeMongo();
     process.exit(0);
   };

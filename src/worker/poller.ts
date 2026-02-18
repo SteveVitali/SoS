@@ -59,6 +59,18 @@ export async function startWorkerLoop(
 
       try {
         await runJob(claimed, workerId, config, api);
+      } catch (jobErr: any) {
+        // Last-resort: runJob's own catch block already tried api.fail(),
+        // but if that also threw, try one final time from here.
+        log.error("runJob threw unexpectedly", { task_id: claimed.task_id, error: jobErr.message });
+        try {
+          await api.fail(claimed.task_id, workerId, {
+            error: {
+              code: "WORKER_CRASH",
+              message: `Worker-level failure: ${jobErr.message}`,
+            },
+          });
+        } catch { /* truly nothing we can do */ }
       } finally {
         heartbeatManager.stop(claimed.task_id);
       }

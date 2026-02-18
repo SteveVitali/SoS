@@ -355,14 +355,23 @@ export async function runJob(
     }
   } catch (err: any) {
     log.error("Job failed", { task_id: job.task_id, error: err.message });
-    await events.emit("FAILED", { error: err.message });
+    try {
+      await events.emit("FAILED", { error: err.message });
+    } catch { /* best-effort */ }
 
-    await api.fail(job.task_id, workerId, {
-      error: {
-        code: err.code || "EXECUTION_ERROR",
-        message: err.message,
-        details: err.stack?.slice(0, 2000),
-      },
-    });
+    try {
+      await api.fail(job.task_id, workerId, {
+        error: {
+          code: err.code || "EXECUTION_ERROR",
+          message: err.message,
+          details: err.stack?.slice(0, 2000),
+        },
+      });
+    } catch (failErr: any) {
+      log.error("Failed to report job failure to server", {
+        task_id: job.task_id,
+        error: failErr.message,
+      });
+    }
   }
 }
