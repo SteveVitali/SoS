@@ -15,10 +15,13 @@ export interface SlackPoster {
   fetchThread(channelId: string, threadTs: string, limit?: number): Promise<any[]>;
 }
 
-export function createSlackPoster(botToken: string): SlackPoster {
+export function createSlackPoster(botToken: string, notifyUserId?: string): SlackPoster {
   const client = new WebClient(botToken);
 
   async function postToThread(channelId: string, threadTs: string, text: string) {
+    if (notifyUserId) {
+      text += `\n<@${notifyUserId}>`;
+    }
     try {
       await client.chat.postMessage({
         channel: channelId,

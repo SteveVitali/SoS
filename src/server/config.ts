@@ -31,6 +31,7 @@ export function loadServerConfig() {
     slackBotToken: process.env.SLACK_BOT_TOKEN || "",
     slackBotUserId: process.env.SLACK_BOT_USER_ID || "",
     slackJobOwner: process.env.SOS_SLACK_JOB_OWNER || process.env.SOS_REQUESTED_BY_SLACK_USER || "",
+    slackNotifyUser: process.env.SOS_SLACK_NOTIFY_USER || "",
     jobDefaultLeaseSeconds: optionalInt("JOB_DEFAULT_LEASE_SECONDS", 120),
     jobHeartbeatSeconds: optionalInt("JOB_HEARTBEAT_SECONDS", 15),
     jobMaxRuntimeMinutes: optionalInt("JOB_MAX_RUNTIME_MINUTES", 60),

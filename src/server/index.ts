@@ -26,7 +26,7 @@ async function main() {
   const slackEnabled = config.slackBotToken.length > 20 && config.slackAppToken.length > 20;
   let slackPoster;
   if (slackEnabled) {
-    slackPoster = createSlackPoster(config.slackBotToken);
+    slackPoster = createSlackPoster(config.slackBotToken, config.slackNotifyUser || undefined);
     setSlackPoster(slackPoster);
     initUserResolver(config.slackBotToken);
   } else {
