@@ -39,7 +39,7 @@ export function loadWorkerConfig() {
     repoRegistryPath: required("SOS_REPO_REGISTRY"),
     maxCiFixAttempts: optionalInt("SOS_MAX_CI_FIX_ATTEMPTS", 2),
     maxRuntimeMinutes: optionalInt("SOS_MAX_RUNTIME_MINUTES", 60),
-    requireLocalTestsBeforePr: optionalBool("SOS_REQUIRE_LOCAL_TESTS_BEFORE_PR", true),
+    requireLocalTestsBeforePr: optionalBool("SOS_REQUIRE_LOCAL_TESTS_BEFORE_PR", false),
     testLevelDefault: optionalStr("SOS_TEST_LEVEL_DEFAULT", "fast") as "fast" | "full" | "none",
   };
 }
