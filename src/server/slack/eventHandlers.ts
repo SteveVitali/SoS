@@ -17,6 +17,7 @@ interface SlackMentionEvent {
   ts: string;
   thread_ts?: string;
   event_ts: string;
+  files?: Array<{ id: string; name: string; mimetype: string; size: number; url_private: string }>;
 }
 
 export function parseModifiers(text: string): {
@@ -184,6 +185,28 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
         config.maxAttachmentSizeMb,
       );
       if (downloaded.length > 0) attachments = downloaded;
+    } else if (event.files && event.files.length > 0 && slackPoster) {
+      // Top-level message with files — build a synthetic message list
+      const eventFiles: SlackFileInfo[] = event.files
+        .filter((f) => f.url_private)
+        .map((f) => ({
+          id: f.id,
+          name: f.name || "unknown",
+          mimetype: f.mimetype || "application/octet-stream",
+          size: f.size || 0,
+          url_private: f.url_private,
+        }));
+      if (eventFiles.length > 0) {
+        const syntheticMessages: SlackThreadMessage[] = [
+          { user: event.user, text: cleanText, ts: event.ts, files: eventFiles },
+        ];
+        const downloaded = await downloadThreadAttachments(
+          slackPoster,
+          syntheticMessages,
+          config.maxAttachmentSizeMb,
+        );
+        if (downloaded.length > 0) attachments = downloaded;
+      }
     }
 
     try {
