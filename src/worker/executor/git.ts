@@ -34,6 +34,16 @@ export function getCommitSummary(worktreePath: string): string {
   }
 }
 
+export function getDiff(worktreePath: string): string {
+  try {
+    // Stage everything first so we diff all changes (tracked + untracked)
+    exec("git add -A", worktreePath);
+    return exec("git diff --cached", worktreePath);
+  } catch {
+    return "";
+  }
+}
+
 export function getDiffStats(worktreePath: string): string {
   try {
     return exec("git diff --stat HEAD~1 HEAD", worktreePath);

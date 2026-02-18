@@ -8,8 +8,8 @@ import { EventEmitter } from "../events.js";
 import { loadRegistry } from "./repoRegistry.js";
 import { resolveRepo } from "./repoResolver.js";
 import { ensureClone, createWorktree } from "./workspace.js";
-import { runClaude, runClaudeFix } from "./claude.js";
-import { hasChanges, commitAll, push } from "./git.js";
+import { runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
+import { hasChanges, commitAll, push, getDiff } from "./git.js";
 import { createPr } from "./pr.js";
 import { GitHubActionsProvider } from "./ci/githubActions.js";
 import type { CIProvider } from "./ci/ciProvider.js";
@@ -207,7 +207,29 @@ export async function runJob(
       }
     }
 
-    // 7) Commit + push
+    // 7) Self-review
+    await events.emit("SELF_REVIEW_STARTED", {});
+    const diff = getDiff(workspace.worktreePath);
+    if (diff) {
+      const reviewResult = await runClaudeReview(workspace.worktreePath, repo, diff);
+      await events.emit("SELF_REVIEW_FINISHED", {
+        success: reviewResult.success,
+        summary: reviewResult.summary.slice(0, 1000),
+      });
+
+      // Re-run local checks after review changes
+      if (reviewResult.success && hasChanges(workspace.worktreePath)) {
+        const postReviewChecks = runLocalChecks(workspace.worktreePath, repo.commands, testLevel);
+        if (!postReviewChecks.ok) {
+          log.warn("Post-review local checks failed", { summary: postReviewChecks.summary.slice(0, 300) });
+        }
+      }
+    } else {
+      await events.emit("SELF_REVIEW_FINISHED", { success: true, summary: "No diff to review" });
+    }
+    checkTimeout();
+
+    // 8) Commit + push
     await events.emit("PHASE_STARTED", { phase: "commit_push" });
     const shortSummary = claudeResult.summary.split("\n")[0]?.slice(0, 60) || "automated changes";
     const sha = commitAll(

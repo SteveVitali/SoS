@@ -114,6 +114,60 @@ export async function runClaudeFix(
   );
 }
 
+export async function runClaudeReview(
+  worktreePath: string,
+  repo: RepoEntry,
+  diff: string
+): Promise<ClaudeResult> {
+  const sosDir = path.join(worktreePath, ".sonofsteve");
+  if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
+
+  const promptPath = path.join(sosDir, "review-prompt.md");
+  const logPath = path.join(sosDir, "claude-review.log");
+
+  const prompt = [
+    "# Self-Review",
+    "",
+    "You are a Staff Engineer who cares deeply about clean, maintainable code, elegant abstractions,",
+    "and best software design practices. Do a very critical review of the changes in the current branch",
+    "and fix any issues that would be raised by very experienced colleagues with the utmost code review standards.",
+    "",
+    "## Review Checklist",
+    "- **Correctness**: Are there bugs, off-by-one errors, race conditions, or edge cases?",
+    "- **Design**: Are abstractions clean? Is there unnecessary complexity?",
+    "- **Dead code**: Remove any unused imports, variables, or functions introduced by the changes.",
+    "- **Naming**: Are variable/function names clear and consistent with the codebase style?",
+    "- **Error handling**: Are errors handled gracefully? Are there missing null checks?",
+    "- **Test coverage**: Are there missing tests for the changes? Add tests where sensible.",
+    "- **Security**: Any hardcoded secrets, injection risks, or unsafe patterns?",
+    "- **Performance**: Any obvious N+1 queries, unnecessary allocations, or hot-path issues?",
+    "",
+    "## Current Diff",
+    "```diff",
+    diff.slice(0, 30000),
+    "```",
+    "",
+    "## Instructions",
+    "- Fix all issues you find directly — do not just list them.",
+    "- Keep fixes minimal and focused. Do not refactor unrelated code.",
+    "- Ensure the result builds and lints cleanly.",
+    ...(repo.commands?.lint ? [`- Lint: \`${repo.commands.lint.join(" ")}\``] : []),
+    ...(repo.commands?.test_fast ? [`- Test: \`${repo.commands.test_fast.join(" ")}\``] : []),
+    "- If no issues are found, say so briefly and finish.",
+  ].join("\n");
+
+  writeFileSync(promptPath, prompt, "utf-8");
+
+  log.info("Running Claude Code CLI for self-review", { worktree: worktreePath });
+
+  return runClaudeProcess(
+    ["claude", "-p", promptPath, "--output-format", "stream-json", "--verbose", "--dangerously-skip-permissions"],
+    worktreePath,
+    logPath,
+    15 * 60 * 1000
+  );
+}
+
 // Shared runner: streams Claude output to terminal in real-time via stream-json
 function runClaudeProcess(
   args: string[],
