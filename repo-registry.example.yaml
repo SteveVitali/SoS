@@ -1,0 +1,28 @@
+repos:
+  my-app:
+    clone: "git@github.com:yourorg/my-app.git"
+    default_branch: "main"
+    detect:
+      keywords: ["my-app", "frontend", "react", "ui"]
+    commands:
+      lint: ["npm", "run", "lint"]
+      test_fast: ["npm", "test", "--", "--watchAll=false"]
+      test_full: ["npm", "test", "--", "--watchAll=false", "--coverage"]
+    pr:
+      reviewers_default: ["alice", "bob"]
+    ci:
+      provider: "github_actions"
+
+  my-api:
+    clone: "git@github.com:yourorg/my-api.git"
+    default_branch: "main"
+    detect:
+      keywords: ["my-api", "backend", "api", "server", "endpoint"]
+    commands:
+      lint: ["npm", "run", "lint"]
+      test_fast: ["npm", "test"]
+      test_full: ["npm", "run", "test:full"]
+    pr:
+      reviewers_default: ["charlie"]
+    ci:
+      provider: "github_actions"

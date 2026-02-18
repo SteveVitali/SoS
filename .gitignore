@@ -1,0 +1,9 @@
+node_modules/
+dist/
+dist-ui/
+.env
+*.log
+*.swp
+.sonofsteve/
+.idea/
+repo-registry.yaml
