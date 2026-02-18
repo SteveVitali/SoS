@@ -91,6 +91,7 @@ Click your name in Slack → "Profile" → "⋯" → "Copy member ID". This is t
 | `SLACK_APP_TOKEN` | **Yes** | Socket Mode app token (`xapp-...`) |
 | `SLACK_BOT_TOKEN` | **Yes** | Bot OAuth token (`xoxb-...`) |
 | `SLACK_BOT_USER_ID` | **Yes** | Bot's Slack user ID (`U...`) |
+| `ANTHROPIC_API_KEY` | No | Anthropic API key for LLM-powered Slack message routing. Without it, all @mentions create jobs directly. |
 | `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |
@@ -121,22 +122,28 @@ Click your name in Slack → "Profile" → "⋯" → "Copy member ID". This is t
 
 ### Via Slack
 
-Mention the bot in any channel:
+Mention the bot in any channel. Messages are routed through an LLM ("Steve" persona) that classifies intent and responds conversationally:
 
 ```
 @SonOfSteve fix the broken unit test in the auth module
+@SonOfSteve what's the status of abc123?
+@SonOfSteve cancel that last job
+@SonOfSteve list recent jobs
+@SonOfSteve retry abc123
+@SonOfSteve hey what can you do?
 ```
 
-Optional modifiers:
+Optional modifiers (for job creation):
 
 ```
 @SonOfSteve repo=my-api tests=full ci_fix=on review=@alice fix the login endpoint
 ```
 
 The bot will:
-1. Queue the job and reply with a `task_id`
-2. A worker claims it and posts progress (claimed, PR created, CI status, done/failed)
-3. Creates a PR with the fix
+1. Route your message through the LLM to determine intent
+2. Execute the appropriate action (create job, check status, cancel, retry, or just chat)
+3. Reply in-thread with a natural language response
+4. For coding tasks: a worker claims the job and posts progress (claimed, PR created, CI status, done/failed)
 
 ### Via Web UI
 

@@ -14,9 +14,12 @@ export async function startSlackSocketMode(config: ServerConfig): Promise<App> {
 
   const handleMention = createAppMentionHandler(config);
 
-  app.event("app_mention", async ({ event, context }) => {
+  app.event("app_mention", async ({ event, context, say }) => {
     const eventId = context.eventId || `${event.channel}-${event.ts}`;
-    await handleMention(event as any, eventId);
+    const reply = await handleMention(event as any, eventId);
+    if (reply) {
+      await say({ text: reply, thread_ts: (event as any).thread_ts ?? event.ts });
+    }
   });
 
   await app.start();
