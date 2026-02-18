@@ -27,9 +27,9 @@ export function loadServerConfig() {
     mongoUri: process.env.MONGO_URI ||
       `mongodb+srv://${optional("MONGO_USERNAME", "places-team")}:${required("MONGO_PASSWORD")}@${optional("MONGO_HOST", "places-crawl.i6g7m.mongodb.net")}`,
     mongoDb: optional("MONGO_DB", "son_of_steve"),
-    slackAppToken: required("SLACK_APP_TOKEN"),
-    slackBotToken: required("SLACK_BOT_TOKEN"),
-    slackBotUserId: required("SLACK_BOT_USER_ID"),
+    slackAppToken: process.env.SLACK_APP_TOKEN || "",
+    slackBotToken: process.env.SLACK_BOT_TOKEN || "",
+    slackBotUserId: process.env.SLACK_BOT_USER_ID || "",
     jobDefaultLeaseSeconds: optionalInt("JOB_DEFAULT_LEASE_SECONDS", 120),
     jobHeartbeatSeconds: optionalInt("JOB_HEARTBEAT_SECONDS", 15),
     jobMaxRuntimeMinutes: optionalInt("JOB_MAX_RUNTIME_MINUTES", 60),

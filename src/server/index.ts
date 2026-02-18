@@ -20,9 +20,14 @@ async function main() {
   // Connect to MongoDB
   await connectMongo(config.mongoUri, config.mongoDb);
 
-  // Create Slack poster
-  const slackPoster = createSlackPoster(config.slackBotToken);
-  setSlackPoster(slackPoster);
+  // Create Slack poster (only if tokens are configured)
+  let slackPoster;
+  if (config.slackBotToken) {
+    slackPoster = createSlackPoster(config.slackBotToken);
+    setSlackPoster(slackPoster);
+  } else {
+    log.warn("SLACK_BOT_TOKEN not set — running without Slack integration");
+  }
 
   // Start Express server
   const app = express();
@@ -49,12 +54,14 @@ async function main() {
     log.info(`Server listening on port ${config.port}`);
   });
 
-  // Start Slack Socket Mode
-  try {
-    await startSlackSocketMode(config);
-  } catch (err: any) {
-    log.error("Failed to start Slack Socket Mode", { error: err.message });
-    log.warn("Server will continue without Slack integration");
+  // Start Slack Socket Mode (only if tokens are configured)
+  if (config.slackAppToken && config.slackBotToken) {
+    try {
+      await startSlackSocketMode(config);
+    } catch (err: any) {
+      log.error("Failed to start Slack Socket Mode", { error: err.message });
+      log.warn("Server will continue without Slack integration");
+    }
   }
 
   // Graceful shutdown
