@@ -1,3 +1,4 @@
+import "dotenv/config";
 import { createLogger } from "../shared/logger.js";
 import { loadWorkerConfig } from "./config.js";
 import { WorkerApiClient } from "./apiClient.js";
