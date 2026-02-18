@@ -13,7 +13,7 @@ export class GitHubActionsProvider implements CIProvider {
 
   async pollChecks(worktreePath: string, _branch: string): Promise<CICheckResult> {
     try {
-      const raw = exec("gh pr checks --json name,state,conclusion,detailsUrl", worktreePath);
+      const raw = exec("gh pr checks --json name,state,bucket,link", worktreePath);
       if (!raw) {
         return { status: "pending" };
       }
@@ -21,8 +21,8 @@ export class GitHubActionsProvider implements CIProvider {
       const checks = JSON.parse(raw) as Array<{
         name: string;
         state: string;
-        conclusion: string;
-        detailsUrl: string;
+        bucket: string;
+        link: string;
       }>;
 
       if (checks.length === 0) {
@@ -30,16 +30,16 @@ export class GitHubActionsProvider implements CIProvider {
       }
 
       const hasPending = checks.some(
-        (c) => c.state === "PENDING" || c.state === "QUEUED" || c.state === "IN_PROGRESS"
+        (c) => c.bucket === "pending" || c.state === "PENDING" || c.state === "QUEUED"
       );
       const hasFailed = checks.some(
-        (c) => c.conclusion === "FAILURE" || c.conclusion === "TIMED_OUT" || c.conclusion === "CANCELLED"
+        (c) => c.bucket === "fail"
       );
       const allSuccess = checks.every(
-        (c) => c.conclusion === "SUCCESS" || c.conclusion === "NEUTRAL" || c.conclusion === "SKIPPED"
+        (c) => c.bucket === "pass" || c.bucket === "skipping"
       );
 
-      const url = checks[0]?.detailsUrl;
+      const url = checks[0]?.link;
 
       if (hasPending) {
         return { status: "in_progress", url };
@@ -49,7 +49,7 @@ export class GitHubActionsProvider implements CIProvider {
       }
       if (hasFailed) {
         const failedNames = checks
-          .filter((c) => c.conclusion === "FAILURE")
+          .filter((c) => c.bucket === "fail")
           .map((c) => c.name)
           .join(", ");
         return {
@@ -69,19 +69,19 @@ export class GitHubActionsProvider implements CIProvider {
 
   async getFailureSummary(worktreePath: string, _branch: string): Promise<string> {
     try {
-      const raw = exec("gh pr checks --json name,state,conclusion,detailsUrl", worktreePath);
+      const raw = exec("gh pr checks --json name,state,bucket,link", worktreePath);
       const checks = JSON.parse(raw) as Array<{
         name: string;
         state: string;
-        conclusion: string;
-        detailsUrl: string;
+        bucket: string;
+        link: string;
       }>;
 
-      const failed = checks.filter((c) => c.conclusion === "FAILURE");
+      const failed = checks.filter((c) => c.bucket === "fail");
       if (failed.length === 0) return "No failed checks found.";
 
       const lines = failed.map(
-        (c) => `- ${c.name}: ${c.conclusion} (${c.detailsUrl})`
+        (c) => `- ${c.name}: ${c.bucket} (${c.link})`
       );
       return `Failed CI checks:\n${lines.join("\n")}`;
     } catch (err: any) {
