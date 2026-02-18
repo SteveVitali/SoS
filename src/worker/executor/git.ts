@@ -14,7 +14,7 @@ export function hasChanges(worktreePath: string): boolean {
 }
 
 export function commitAll(worktreePath: string, message: string): string {
-  exec("git add -A", worktreePath);
+  exec("git add -A -- ':!.sonofsteve'", worktreePath);
   // Use execFileSync to avoid shell interpretation of backticks, $, etc.
   log.info("exec", { cmd: "git commit -m <message>", cwd: worktreePath });
   execFileSync("git", ["commit", "-m", message], {
@@ -43,7 +43,7 @@ export function getCommitSummary(worktreePath: string): string {
 export function getDiff(worktreePath: string): string {
   try {
     // Stage everything first so we diff all changes (tracked + untracked)
-    exec("git add -A", worktreePath);
+    exec("git add -A -- ':!.sonofsteve'", worktreePath);
     return exec("git diff --cached", worktreePath);
   } catch {
     return "";

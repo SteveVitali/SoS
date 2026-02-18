@@ -58,6 +58,7 @@ export async function runClaude(
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
+  ensureSosGitignore(sosDir);
 
   const promptPath = path.join(sosDir, "prompt.md");
   const logPath = path.join(sosDir, "claude.log");
@@ -82,6 +83,7 @@ export async function runClaudeFix(
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
+  ensureSosGitignore(sosDir);
 
   const promptPath = path.join(sosDir, "fix-prompt.md");
   const logPath = path.join(sosDir, "claude-fix.log");
@@ -121,6 +123,7 @@ export async function runClaudeReview(
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
+  ensureSosGitignore(sosDir);
 
   const promptPath = path.join(sosDir, "review-prompt.md");
   const logPath = path.join(sosDir, "claude-review.log");
@@ -166,6 +169,11 @@ export async function runClaudeReview(
     logPath,
     15 * 60 * 1000
   );
+}
+
+function ensureSosGitignore(sosDir: string) {
+  const gi = path.join(sosDir, ".gitignore");
+  if (!existsSync(gi)) writeFileSync(gi, "*\n", "utf-8");
 }
 
 // Shared runner: streams Claude output to terminal in real-time via stream-json
