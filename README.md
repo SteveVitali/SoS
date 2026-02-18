@@ -64,19 +64,14 @@ The web UI is available at `http://localhost:3000` (or `http://localhost:5173` i
 2. Under **Socket Mode**, enable it. Generate an **App-Level Token** with `connections:write` scope → this is your `SLACK_APP_TOKEN` (`xapp-...`).
 3. Under **Event Subscriptions**:
    - **Toggle "Enable Events" to ON** (this is off by default and easy to miss!)
-   - Under "Subscribe to bot events", click "Add Bot User Event" and add these events:
-     - `app_mention` — **(required)** triggers when someone @-mentions the bot
-     - `message.channels` — **(required for thread context)** receives follow-up replies in public channel threads
-     - `message.groups` — **(required for thread context in private channels)** receives follow-up replies in private channel threads
+   - Under "Subscribe to bot events", click "Add Bot User Event" and add `app_mention`
    - Save changes
-
-   > **Why `message.*` events?** Without these, the bot only sees the initial @-mention. With them, the bot can follow the full conversation in a thread — reading earlier messages for context, responding to follow-ups, and deciding whether a reply is directed at it or is a side conversation between humans.
-
+   - **Security note**: Only subscribe to `app_mention`. Do **not** add `message.channels` or `message.groups` — the bot should only receive messages where it is explicitly @-mentioned. Thread context is fetched via API call when needed, not via event subscriptions.
 4. Under **OAuth & Permissions**, add these Bot Token Scopes:
    - `app_mentions:read` — receive @-mentions
    - `chat:write` — post replies
-   - `channels:history` — **(required)** fetch thread messages in public channels
-   - `groups:history` — **(required)** fetch thread messages in private channels
+   - `channels:history` — fetch thread messages in public channels (used when @-mentioned in a thread to read prior context)
+   - `groups:history` — fetch thread messages in private channels
    - `users:read` — **(recommended)** resolve Slack user IDs to display names in the UI
 5. Install the app to your workspace. Copy the **Bot User OAuth Token** → `SLACK_BOT_TOKEN` (`xoxb-...`).
 6. Find the bot's user ID (choose one method):
