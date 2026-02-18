@@ -7,7 +7,9 @@ import {
   retryJob,
   deleteJob,
   getUsers,
+  resolveSlackUsers,
   type Job,
+  type SlackUser,
 } from "./api.js";
 
 // --- Utilities ---
@@ -24,6 +26,68 @@ function relativeTime(iso: string): string {
 
 function shortId(id: string): string {
   return id.slice(0, 8);
+}
+
+// --- Slack User Name Cache ---
+const slackNameCache = new Map<string, SlackUser>();
+const pendingIds = new Set<string>();
+let flushTimer: ReturnType<typeof setTimeout> | null = null;
+const subscribers = new Set<() => void>();
+
+function isSlackId(s: string): boolean {
+  return /^U[A-Z0-9]{6,}$/.test(s);
+}
+
+function formatUser(userId: string): string {
+  if (!isSlackId(userId)) return userId;
+  const cached = slackNameCache.get(userId);
+  if (cached && cached.displayName !== userId) {
+    return `${cached.displayName} (${userId})`;
+  }
+  return userId;
+}
+
+function formatUserShort(userId: string): string {
+  if (!isSlackId(userId)) return userId;
+  const cached = slackNameCache.get(userId);
+  if (cached && cached.displayName !== userId) {
+    return cached.displayName;
+  }
+  return userId;
+}
+
+function requestSlackResolve(ids: string[]) {
+  for (const id of ids) {
+    if (isSlackId(id) && !slackNameCache.has(id)) {
+      pendingIds.add(id);
+    }
+  }
+  if (pendingIds.size > 0 && !flushTimer) {
+    flushTimer = setTimeout(async () => {
+      const batch = [...pendingIds];
+      pendingIds.clear();
+      flushTimer = null;
+      try {
+        const resolved = await resolveSlackUsers(batch);
+        for (const [id, user] of Object.entries(resolved)) {
+          slackNameCache.set(id, user);
+        }
+        subscribers.forEach((cb) => cb());
+      } catch { /* best-effort */ }
+    }, 50);
+  }
+}
+
+function useSlackNames(ids: string[]) {
+  const [, setTick] = useState(0);
+  useEffect(() => {
+    const cb = () => setTick((t) => t + 1);
+    subscribers.add(cb);
+    return () => { subscribers.delete(cb); };
+  }, []);
+  useEffect(() => {
+    requestSlackResolve(ids);
+  }, [ids.join(",")]);
 }
 
 const STATUS_COLORS: Record<string, string> = {
@@ -202,6 +266,10 @@ function JobsList({
 
   useEffect(() => { load(); }, [load]);
 
+  // Resolve Slack display names for all visible user IDs
+  const allUserIds = [...new Set([...users, ...jobs.map((j) => j.requested_by)])];
+  useSlackNames(allUserIds);
+
   const handleAction = async (action: "cancel" | "retry" | "delete", taskId: string) => {
     try {
       if (action === "cancel") await cancelJob(taskId);
@@ -231,7 +299,7 @@ function JobsList({
         </select>
         <select style={css.select} value={requestedBy} onChange={(e) => { setRequestedBy(e.target.value); setOffset(0); }}>
           <option value="">All users</option>
-          {users.map((u) => <option key={u} value={u}>{u}</option>)}
+          {users.map((u) => <option key={u} value={u}>{formatUserShort(u)}</option>)}
         </select>
         <input
           style={{ ...css.input, maxWidth: 250 }}
@@ -268,7 +336,7 @@ function JobsList({
                       <span style={css.link}>{shortId(job.task_id)}</span>
                     </td>
                     <td style={css.td}><StatusBadge status={job.status} /></td>
-                    <td style={{ ...css.td, ...css.mono, fontSize: 12 }}>{job.requested_by}</td>
+                    <td style={{ ...css.td, fontSize: 12 }} title={job.requested_by}>{formatUser(job.requested_by)}</td>
                     <td style={css.td} title={new Date(job.created_at).toLocaleString()}>
                       {relativeTime(job.created_at)}
                     </td>
@@ -335,6 +403,8 @@ function JobDetail({
   const [error, setError] = useState("");
   const [actionError, setActionError] = useState("");
 
+  useSlackNames(job ? [job.requested_by] : []);
+
   const load = useCallback(async () => {
     setLoading(true);
     try {
@@ -380,8 +450,8 @@ function JobDetail({
             <h2 style={{ ...css.mono, fontSize: 18, marginBottom: 8 }}>{job.task_id}</h2>
             <div style={css.row}>
               <StatusBadge status={job.status} />
-              <span style={{ color: "var(--fg2)", fontSize: 13 }}>
-                by {job.requested_by} · {relativeTime(job.created_at)}
+              <span style={{ color: "var(--fg2)", fontSize: 13 }} title={job.requested_by}>
+                by {formatUser(job.requested_by)} · {relativeTime(job.created_at)}
               </span>
               {job.parent_task_id && (
                 <span style={{ fontSize: 13 }}>

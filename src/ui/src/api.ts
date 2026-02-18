@@ -97,3 +97,22 @@ export async function deleteJob(taskId: string): Promise<{ job: Job }> {
 export async function getUsers(): Promise<{ users: string[] }> {
   return request("GET", "/users");
 }
+
+export interface SlackUser {
+  id: string;
+  displayName: string;
+  realName: string;
+  avatar?: string;
+}
+
+export async function resolveSlackUsers(
+  userIds: string[]
+): Promise<Record<string, SlackUser>> {
+  if (userIds.length === 0) return {};
+  const res = await request<{ users: Record<string, SlackUser> }>(
+    "POST",
+    "/slack/users",
+    { user_ids: userIds }
+  );
+  return res.users;
+}
