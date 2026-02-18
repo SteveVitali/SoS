@@ -2,6 +2,7 @@ import { Router, Request, Response } from "express";
 import { createLogger } from "../../shared/logger.js";
 import { CreateJobFromWebSchema } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
+import { resolveSlackUser } from "../slack/userResolver.js";
 
 const log = createLogger("server:api:web");
 
@@ -117,6 +118,34 @@ export function createWebRoutes(): Router {
       res.json({ users });
     } catch (err: any) {
       log.error("Get users error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // GET /api/web/slack/user/:user_id — resolve a Slack user ID to display name
+  router.get("/slack/user/:user_id", async (req: Request, res: Response) => {
+    try {
+      const user = await resolveSlackUser(pstr(req.params.user_id));
+      res.json({ user });
+    } catch (err: any) {
+      log.error("Resolve Slack user error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/web/slack/users — batch resolve Slack user IDs
+  router.post("/slack/users", async (req: Request, res: Response) => {
+    try {
+      const ids: string[] = req.body?.user_ids || [];
+      const results: Record<string, any> = {};
+      await Promise.all(
+        ids.map(async (id) => {
+          results[id] = await resolveSlackUser(id);
+        })
+      );
+      res.json({ users: results });
+    } catch (err: any) {
+      log.error("Batch resolve Slack users error", { error: err.message });
       res.status(500).json({ error: "Internal error" });
     }
   });

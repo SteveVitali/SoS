@@ -8,6 +8,7 @@ import { connectMongo, closeMongo } from "./mongo.js";
 import { createSlackPoster } from "./slack/slackClient.js";
 import { startSlackSocketMode } from "./slack/socketMode.js";
 import { setSlackPoster } from "./jobs/jobService.js";
+import { initUserResolver } from "./slack/userResolver.js";
 import { createRouter } from "./api/router.js";
 
 const log = createLogger("server");
@@ -27,6 +28,7 @@ async function main() {
   if (slackEnabled) {
     slackPoster = createSlackPoster(config.slackBotToken);
     setSlackPoster(slackPoster);
+    initUserResolver(config.slackBotToken);
   } else {
     log.warn("Slack tokens not configured — running without Slack integration");
   }
