@@ -1,0 +1,43 @@
+import { execSync } from "child_process";
+import { createLogger } from "../../shared/logger.js";
+
+const log = createLogger("worker:git");
+
+function exec(cmd: string, cwd: string): string {
+  log.info("exec", { cmd, cwd });
+  return execSync(cmd, { cwd, encoding: "utf-8", timeout: 60_000 }).trim();
+}
+
+export function hasChanges(worktreePath: string): boolean {
+  const status = exec("git status --porcelain", worktreePath);
+  return status.length > 0;
+}
+
+export function commitAll(worktreePath: string, message: string): string {
+  exec("git add -A", worktreePath);
+  exec(`git commit -m "${message.replace(/"/g, '\\"')}"`, worktreePath);
+  const sha = exec("git rev-parse HEAD", worktreePath);
+  log.info("Committed", { sha, message });
+  return sha;
+}
+
+export function push(worktreePath: string, branch: string): void {
+  exec(`git push -u origin ${branch}`, worktreePath);
+  log.info("Pushed", { branch });
+}
+
+export function getCommitSummary(worktreePath: string): string {
+  try {
+    return exec("git log --oneline -5", worktreePath);
+  } catch {
+    return "";
+  }
+}
+
+export function getDiffStats(worktreePath: string): string {
+  try {
+    return exec("git diff --stat HEAD~1 HEAD", worktreePath);
+  } catch {
+    return "";
+  }
+}
