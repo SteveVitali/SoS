@@ -1,0 +1,42 @@
+import { createLogger } from "../shared/logger.js";
+
+const log = createLogger("server:config");
+
+function required(name: string): string {
+  const val = process.env[name];
+  if (!val) {
+    log.error(`Missing required env var: ${name}`);
+    process.exit(1);
+  }
+  return val;
+}
+
+function optional(name: string, fallback: string): string {
+  return process.env[name] || fallback;
+}
+
+function optionalInt(name: string, fallback: number): number {
+  const val = process.env[name];
+  return val ? parseInt(val, 10) : fallback;
+}
+
+export function loadServerConfig() {
+  return {
+    port: optionalInt("SOS_SERVER_PORT", 3000),
+    internalApiToken: required("SOS_INTERNAL_API_TOKEN"),
+    mongoUri: process.env.MONGO_URI ||
+      `mongodb+srv://${optional("MONGO_USERNAME", "places-team")}:${required("MONGO_PASSWORD")}@${optional("MONGO_HOST", "places-crawl.i6g7m.mongodb.net")}`,
+    mongoDb: optional("MONGO_DB", "son_of_steve"),
+    slackAppToken: required("SLACK_APP_TOKEN"),
+    slackBotToken: required("SLACK_BOT_TOKEN"),
+    slackBotUserId: required("SLACK_BOT_USER_ID"),
+    jobDefaultLeaseSeconds: optionalInt("JOB_DEFAULT_LEASE_SECONDS", 120),
+    jobHeartbeatSeconds: optionalInt("JOB_HEARTBEAT_SECONDS", 15),
+    jobMaxRuntimeMinutes: optionalInt("JOB_MAX_RUNTIME_MINUTES", 60),
+    jobMaxCiFixAttempts: optionalInt("JOB_MAX_CI_FIX_ATTEMPTS", 2),
+    webBasicAuthUser: process.env.WEB_BASIC_AUTH_USER,
+    webBasicAuthPass: process.env.WEB_BASIC_AUTH_PASS,
+  };
+}
+
+export type ServerConfig = ReturnType<typeof loadServerConfig>;
