@@ -81,6 +81,44 @@ export function createWebRoutes(): Router {
     }
   });
 
+  // POST /api/web/jobs/:task_id/promote-pr
+  router.post("/jobs/:task_id/promote-pr", async (req: Request, res: Response) => {
+    try {
+      const taskId = pstr(req.params.task_id);
+      const reviewers: string[] | undefined = req.body?.reviewers;
+
+      // Look up job to get PR URL
+      const existing = await jobService.findJobByTaskId(taskId);
+      if (!existing) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
+      if (existing.status !== "WAITING_FOR_APPROVAL") {
+        res.status(409).json({ error: "Job is not waiting for approval" });
+        return;
+      }
+      if (!existing.pr_urls?.length) {
+        res.status(400).json({ error: "No PR URL found on job" });
+        return;
+      }
+
+      // Run gh pr ready + add reviewers
+      const { promotePr: ghPromotePr } = await import("../../worker/executor/pr.js");
+      ghPromotePr(existing.pr_urls[0], reviewers);
+
+      // Transition job WAITING_FOR_APPROVAL → DONE
+      const job = await jobService.promotePr(taskId, reviewers);
+      if (!job) {
+        res.status(409).json({ error: "Promote failed" });
+        return;
+      }
+      res.json({ job });
+    } catch (err: any) {
+      log.error("Promote PR error", { error: err.message, task_id: pstr(req.params.task_id) });
+      res.status(500).json({ error: err.message || "Internal error" });
+    }
+  });
+
   // POST /api/web/jobs/:task_id/retry
   router.post("/jobs/:task_id/retry", async (req: Request, res: Response) => {
     try {

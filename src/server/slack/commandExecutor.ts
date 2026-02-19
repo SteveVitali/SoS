@@ -4,6 +4,7 @@ import {
   cancel,
   createJobFromSlack,
   findJobByTaskId,
+  promotePr,
   queryJobs,
   retry,
 } from "../jobs/jobService.js";
@@ -136,6 +137,44 @@ export async function executeCommand(
         reply: `${reply}\n\n🔄 Retried as \`${newJob.task_id.slice(0, 8)}…\`.`,
         actionTaken: `retry_job: ${newJob.task_id}`,
       };
+    }
+
+    case "promote_pr": {
+      const taskId = await resolveTaskId(args.task_id || "");
+      if (!taskId) {
+        return {
+          reply: `${reply}\n\n❓ Couldn't find a job matching \`${args.task_id}\`.`,
+          actionTaken: "promote_pr: not found",
+        };
+      }
+      const existing = await findJobByTaskId(taskId);
+      if (!existing || existing.status !== "WAITING_FOR_APPROVAL") {
+        return {
+          reply: `${reply}\n\n⚠️ \`${taskId.slice(0, 8)}…\` isn't waiting for approval (status: ${existing?.status || "not found"}).`,
+          actionTaken: "promote_pr: wrong status",
+        };
+      }
+      if (!existing.pr_urls?.length) {
+        return {
+          reply: `${reply}\n\n⚠️ No PR URL on \`${taskId.slice(0, 8)}…\`.`,
+          actionTaken: "promote_pr: no pr",
+        };
+      }
+      try {
+        const { promotePr: ghPromotePr } = await import("../../worker/executor/pr.js");
+        ghPromotePr(existing.pr_urls[0], args.reviewers);
+        await promotePr(taskId, args.reviewers);
+        return {
+          reply: `${reply}\n\n✅ PR promoted to ready-for-review: ${existing.pr_urls[0]}`,
+          actionTaken: `promote_pr: ${taskId}`,
+        };
+      } catch (err: any) {
+        log.error("Failed to promote PR", { error: err.message });
+        return {
+          reply: `${reply}\n\n⚠️ Failed to promote PR: ${err.message}`,
+          actionTaken: "promote_pr failed",
+        };
+      }
     }
 
     case "list_jobs": {

@@ -133,6 +133,24 @@ export class WorkerApiClient {
     }
   }
 
+  async awaitApproval(
+    taskId: string,
+    nodeId: string,
+    data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
+  ): Promise<JobDoc | null> {
+    try {
+      const res = await this.request<{ job: JobDoc }>(
+        "POST",
+        `/api/worker/jobs/${taskId}/await-approval`,
+        { node_id: nodeId, ...data },
+      );
+      return res.job;
+    } catch (err: any) {
+      if (err.status === 409) return null;
+      throw err;
+    }
+  }
+
   async getJobStatus(taskId: string): Promise<string | null> {
     try {
       const data = await this.request<{ status: string }>(

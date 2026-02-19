@@ -12,6 +12,7 @@ function exec(cmd: string, cwd: string): string {
 
 export interface PrCreateResult {
   url: string;
+  draft?: boolean;
 }
 
 export function detectExistingPr(worktreePath: string, branch: string): string | null {
@@ -36,7 +37,9 @@ export function createPr(
   checksSummary: string,
   slackPermalink?: string,
   reviewers?: string[],
+  draft?: boolean,
 ): PrCreateResult {
+  const isDraft = draft ?? repo.pr?.draft_by_default ?? true;
   const title = `sos: ${taskText.slice(0, 72)}`;
 
   const bodyLines: string[] = [];
@@ -64,25 +67,47 @@ export function createPr(
   const bodyFile = `/tmp/sos-pr-body-${taskId}.md`;
   writeFileSync(bodyFile, body, "utf-8");
 
+  const draftFlag = isDraft ? " --draft" : "";
   const prUrl = exec(
-    `gh pr create --title "${title.replace(/"/g, '\\"')}" --body-file "${bodyFile}" --head "${branch}" --base "${repo.default_branch}"`,
+    `gh pr create --title "${title.replace(/"/g, '\\"')}" --body-file "${bodyFile}" --head "${branch}" --base "${repo.default_branch}"${draftFlag}`,
     worktreePath,
   );
 
-  log.info("PR created", { url: prUrl });
+  log.info("PR created", { url: prUrl, draft: isDraft });
 
-  // Add reviewers if specified
-  const allReviewers = [...(reviewers || []), ...(repo.pr?.reviewers_default || [])];
-  const uniqueReviewers = [...new Set(allReviewers)].filter(Boolean);
+  // Add reviewers only for non-draft PRs (draft PRs get reviewers on promote)
+  if (!isDraft) {
+    const allReviewers = [...(reviewers || []), ...(repo.pr?.reviewers_default || [])];
+    const uniqueReviewers = [...new Set(allReviewers)].filter(Boolean);
 
-  if (uniqueReviewers.length > 0) {
-    try {
-      exec(`gh pr edit "${prUrl}" --add-reviewer ${uniqueReviewers.join(",")}`, worktreePath);
-      log.info("Reviewers added", { reviewers: uniqueReviewers });
-    } catch (err: any) {
-      log.warn("Failed to add reviewers", { error: err.message });
+    if (uniqueReviewers.length > 0) {
+      try {
+        exec(`gh pr edit "${prUrl}" --add-reviewer ${uniqueReviewers.join(",")}`, worktreePath);
+        log.info("Reviewers added", { reviewers: uniqueReviewers });
+      } catch (err: any) {
+        log.warn("Failed to add reviewers", { error: err.message });
+      }
     }
   }
 
-  return { url: prUrl };
+  return { url: prUrl, draft: isDraft };
+}
+
+/** Promote a draft PR to ready-for-review. Runs gh CLI directly. */
+export function promotePr(prUrl: string, reviewers?: string[]): void {
+  log.info("Promoting draft PR", { url: prUrl });
+  execSync(`gh pr ready "${prUrl}"`, { encoding: "utf-8", timeout: 30_000 });
+
+  if (reviewers && reviewers.length > 0) {
+    const unique = [...new Set(reviewers)].filter(Boolean);
+    try {
+      execSync(`gh pr edit "${prUrl}" --add-reviewer ${unique.join(",")}`, {
+        encoding: "utf-8",
+        timeout: 30_000,
+      });
+      log.info("Reviewers added on promote", { reviewers: unique });
+    } catch (err: any) {
+      log.warn("Failed to add reviewers on promote", { error: err.message });
+    }
+  }
 }

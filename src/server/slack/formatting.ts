@@ -39,6 +39,20 @@ export function fmtFailed(job: JobDoc): string {
   return `Failed ❌ \`task_id=${job.task_id}\`${errMsg}${prs}`;
 }
 
+export function fmtAwaitingApproval(job: JobDoc, payload: any): string {
+  const msg = payload?.message;
+  if (msg) return msg;
+  const prs = job.pr_urls?.length ? `\nDraft PR: ${job.pr_urls.join(", ")}` : "";
+  return `Awaiting approval ⏳ \`task_id=${job.task_id}\`${prs}\nReply here to promote, or use the web dashboard.`;
+}
+
+export function fmtPrPromoted(job: JobDoc, payload: any): string {
+  const msg = payload?.message;
+  if (msg) return msg;
+  const prs = job.pr_urls?.length ? `\n${job.pr_urls.join(", ")}` : "";
+  return `PR promoted to ready-for-review ✅ \`task_id=${job.task_id}\`${prs}`;
+}
+
 export function fmtCanceled(job: JobDoc): string {
   return `Canceled ⛔ \`task_id=${job.task_id}\``;
 }
@@ -58,6 +72,10 @@ export function fmtEvent(job: JobDoc, type: string, payload: any): string {
       return fmtDone(job);
     case "FAILED":
       return fmtFailed(job);
+    case "WAITING_FOR_APPROVAL":
+      return fmtAwaitingApproval(job, payload);
+    case "PR_PROMOTED":
+      return fmtPrPromoted(job, payload);
     case "CANCELED":
       return fmtCanceled(job);
     default:

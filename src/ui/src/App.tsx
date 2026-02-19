@@ -9,6 +9,7 @@ import {
   getUsers,
   type Job,
   listJobs,
+  promotePr,
   resolveSlackUsers,
   retryJob,
   type SlackUser,
@@ -469,6 +470,37 @@ function JobsList() {
     load();
   }, [load]);
 
+  // Auto-poll every 15s and fire browser notifications for WAITING_FOR_APPROVAL
+  const [prevStatuses] = useState(() => new Map<string, string>());
+  useEffect(() => {
+    // Request notification permission on first render
+    if ("Notification" in window && Notification.permission === "default") {
+      Notification.requestPermission();
+    }
+  }, []);
+  useEffect(() => {
+    for (const job of jobs) {
+      const prev = prevStatuses.get(job.task_id);
+      if (prev && prev !== "WAITING_FOR_APPROVAL" && job.status === "WAITING_FOR_APPROVAL") {
+        if ("Notification" in window && Notification.permission === "granted") {
+          const n = new Notification("Son of Steve — PR Ready for Review", {
+            body: `${job.title || job.task_text.slice(0, 60)}\nClick to review and promote.`,
+            tag: `sos-approval-${job.task_id}`,
+          });
+          n.onclick = () => {
+            window.focus();
+            navigate(`/jobs/${job.task_id}`);
+          };
+        }
+      }
+      prevStatuses.set(job.task_id, job.status);
+    }
+  }, [jobs, prevStatuses, navigate]);
+  useEffect(() => {
+    const timer = setInterval(load, 15_000);
+    return () => clearInterval(timer);
+  }, [load]);
+
   // Resolve Slack display names for all visible user IDs
   const allUserIds = [...new Set([...users, ...jobs.map((j) => j.requested_by)])];
   useSlackNames(allUserIds);
@@ -805,7 +837,7 @@ function JobDetail() {
     load();
   }, [load]);
 
-  const handleAction = async (action: "cancel" | "retry" | "delete") => {
+  const handleAction = async (action: "cancel" | "retry" | "delete" | "promote") => {
     if (!taskId) return;
     setActionError("");
     try {
@@ -818,6 +850,9 @@ function JobDetail() {
       } else if (action === "delete") {
         await deleteJob(taskId);
         navigate("/");
+      } else if (action === "promote") {
+        await promotePr(taskId);
+        load();
       }
     } catch (err: any) {
       setActionError(err.message);
@@ -872,6 +907,11 @@ function JobDetail() {
             {["QUEUED", "RUNNING", "FIXING_CI"].includes(job.status) && (
               <button style={css.btnDanger} onClick={() => handleAction("cancel")}>
                 Cancel
+              </button>
+            )}
+            {job.status === "WAITING_FOR_APPROVAL" && (
+              <button style={css.btnPrimary} onClick={() => handleAction("promote")}>
+                Promote PR
               </button>
             )}
             {["FAILED", "CANCELED"].includes(job.status) && (

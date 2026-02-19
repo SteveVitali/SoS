@@ -189,6 +189,47 @@ export async function completeJob(
   return result as JobDoc | null;
 }
 
+export async function awaitApprovalJob(
+  taskId: string,
+  nodeId: string,
+  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
+): Promise<JobDoc | null> {
+  const col = getJobsCollection();
+  const now = nowDate();
+  const result = await col.findOneAndUpdate(
+    {
+      task_id: taskId,
+      claimed_by: nodeId,
+      status: { $in: ["RUNNING", "FIXING_CI"] },
+    },
+    {
+      $set: {
+        status: "WAITING_FOR_APPROVAL" as JobStatus,
+        result_summary: data.result_summary,
+        ...(data.pr_urls ? { pr_urls: data.pr_urls } : {}),
+        ...(data.ci ? { ci: data.ci } : {}),
+        ...(data.metrics ? { metrics: data.metrics } : {}),
+        run_ended_at: now,
+        updated_at: now,
+      },
+      $unset: { claimed_by: "", lease_expires_at: "" },
+    },
+    { returnDocument: "after" },
+  );
+  return result as JobDoc | null;
+}
+
+export async function promoteJob(taskId: string): Promise<JobDoc | null> {
+  const col = getJobsCollection();
+  const now = nowDate();
+  const result = await col.findOneAndUpdate(
+    { task_id: taskId, status: "WAITING_FOR_APPROVAL" },
+    { $set: { status: "DONE" as JobStatus, updated_at: now } },
+    { returnDocument: "after" },
+  );
+  return result as JobDoc | null;
+}
+
 export async function failJob(
   taskId: string,
   nodeId: string,

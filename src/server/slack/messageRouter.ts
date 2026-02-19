@@ -11,6 +11,7 @@ export interface RoutedAction {
     | "job_status"
     | "cancel_job"
     | "retry_job"
+    | "promote_pr"
     | "list_jobs"
     | "chat"
     | "no_op";
@@ -32,6 +33,7 @@ You will receive the full conversation history from the Slack thread. Messages a
 - **job_status**: The user is asking about the status of a specific job. Extract the task_id (can be partial).
 - **cancel_job**: The user wants to cancel a running job. Extract the task_id.
 - **retry_job**: The user wants to retry a failed job. Extract the task_id.
+- **promote_pr**: The user wants to promote a draft PR to ready-for-review. This applies when a job is in WAITING_FOR_APPROVAL status. Extract the task_id and optional reviewer GitHub usernames.
 - **list_jobs**: The user wants to see recent jobs. Optionally extract a limit.
 - **chat**: The user is just talking, asking a question about you, saying hi, or their message doesn't map to any action. Just respond conversationally as Steve.
 - **no_op**: The latest message in the thread is NOT directed at you and doesn't require your response. Use this when people are having a side conversation in the thread, or when someone replies to someone else and it's clear the bot shouldn't chime in. When in doubt between chat and no_op, prefer no_op — don't be annoying.
@@ -102,6 +104,23 @@ const TOOLS: ToolDefinition[] = [
       type: "object",
       properties: {
         task_id: { type: "string", description: "Full or partial task_id" },
+      },
+      required: ["task_id"],
+    },
+  },
+  {
+    name: "promote_pr",
+    description:
+      "Promote a draft PR to ready-for-review. Use when a job is in WAITING_FOR_APPROVAL status and the user wants to ship it.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "Full or partial task_id" },
+        reviewers: {
+          type: "array",
+          items: { type: "string" },
+          description: "GitHub usernames for PR reviewers",
+        },
       },
       required: ["task_id"],
     },

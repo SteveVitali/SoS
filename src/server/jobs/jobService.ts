@@ -13,9 +13,11 @@ import {
   getDistinctRequestedBy,
   insertJob,
   queryJobs,
+  awaitApprovalJob as repoAwaitApprovalJob,
   cancelJob as repoCancelJob,
   completeJob as repoCompleteJob,
   failJob as repoFailJob,
+  promoteJob as repoPromoteJob,
   requeueJob as repoRequeueJob,
   softDeleteJob as repoSoftDeleteJob,
   updateJobFields,
@@ -204,6 +206,49 @@ export async function handleWorkerEvent(
       await slackPoster.postEvent(job, type, payload);
     }
   }
+}
+
+// --- Await Approval ---
+export async function awaitApproval(
+  taskId: string,
+  nodeId: string,
+  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
+) {
+  const job = await repoAwaitApprovalJob(taskId, nodeId, data);
+  if (job) {
+    await appendEvent(taskId, {
+      at: nowDate(),
+      node_id: nodeId,
+      type: "WAITING_FOR_APPROVAL",
+      payload: { pr_urls: data.pr_urls },
+    });
+    if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
+      const prs = job.pr_urls?.length ? `\nDraft PR: ${job.pr_urls.join(", ")}` : "";
+      await slackPoster.postEvent(job, "WAITING_FOR_APPROVAL", {
+        message: `Awaiting approval ⏳ \`task_id=${job.task_id}\`${prs}\nReply here to promote, or use the web dashboard.`,
+      });
+    }
+  }
+  return job;
+}
+
+// --- Promote PR ---
+export async function promotePr(taskId: string, reviewers?: string[]) {
+  const job = await repoPromoteJob(taskId);
+  if (job) {
+    await appendEvent(taskId, {
+      at: nowDate(),
+      type: "PR_PROMOTED",
+      payload: { reviewers },
+    });
+    if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
+      const prs = job.pr_urls?.length ? `\n${job.pr_urls.join(", ")}` : "";
+      await slackPoster.postEvent(job, "PR_PROMOTED", {
+        message: `PR promoted to ready-for-review ✅ \`task_id=${job.task_id}\`${prs}`,
+      });
+    }
+  }
+  return job;
 }
 
 // --- Complete ---

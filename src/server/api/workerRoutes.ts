@@ -118,6 +118,32 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
     }
   });
 
+  // POST /api/worker/jobs/:task_id/await-approval
+  router.post("/jobs/:task_id/await-approval", async (req: Request, res: Response) => {
+    try {
+      const parsed = CompleteJobSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+        return;
+      }
+      const { node_id, result_summary, pr_urls, ci, metrics } = parsed.data;
+      const job = await jobService.awaitApproval(pstr(req.params.task_id), node_id, {
+        result_summary,
+        pr_urls,
+        ci,
+        metrics,
+      });
+      if (!job) {
+        res.status(409).json({ error: "Await approval failed: not owner or not active" });
+        return;
+      }
+      res.json({ job });
+    } catch (err: any) {
+      log.error("Await approval error", { error: err.message, task_id: pstr(req.params.task_id) });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // POST /api/worker/jobs/:task_id/complete
   router.post("/jobs/:task_id/complete", async (req: Request, res: Response) => {
     try {

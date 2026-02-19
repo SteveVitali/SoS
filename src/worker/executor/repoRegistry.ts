@@ -20,6 +20,7 @@ export interface RepoEntry {
   };
   pr?: {
     reviewers_default?: string[];
+    draft_by_default?: boolean;
   };
   ci?: {
     provider?: string;
@@ -47,7 +48,12 @@ export function loadRegistry(path: string): RepoRegistry {
           clean_mode: e.clean_mode === "full" ? "full" : "light",
           detect: e.detect,
           commands: e.commands,
-          pr: e.pr,
+          pr: e.pr
+            ? {
+                reviewers_default: e.pr.reviewers_default,
+                draft_by_default: e.pr.draft_by_default ?? true,
+              }
+            : { draft_by_default: true },
           ci: e.ci,
         });
       }

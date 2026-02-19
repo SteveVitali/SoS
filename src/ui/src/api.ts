@@ -119,6 +119,10 @@ export async function deleteJob(taskId: string): Promise<{ job: Job }> {
   return request("DELETE", `/jobs/${taskId}`);
 }
 
+export async function promotePr(taskId: string, reviewers?: string[]): Promise<{ job: Job }> {
+  return request("POST", `/jobs/${taskId}/promote-pr`, { reviewers });
+}
+
 export async function getUsers(): Promise<{ users: string[] }> {
   return request("GET", "/users");
 }

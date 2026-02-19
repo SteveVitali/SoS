@@ -292,6 +292,7 @@ export async function runJob(
 
     // If Claude already committed, pushed, and created a PR — skip to CI monitoring
     let prUrl: string;
+    let prIsDraft = false;
     let checks = { ok: true, summary: "Checks skipped" };
 
     if (claudeHandledEverything) {
@@ -426,7 +427,8 @@ export async function runJob(
           job.reviewers,
         );
         prUrl = prResult.url;
-        await events.emit("PR_CREATED", { url: prUrl });
+        prIsDraft = prResult.draft ?? false;
+        await events.emit("PR_CREATED", { url: prUrl, draft: prIsDraft });
       }
     }
     checkTimeout();
@@ -526,6 +528,15 @@ export async function runJob(
       // CI still failing after attempts, but PR exists — complete with warning
       await api.complete(job.task_id, workerId, {
         result_summary: `${resultSummary}\n\n⚠️ CI still failing after ${ciAttempt} fix attempts.`,
+        pr_urls: [prUrl],
+        ci: { provider: ciProviderName },
+        metrics,
+      });
+    } else if (prIsDraft) {
+      // Draft PR — set WAITING_FOR_APPROVAL instead of DONE
+      await events.emit("PR_READY_FOR_APPROVAL", { url: prUrl });
+      await api.awaitApproval(job.task_id, workerId, {
+        result_summary: resultSummary,
         pr_urls: [prUrl],
         ci: { provider: ciProviderName },
         metrics,

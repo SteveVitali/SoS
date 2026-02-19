@@ -186,6 +186,8 @@ export type WorkerEventType =
   | "CI_FAILED"
   | "CI_FIX_STARTED"
   | "CI_FIX_FINISHED"
+  | "PR_READY_FOR_APPROVAL"
+  | "PR_PROMOTED"
   | "DONE"
   | "FAILED"
   | "CANCELED";
@@ -194,7 +196,12 @@ export type WorkerEventType =
 // Terminal states (DONE, FAILED, CANCELED) are NOT included here because
 // the service functions (complete, fail, cancel) already post to Slack.
 // Including them would cause duplicate notifications.
-export const SLACK_NOTIFY_EVENTS: string[] = ["PR_CREATED", "CI_FAILED", "CI_STATUS"];
+export const SLACK_NOTIFY_EVENTS: string[] = [
+  "PR_CREATED",
+  "CI_FAILED",
+  "CI_STATUS",
+  "PR_READY_FOR_APPROVAL",
+];
 
 // --- API Request/Response Types ---
 export interface ClaimRequest {
