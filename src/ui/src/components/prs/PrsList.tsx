@@ -10,7 +10,7 @@ import { PrRow } from "./PrRow.js";
 
 export function PrsList() {
   const navigate = useNavigate();
-  const { prs: prsState, refreshPrs, refreshJobs } = useAppData();
+  const { prs: prsState, refreshPrs, refreshJobs, jobOwner } = useAppData();
   const { prs, loading, error, lastRefreshedAt } = prsState;
 
   const [state, setState] = useState<"open" | "closed" | "merged" | "all">("open");
@@ -27,13 +27,12 @@ export function PrsList() {
     setResponding(pr.url);
     setActionError("");
     try {
-      const requestedBy = localStorage.getItem("sos_last_user") || "";
-      if (!requestedBy) {
-        setActionError("Set your user ID first (create a job to save it)");
+      if (!jobOwner) {
+        setActionError("Job owner not configured on server");
         return;
       }
       const res = await createRespondToCommentsJob({
-        requested_by: requestedBy,
+        requested_by: jobOwner,
         pr_url: pr.url,
       });
       refreshJobs();

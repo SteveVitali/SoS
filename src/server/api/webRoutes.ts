@@ -264,6 +264,11 @@ export function createWebRoutes(config: ServerConfig): Router {
     }
   });
 
+  // GET /api/web/identity — canonical job owner ID from server config
+  router.get("/identity", (_req: Request, res: Response) => {
+    res.json({ jobOwner: config.slackJobOwner });
+  });
+
   // GET /api/web/users
   router.get("/users", async (_req: Request, res: Response) => {
     try {

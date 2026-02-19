@@ -136,6 +136,10 @@ export async function createRespondToCommentsJob(data: {
   return request("POST", "/jobs/respond-to-comments", data);
 }
 
+export async function getIdentity(): Promise<{ jobOwner: string }> {
+  return request("GET", "/identity");
+}
+
 export async function getUsers(): Promise<{ users: string[] }> {
   return request("GET", "/users");
 }

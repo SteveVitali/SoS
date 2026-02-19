@@ -3,6 +3,7 @@ import { createContext, useCallback, useContext, useEffect, useRef, useState } f
 import {
   fetchPrStats,
   type GitHubPr,
+  getIdentity,
   getRegistry,
   getUsers,
   getWorktreeStatus,
@@ -58,6 +59,7 @@ interface AppDataContextValue {
   prs: PrsState;
   registry: RegistryState;
   worktrees: Record<string, WorktreeSlotStatus[]>;
+  jobOwner: string;
   refreshJobs: (filter?: JobsFilter) => Promise<void>;
   refreshPrs: (filter?: PrsFilter) => Promise<void>;
   refreshRegistry: () => Promise<void>;
@@ -182,6 +184,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     setRegistryState((prev) => ({ ...prev, registry: data }));
   }, []);
 
+  // --- Identity ---
+  const [jobOwner, setJobOwner] = useState("");
+
   // --- Worktrees ---
   const [worktrees, setWorktrees] = useState<Record<string, WorktreeSlotStatus[]>>({});
 
@@ -203,6 +208,9 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refreshPrs();
     refreshRegistry();
     refreshWorktrees();
+    getIdentity()
+      .then((res) => setJobOwner(res.jobOwner))
+      .catch(() => {});
   }, [refreshJobs, refreshPrs, refreshRegistry, refreshWorktrees]);
 
   // --- Polling: refresh jobs every 3s, worktrees every 5s, PRs every 120s ---
@@ -222,6 +230,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     prs: prsState,
     registry: registryState,
     worktrees,
+    jobOwner,
     refreshJobs,
     refreshPrs,
     refreshRegistry,

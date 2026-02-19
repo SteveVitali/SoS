@@ -7,9 +7,8 @@ import { css } from "../styles/theme.js";
 
 export function CreateJobForm() {
   const navigate = useNavigate();
-  const { refreshJobs } = useAppData();
+  const { refreshJobs, jobOwner } = useAppData();
   const [mode, setMode] = useState<"create" | "respond">("create");
-  const [requestedBy, setRequestedBy] = useState(localStorage.getItem("sos_last_user") || "");
   const [taskText, setTaskText] = useState("");
   const [repoHint, setRepoHint] = useState("");
   const [testLevel, setTestLevel] = useState("fast");
@@ -24,28 +23,32 @@ export function CreateJobForm() {
     setSubmitting(true);
     setError("");
     try {
-      localStorage.setItem("sos_last_user", requestedBy);
+      if (!jobOwner) {
+        setError("Job owner not configured (SOS_SLACK_JOB_OWNER / SOS_REQUESTED_BY_SLACK_USER)");
+        setSubmitting(false);
+        return;
+      }
 
       if (mode === "respond") {
-        if (!requestedBy || !prUrl) {
-          setError("requested_by and PR URL are required");
+        if (!prUrl) {
+          setError("PR URL is required");
           setSubmitting(false);
           return;
         }
         const res = await createRespondToCommentsJob({
-          requested_by: requestedBy,
+          requested_by: jobOwner,
           pr_url: prUrl,
         });
         refreshJobs();
         navigate(`/jobs/${res.job.task_id}`);
       } else {
-        if (!requestedBy || !taskText) {
-          setError("requested_by and task_text are required");
+        if (!taskText) {
+          setError("Task text is required");
           setSubmitting(false);
           return;
         }
         const res = await createJob({
-          requested_by: requestedBy,
+          requested_by: jobOwner,
           task_text: taskText,
           repo_hint: repoHint || undefined,
           test_level: testLevel as "fast" | "full" | "none",
@@ -101,12 +104,12 @@ export function CreateJobForm() {
         </div>
         <form onSubmit={handleSubmit}>
           <div style={css.field}>
-            <label style={css.label}>Requested By (Slack User ID) *</label>
+            <label style={css.label}>Requested By</label>
             <input
-              style={css.input}
-              value={requestedBy}
-              onChange={(e) => setRequestedBy(e.target.value)}
-              placeholder="U..."
+              style={{ ...css.input, opacity: 0.7 }}
+              value={jobOwner || "(loading...)"}
+              readOnly
+              title="Set via SOS_SLACK_JOB_OWNER or SOS_REQUESTED_BY_SLACK_USER env var"
             />
           </div>
 
