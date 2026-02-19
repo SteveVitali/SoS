@@ -26,7 +26,7 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
   // POST /api/worker/register
   router.post("/register", (req: Request, res: Response) => {
     try {
-      const { worker_id, hostname, pid, concurrency, version } = req.body;
+      const { worker_id, hostname, pid, version } = req.body;
       if (!worker_id || !hostname || !pid) {
         res.status(400).json({ error: "worker_id, hostname, pid required" });
         return;
@@ -35,7 +35,6 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         worker_id,
         hostname,
         pid,
-        concurrency: concurrency || 1,
         version,
       });
       res.json({ worker: info });

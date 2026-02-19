@@ -1,5 +1,4 @@
 import "dotenv/config";
-import { setMaxListeners } from "node:events";
 import os from "node:os";
 import { createLogger } from "../shared/logger.js";
 import { WorkerApiClient } from "./apiClient.js";
@@ -20,10 +19,9 @@ async function main() {
   // Generate a unique process-level worker ID
   const processWorkerId = `${config.nodeId}-pid${process.pid}`;
 
-  log.info("Starting worker pool", {
+  log.info("Starting worker", {
     nodeId: config.nodeId,
     processWorkerId,
-    workers: config.workers,
     requestedBy: config.requestedBy,
   });
 
@@ -33,7 +31,6 @@ async function main() {
       worker_id: processWorkerId,
       hostname: os.hostname(),
       pid: process.pid,
-      concurrency: config.workers,
     });
   } catch (err: unknown) {
     log.warn("Failed to register with server (non-fatal)", { error: (err as Error).message });
@@ -42,21 +39,13 @@ async function main() {
   // Connect WebSocket for log streaming
   connectWorkerWs(config.apiBaseUrl, config.apiToken, processWorkerId);
 
-  const controllers: AbortController[] = [];
-  const promises: Promise<void>[] = [];
-
-  for (let i = 0; i < config.workers; i++) {
-    const workerId = `${config.nodeId}:worker-${i}`;
-    const controller = new AbortController();
-    setMaxListeners(0, controller.signal);
-    controllers.push(controller);
-    promises.push(startWorkerLoop(workerId, i, config, api, controller.signal, processWorkerId));
-  }
+  const workerId = `${config.nodeId}:worker-0`;
+  const controller = new AbortController();
 
   // Graceful shutdown
   const shutdown = () => {
-    log.info("Shutting down worker pool...");
-    for (const c of controllers) c.abort();
+    log.info("Shutting down worker...");
+    controller.abort();
   };
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
@@ -64,7 +53,7 @@ async function main() {
   // Allow server to trigger shutdown via WebSocket command
   setShutdownHandler(shutdown);
 
-  await Promise.allSettled(promises);
+  await startWorkerLoop(workerId, 0, config, api, controller.signal, processWorkerId);
 
   // Deregister from server
   try {
@@ -74,7 +63,7 @@ async function main() {
   }
   closeWorkerWs();
 
-  log.info("All workers stopped");
+  log.info("Worker stopped");
 }
 
 main().catch((err) => {

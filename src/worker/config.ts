@@ -32,7 +32,6 @@ export function loadWorkerConfig() {
     apiToken: required("SOS_INTERNAL_API_TOKEN"),
     requestedBy: required("SOS_REQUESTED_BY_SLACK_USER"),
     nodeId: optionalStr("SOS_NODE_ID", "local"),
-    workers: optionalInt("SOS_WORKERS", 4),
     pollIntervalSeconds: optionalInt("SOS_POLL_INTERVAL_SECONDS", 10),
     leaseSeconds: optionalInt("SOS_LEASE_SECONDS", 120),
     workspaceRoot: required("SOS_WORKSPACE_ROOT"),

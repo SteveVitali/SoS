@@ -8,7 +8,6 @@ interface SpawnWorkerModalProps {
 }
 
 export function SpawnWorkerModal({ onClose, onSpawned }: SpawnWorkerModalProps) {
-  const [concurrency, setConcurrency] = useState(1);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -16,7 +15,7 @@ export function SpawnWorkerModal({ onClose, onSpawned }: SpawnWorkerModalProps) 
     setLoading(true);
     setError("");
     try {
-      await spawnWorker(concurrency);
+      await spawnWorker();
       onSpawned();
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -62,23 +61,9 @@ export function SpawnWorkerModal({ onClose, onSpawned }: SpawnWorkerModalProps) 
       >
         <h3 style={{ margin: "0 0 16px", fontSize: 16, fontWeight: 600 }}>Spawn New Worker</h3>
 
-        <div style={css.field}>
-          <label style={css.label} htmlFor="spawn-concurrency">
-            Concurrency (parallel loops)
-          </label>
-          <select
-            id="spawn-concurrency"
-            style={css.select}
-            value={concurrency}
-            onChange={(e) => setConcurrency(Number(e.target.value))}
-          >
-            {[1, 2, 3, 4, 6, 8].map((n) => (
-              <option key={n} value={n}>
-                {n}
-              </option>
-            ))}
-          </select>
-        </div>
+        <p style={{ margin: "0 0 16px", fontSize: 13, color: "var(--fg2)" }}>
+          Start a new worker process (1 job at a time).
+        </p>
 
         {error && <div style={css.error}>{error}</div>}
 

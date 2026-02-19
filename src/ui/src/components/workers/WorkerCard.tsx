@@ -17,10 +17,6 @@ function statusDotColor(status: string): string {
   return "#6b7280";
 }
 
-function loopDotColor(status: string): string {
-  return status === "busy" ? "#eab308" : "#22c55e";
-}
-
 function formatUptime(startedAt: string): string {
   const ms = Date.now() - new Date(startedAt).getTime();
   const mins = Math.floor(ms / 60_000);
@@ -35,6 +31,7 @@ function formatUptime(startedAt: string): string {
 export function WorkerCard({ worker, onViewLogs, onShutdown, onRemove }: WorkerCardProps) {
   const navigate = useNavigate();
   const isOffline = worker.status === "offline";
+  const loop = worker.loops[0];
 
   return (
     <HoverRow onClick={onViewLogs} style={{ opacity: isOffline ? 0.5 : 1 }}>
@@ -55,6 +52,24 @@ export function WorkerCard({ worker, onViewLogs, onShutdown, onRemove }: WorkerC
             ? `offline (last seen ${relativeTime(worker.last_seen)})`
             : `▲ ${formatUptime(worker.started_at)}`}
         </span>
+        {!isOffline && loop && (
+          <span style={css.badge(loop.status === "busy" ? "#eab308" : "#22c55e")}>
+            {loop.status}
+          </span>
+        )}
+        {loop?.task_id && (
+          <a
+            href={`/jobs/${loop.task_id}`}
+            style={{ ...css.mono, ...css.link, textDecoration: "none", fontSize: 12 }}
+            onClick={(e) => {
+              e.preventDefault();
+              e.stopPropagation();
+              navigate(`/jobs/${loop.task_id}`);
+            }}
+          >
+            {loop.task_id.slice(0, 8)}…
+          </a>
+        )}
         <span
           style={{
             ...css.mono,
@@ -99,48 +114,13 @@ export function WorkerCard({ worker, onViewLogs, onShutdown, onRemove }: WorkerC
         </fieldset>
       </div>
 
-      {/* Line 2+: loop lines */}
-      {worker.loops.map((loop) => (
-        <div
-          key={loop.index}
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 8,
-            marginTop: 6,
-            marginLeft: 18,
-            fontSize: 12,
-            color: "var(--fg3)",
-          }}
-        >
-          <span
-            style={{
-              width: 6,
-              height: 6,
-              borderRadius: "50%",
-              background: loopDotColor(loop.status),
-              flexShrink: 0,
-            }}
-          />
-          <span style={{ color: "var(--fg2)", fontWeight: 500 }}>Loop {loop.index}</span>
-          <span style={css.badge(loopDotColor(loop.status))}>{loop.status}</span>
-          {loop.worktree_slot && <span style={css.mono}>{loop.worktree_slot}</span>}
-          {loop.task_id && (
-            <a
-              href={`/jobs/${loop.task_id}`}
-              style={{ ...css.mono, ...css.link, textDecoration: "none" }}
-              onClick={(e) => {
-                e.preventDefault();
-                e.stopPropagation();
-                navigate(`/jobs/${loop.task_id}`);
-              }}
-            >
-              {loop.task_id.slice(0, 8)}…
-            </a>
-          )}
-          {loop.busy_since && <span>{relativeTime(loop.busy_since)}</span>}
+      {/* Worktree slot + busy duration */}
+      {loop?.worktree_slot && (
+        <div style={{ marginTop: 4, marginLeft: 18, fontSize: 12, color: "var(--fg3)" }}>
+          <span style={css.mono}>{loop.worktree_slot}</span>
+          {loop.busy_since && <span> · {relativeTime(loop.busy_since)}</span>}
         </div>
-      ))}
+      )}
     </HoverRow>
   );
 }

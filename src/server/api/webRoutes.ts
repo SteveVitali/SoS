@@ -452,26 +452,23 @@ export function createWebRoutes(config: ServerConfig): Router {
   });
 
   // POST /api/web/workers/spawn
-  router.post("/workers/spawn", (req: Request, res: Response) => {
+  router.post("/workers/spawn", (_req: Request, res: Response) => {
     try {
-      const concurrency = req.body?.concurrency || 1;
-
-      // Resolve path to worker entry point relative to this file
+      // Resolve paths relative to this file
       const __filename = fileURLToPath(import.meta.url);
       const __dirname = path.dirname(__filename);
-      const workerEntry = path.resolve(__dirname, "../../worker/index.js");
+      const projectRoot = path.resolve(__dirname, "../../..");
+      const workerEntry = path.resolve(projectRoot, "src/worker/index.ts");
+      const tsxBin = path.resolve(projectRoot, "node_modules/.bin/tsx");
 
-      // Build env: inherit current process env + override concurrency
-      const env = { ...process.env, SOS_WORKERS: String(concurrency) };
-
-      const child = spawn("node", [workerEntry], {
+      const child = spawn(tsxBin, [workerEntry], {
         detached: true,
         stdio: "ignore",
-        env,
+        env: process.env,
       });
       child.unref();
 
-      log.info("Spawned worker process", { pid: child.pid, concurrency });
+      log.info("Spawned worker process", { pid: child.pid });
       res.json({ ok: true, pid: child.pid });
     } catch (err: any) {
       log.error("Failed to spawn worker", { error: err.message });

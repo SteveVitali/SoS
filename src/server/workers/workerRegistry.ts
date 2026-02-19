@@ -32,14 +32,10 @@ export function registerWorker(req: WorkerRegisterRequest): WorkerInfo {
     worker_id: req.worker_id,
     hostname: req.hostname,
     pid: req.pid,
-    concurrency: req.concurrency,
     started_at: now,
     last_seen: now,
     status: "online",
-    loops: Array.from({ length: req.concurrency }, (_, i) => ({
-      index: i,
-      status: "idle" as const,
-    })),
+    loops: [{ index: 0, status: "idle" as const }],
     version: req.version,
   };
 
@@ -78,7 +74,6 @@ export function updateWorkerStatus(workerId: string, loops: WorkerLoopInfo[]): b
   entry.info.last_seen = new Date().toISOString();
   entry.info.loops = loops;
   entry.info.status = "online";
-  entry.info.concurrency = loops.length;
   return true;
 }
 

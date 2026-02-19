@@ -17,7 +17,6 @@ export function WorkerDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [lines, setLines] = useState<LogLine[]>([]);
-  const [filterLoop, setFilterLoop] = useState<number | null>(null);
   const [autoScroll, setAutoScroll] = useState(true);
   const termRef = useRef<HTMLDivElement>(null);
   const unsubRef = useRef<(() => void) | null>(null);
@@ -53,22 +52,18 @@ export function WorkerDetail() {
 
     setLines([]);
 
-    const unsub = subscribeWorkerLogs(
-      id,
-      (logLine) => {
-        setLines((prev) => {
-          const next = [...prev, logLine];
-          // Cap at 2000 lines in the UI
-          if (next.length > 2000) return next.slice(-1500);
-          return next;
-        });
-      },
-      filterLoop ?? undefined,
-    );
+    const unsub = subscribeWorkerLogs(id, (logLine) => {
+      setLines((prev) => {
+        const next = [...prev, logLine];
+        // Cap at 2000 lines in the UI
+        if (next.length > 2000) return next.slice(-1500);
+        return next;
+      });
+    });
 
     unsubRef.current = unsub;
     return () => unsub();
-  }, [id, filterLoop]);
+  }, [id]);
 
   // Auto-scroll when new lines arrive
   const prevLineCount = useRef(0);
@@ -95,8 +90,7 @@ export function WorkerDetail() {
   if (loading) return <div style={{ padding: 20, color: "var(--fg3)" }}>Loading…</div>;
   if (error && !worker) return <div style={css.error}>{error}</div>;
 
-  const displayLines =
-    filterLoop != null ? lines.filter((l) => l.loop_index === filterLoop) : lines;
+  const displayLines = lines;
 
   return (
     <div>
@@ -126,69 +120,6 @@ export function WorkerDetail() {
         )}
       </div>
 
-      {/* Loop filter tabs */}
-      <div
-        style={{
-          display: "flex",
-          gap: 0,
-          marginBottom: 12,
-          borderBottom: "1px solid var(--border)",
-        }}
-      >
-        <button
-          type="button"
-          style={{
-            padding: "8px 16px",
-            background: "transparent",
-            border: "none",
-            borderBottom: filterLoop == null ? "2px solid var(--accent)" : "2px solid transparent",
-            color: filterLoop == null ? "var(--fg)" : "var(--fg3)",
-            fontWeight: filterLoop == null ? 600 : 400,
-            fontSize: 13,
-            cursor: "pointer",
-          }}
-          onClick={() => setFilterLoop(null)}
-        >
-          All Loops
-        </button>
-        {worker?.loops.map((loop) => (
-          <button
-            key={loop.index}
-            type="button"
-            style={{
-              padding: "8px 16px",
-              background: "transparent",
-              border: "none",
-              borderBottom:
-                filterLoop === loop.index ? "2px solid var(--accent)" : "2px solid transparent",
-              color: filterLoop === loop.index ? "var(--fg)" : "var(--fg3)",
-              fontWeight: filterLoop === loop.index ? 600 : 400,
-              fontSize: 13,
-              cursor: "pointer",
-              display: "flex",
-              alignItems: "center",
-              gap: 6,
-            }}
-            onClick={() => setFilterLoop(loop.index)}
-          >
-            <span
-              style={{
-                width: 6,
-                height: 6,
-                borderRadius: "50%",
-                background: loop.status === "busy" ? "#eab308" : "#22c55e",
-              }}
-            />
-            Loop {loop.index}
-            {loop.task_id && (
-              <span style={{ ...css.mono, fontSize: 10, color: "var(--fg3)" }}>
-                {loop.task_id.slice(0, 6)}…
-              </span>
-            )}
-          </button>
-        ))}
-      </div>
-
       {/* Terminal */}
       <div
         ref={termRef}
@@ -213,13 +144,6 @@ export function WorkerDetail() {
         )}
         {displayLines.map((l, idx) => (
           <div key={`${l.ts}-${idx}`} style={{ display: "flex", gap: 8 }}>
-            {filterLoop == null && (
-              <span
-                style={{ color: "var(--fg3)", minWidth: 16, textAlign: "right", flexShrink: 0 }}
-              >
-                {l.loop_index}
-              </span>
-            )}
             <span style={{ color: "var(--fg3)", flexShrink: 0, minWidth: 72 }}>
               {new Date(l.ts).toLocaleTimeString()}
             </span>

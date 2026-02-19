@@ -205,7 +205,6 @@ export class WorkerApiClient {
     worker_id: string;
     hostname: string;
     pid: number;
-    concurrency: number;
     version?: string;
   }): Promise<void> {
     await this.request("POST", "/api/worker/register", data);

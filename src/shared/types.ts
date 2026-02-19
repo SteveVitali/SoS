@@ -270,7 +270,6 @@ export interface WorkerInfo {
   worker_id: string;
   hostname: string;
   pid: number;
-  concurrency: number;
   started_at: string;
   last_seen: string;
   status: "online" | "degraded" | "offline";
@@ -282,7 +281,6 @@ export interface WorkerRegisterRequest {
   worker_id: string;
   hostname: string;
   pid: number;
-  concurrency: number;
   version?: string;
 }
 
@@ -292,8 +290,7 @@ export interface WorkerStatusReport {
 }
 
 export interface WorkerCommand {
-  command: "shutdown" | "set_concurrency";
-  n?: number;
+  command: "shutdown";
 }
 
 export interface WorkerLogLine {

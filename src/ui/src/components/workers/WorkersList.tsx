@@ -17,11 +17,7 @@ export function WorkersList() {
   const [actionError, setActionError] = useState("");
 
   const onlineWorkers = workers.filter((w) => w.status !== "offline");
-  const totalLoops = workers.reduce((s, w) => s + w.loops.length, 0);
-  const busyLoops = workers.reduce(
-    (s, w) => s + w.loops.filter((l) => l.status === "busy").length,
-    0,
-  );
+  const busyWorkers = onlineWorkers.filter((w) => w.loops[0]?.status === "busy");
 
   const handleShutdown = async (w: WorkerInfo) => {
     setActionError("");
@@ -64,8 +60,8 @@ export function WorkersList() {
       {/* Summary bar */}
       <div style={{ ...css.filters, fontSize: 13, color: "var(--fg2)" }}>
         <span>
-          {onlineWorkers.length} online · {totalLoops} loops · {busyLoops} busy ·{" "}
-          {totalLoops - busyLoops} idle
+          {onlineWorkers.length} online · {busyWorkers.length} busy ·{" "}
+          {onlineWorkers.length - busyWorkers.length} idle
         </span>
       </div>
 

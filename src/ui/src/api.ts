@@ -267,7 +267,6 @@ export interface WorkerInfo {
   worker_id: string;
   hostname: string;
   pid: number;
-  concurrency: number;
   started_at: string;
   last_seen: string;
   status: "online" | "degraded" | "offline";
@@ -283,8 +282,8 @@ export async function getWorkerNode(id: string): Promise<{ worker: WorkerInfo }>
   return request("GET", `/workers/${encodeURIComponent(id)}`);
 }
 
-export async function spawnWorker(concurrency: number): Promise<{ ok: boolean; pid: number }> {
-  return request("POST", "/workers/spawn", { concurrency });
+export async function spawnWorker(): Promise<{ ok: boolean; pid: number }> {
+  return request("POST", "/workers/spawn");
 }
 
 export async function shutdownWorker(id: string): Promise<{ ok: boolean }> {
