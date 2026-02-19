@@ -641,6 +641,23 @@ function JobsList() {
                   {/* Line 1: status + title + stats + actions */}
                   <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
                     <StatusBadge status={job.status} />
+                    {job.job_type === "respond_to_pr_comments" && (
+                      <span
+                        style={{
+                          fontSize: 10,
+                          fontWeight: 600,
+                          padding: "2px 6px",
+                          borderRadius: 4,
+                          background: "var(--bg2)",
+                          color: "var(--fg2)",
+                          textTransform: "uppercase",
+                          letterSpacing: "0.5px",
+                          whiteSpace: "nowrap",
+                        }}
+                      >
+                        PR Comments
+                      </span>
+                    )}
                     <span style={{ ...css.link, fontWeight: 500, flex: 1, minWidth: 0 }}>
                       {job.title || job.task_text.slice(0, 120)}
                     </span>
@@ -888,9 +905,25 @@ function JobDetail() {
               <span style={{ color: "var(--fg2)", fontSize: 13 }} title={job.requested_by}>
                 by {formatUser(job.requested_by)} · {relativeTime(job.created_at)}
               </span>
+              {job.job_type === "respond_to_pr_comments" && (
+                <span
+                  style={{
+                    fontSize: 11,
+                    fontWeight: 600,
+                    padding: "2px 8px",
+                    borderRadius: 4,
+                    background: "var(--bg2)",
+                    color: "var(--fg2)",
+                    textTransform: "uppercase",
+                    letterSpacing: "0.5px",
+                  }}
+                >
+                  PR Comments
+                </span>
+              )}
               {job.parent_task_id && (
                 <span style={{ fontSize: 13 }}>
-                  Retry of{" "}
+                  {job.job_type === "respond_to_pr_comments" ? "PR from" : "Retry of"}{" "}
                   <Link to={`/jobs/${job.parent_task_id}`} style={{ ...css.link, ...css.mono }}>
                     {shortId(job.parent_task_id)}
                   </Link>
@@ -936,6 +969,14 @@ function JobDetail() {
       <div style={css.card}>
         <div style={css.sectionTitle}>Task</div>
         <div style={css.pre}>{job.task_text}</div>
+        {job.pr_url && (
+          <div style={{ marginTop: 8, fontSize: 13 }}>
+            <span style={{ color: "var(--fg2)" }}>Target PR: </span>
+            <a href={job.pr_url} target="_blank" rel="noopener" style={css.link}>
+              {formatPrUrl(job.pr_url)}
+            </a>
+          </div>
+        )}
         <div style={{ ...css.row, marginTop: 12, fontSize: 13, color: "var(--fg2)" }}>
           {job.repo_hint && (
             <span>
@@ -1253,14 +1294,24 @@ function JobDetail() {
               const color =
                 ev.type.includes("FAIL") || ev.type === "CANCELED"
                   ? "var(--red)"
-                  : ev.type === "DONE" || ev.type.includes("GREEN")
+                  : ev.type === "DONE" ||
+                      ev.type.includes("GREEN") ||
+                      ev.type === "COMMENTS_PUSHED" ||
+                      ev.type === "COMMENT_ADDRESSED"
                     ? "var(--green)"
                     : "var(--accent)";
+              const eventLabel: Record<string, string> = {
+                COMMENTS_FETCHED: "Comments Fetched",
+                COMMENT_ADDRESSED: "Comment Addressed",
+                COMMENTS_PUSHED: "Comments Pushed",
+              };
               return (
                 <div key={i} style={css.timelineItem}>
                   <div style={css.dot(color)} />
                   <div style={{ display: "flex", gap: 8, alignItems: "baseline" }}>
-                    <span style={{ ...css.badge(color), fontSize: 11 }}>{ev.type}</span>
+                    <span style={{ ...css.badge(color), fontSize: 11 }}>
+                      {eventLabel[ev.type] || ev.type}
+                    </span>
                     <span style={{ color: "var(--fg3)", fontSize: 12 }}>{relativeTime(ev.at)}</span>
                     {ev.node_id && (
                       <span style={{ ...css.mono, color: "var(--fg3)", fontSize: 11 }}>
