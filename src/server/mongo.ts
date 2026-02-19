@@ -55,3 +55,8 @@ export async function closeMongo() {
     log.info("MongoDB connection closed");
   }
 }
+
+/** Test-only: inject an external Db instance (e.g. from MongoMemoryServer). */
+export function _setTestDb(testDb: Db) {
+  db = testDb;
+}

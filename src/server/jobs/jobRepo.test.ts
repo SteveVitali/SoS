@@ -134,6 +134,37 @@ describe("atomicClaim", () => {
     const claimed = await atomicClaim("claim-5", "U_OWNER", "worker-1", 120);
     expect(claimed!.attempt).toBe(4);
   });
+
+  it("exactly one of two concurrent claims succeeds", async () => {
+    await insertJob(makeJob({ task_id: "claim-race" }));
+
+    const [result1, result2] = await Promise.all([
+      atomicClaim("claim-race", "U_OWNER", "worker-A", 120),
+      atomicClaim("claim-race", "U_OWNER", "worker-B", 120),
+    ]);
+
+    const winners = [result1, result2].filter(Boolean);
+    expect(winners).toHaveLength(1);
+    expect(winners[0]!.claimed_by).toMatch(/^worker-[AB]$/);
+  });
+
+  it("reclaims a FIXING_CI job with expired lease", async () => {
+    const pastDate = new Date(Date.now() - 60_000);
+    await insertJob(
+      makeJob({
+        task_id: "claim-fixci",
+        status: "FIXING_CI" as JobStatus,
+        claimed_by: "worker-1",
+        lease_expires_at: pastDate,
+        attempt: 1,
+      }),
+    );
+
+    const claimed = await atomicClaim("claim-fixci", "U_OWNER", "worker-2", 120);
+    expect(claimed).not.toBeNull();
+    expect(claimed!.claimed_by).toBe("worker-2");
+    expect(claimed!.status).toBe("RUNNING");
+  });
 });
 
 describe("updateHeartbeat", () => {
@@ -313,6 +344,53 @@ describe("findPollableJobs", () => {
 
     const jobs = await findPollableJobs("U_OWNER", 10);
     expect(jobs).toHaveLength(0);
+  });
+
+  it("excludes QUEUED jobs with not_before in the future", async () => {
+    const futureDate = new Date(Date.now() + 60_000);
+    await insertJob(
+      makeJob({
+        task_id: "poll-nb-1",
+        status: "QUEUED",
+        not_before: futureDate,
+        requested_by: "U_OWNER",
+      }),
+    );
+
+    const jobs = await findPollableJobs("U_OWNER", 10);
+    expect(jobs).toHaveLength(0);
+  });
+
+  it("includes QUEUED jobs with not_before in the past", async () => {
+    const pastDate = new Date(Date.now() - 60_000);
+    await insertJob(
+      makeJob({
+        task_id: "poll-nb-2",
+        status: "QUEUED",
+        not_before: pastDate,
+        requested_by: "U_OWNER",
+      }),
+    );
+
+    const jobs = await findPollableJobs("U_OWNER", 10);
+    expect(jobs).toHaveLength(1);
+    expect(jobs[0].task_id).toBe("poll-nb-2");
+  });
+
+  it("respects limit", async () => {
+    for (let i = 0; i < 5; i++) {
+      await insertJob(
+        makeJob({
+          task_id: `poll-lim-${i}`,
+          status: "QUEUED",
+          requested_by: "U_OWNER",
+          created_at: new Date(Date.now() + i * 1000),
+        }),
+      );
+    }
+
+    const jobs = await findPollableJobs("U_OWNER", 2);
+    expect(jobs).toHaveLength(2);
   });
 });
 
