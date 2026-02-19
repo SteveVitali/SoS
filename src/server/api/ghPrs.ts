@@ -1,4 +1,5 @@
-import { execSync } from "node:child_process";
+import { exec as execCb } from "node:child_process";
+import { promisify } from "node:util";
 import { createLogger } from "../../shared/logger.js";
 import {
   loadRegistry,
@@ -6,6 +7,7 @@ import {
   type RepoRegistry,
 } from "../../worker/executor/repoRegistry.js";
 
+const exec = promisify(execCb);
 const log = createLogger("server:ghPrs");
 
 // --- Current GitHub User ---
@@ -13,11 +15,11 @@ const log = createLogger("server:ghPrs");
 let cachedGhUser: string | null = null;
 
 /** Get the login of the currently authenticated `gh` CLI user (cached). */
-export function getCurrentGitHubUser(): string {
+export async function getCurrentGitHubUser(): Promise<string> {
   if (cachedGhUser) return cachedGhUser;
   try {
-    const raw = execSync("gh api user --jq .login", { encoding: "utf-8", timeout: 10_000 });
-    cachedGhUser = raw.trim().toLowerCase();
+    const { stdout } = await exec("gh api user --jq .login", { timeout: 10_000 });
+    cachedGhUser = stdout.trim().toLowerCase();
     log.info("Resolved current GitHub user", { login: cachedGhUser });
     return cachedGhUser;
   } catch (err: any) {
@@ -68,17 +70,17 @@ function parseCloneUrl(cloneUrl: string): { owner: string; repo: string } | null
 }
 
 /** List PRs for a single repo via `gh pr list`. */
-function listPrsForRepo(
+async function listPrsForRepo(
   owner: string,
   repo: string,
   state: "open" | "closed" | "merged" | "all",
   limit: number,
-): any[] {
+): Promise<any[]> {
   const stateFlag = state === "all" ? "--state=all" : `--state=${state}`;
   const cmd = `gh pr list --repo "${owner}/${repo}" ${stateFlag} --limit ${limit} --json number,title,state,headRefName,updatedAt,createdAt,author,isDraft,additions,deletions,url`;
   try {
-    const raw = execSync(cmd, { encoding: "utf-8", timeout: 30_000 });
-    return JSON.parse(raw);
+    const { stdout } = await exec(cmd, { timeout: 30_000 });
+    return JSON.parse(stdout);
   } catch (err: any) {
     log.warn("Failed to list PRs for repo", { owner, repo, error: err.message });
     return [];
@@ -86,12 +88,12 @@ function listPrsForRepo(
 }
 
 /** Fetch comment stats for a single PR via GraphQL. */
-function fetchPrCommentStats(
+async function fetchPrCommentStats(
   owner: string,
   repo: string,
   prNumber: number,
   currentUser: string,
-): PrCommentStats {
+): Promise<PrCommentStats> {
   const query = `
     query {
       repository(owner: "${owner}", name: "${repo}") {
@@ -113,11 +115,10 @@ function fetchPrCommentStats(
   `;
 
   try {
-    const raw = execSync(`gh api graphql -f query='${query.replace(/'/g, "'\\''")}'`, {
-      encoding: "utf-8",
+    const { stdout } = await exec(`gh api graphql -f query='${query.replace(/'/g, "'\\''")}'`, {
       timeout: 30_000,
     });
-    const data = JSON.parse(raw);
+    const data = JSON.parse(stdout);
     const threads = data?.data?.repository?.pullRequest?.reviewThreads?.nodes;
     if (!Array.isArray(threads)) {
       return { total_comments: 0, total_threads: 0, unresolved_threads: 0, unaddressed_threads: 0 };
@@ -167,14 +168,26 @@ function parsePrUrl(prUrl: string): { owner: string; repo: string; number: numbe
  * Fetch comment stats for a batch of PR URLs.
  * Returns a map of URL → stats (only includes URLs that could be parsed and fetched).
  */
-export function fetchBatchPrStats(prUrls: string[]): Record<string, PrCommentStats> {
-  const currentUser = getCurrentGitHubUser();
+export async function fetchBatchPrStats(prUrls: string[]): Promise<Record<string, PrCommentStats>> {
+  const currentUser = await getCurrentGitHubUser();
   const results: Record<string, PrCommentStats> = {};
 
-  for (const url of prUrls) {
-    const parsed = parsePrUrl(url);
-    if (!parsed) continue;
-    results[url] = fetchPrCommentStats(parsed.owner, parsed.repo, parsed.number, currentUser);
+  // Fetch all PR stats in parallel
+  const entries = prUrls
+    .map((url) => ({ url, parsed: parsePrUrl(url) }))
+    .filter((e) => e.parsed !== null) as Array<{
+    url: string;
+    parsed: { owner: string; repo: string; number: number };
+  }>;
+
+  const statsResults = await Promise.all(
+    entries.map((e) =>
+      fetchPrCommentStats(e.parsed.owner, e.parsed.repo, e.parsed.number, currentUser),
+    ),
+  );
+
+  for (let i = 0; i < entries.length; i++) {
+    results[entries[i].url] = statsResults[i];
   }
 
   return results;
@@ -194,47 +207,71 @@ export interface ListPrsOptions {
  * List PRs across all registered repos.
  * Returns PRs sorted by updatedAt descending (most recent first).
  */
-export function listPrs(opts: ListPrsOptions): GitHubPr[] {
+export async function listPrs(opts: ListPrsOptions): Promise<GitHubPr[]> {
   const { registryPath, state = "open", limit = 20, includeComments = true, repoFilter } = opts;
 
   const registry = loadRegistry(registryPath);
-  const currentUser = getCurrentGitHubUser();
+  const currentUser = await getCurrentGitHubUser();
   const allPrs: GitHubPr[] = [];
+
+  // List PRs for all repos in parallel
+  const repoEntries: Array<{
+    repoId: string;
+    owner: string;
+    repo: string;
+  }> = [];
 
   for (const [repoId, entry] of registry.repos) {
     if (repoFilter && repoId !== repoFilter) continue;
-
     const parsed = parseCloneUrl(entry.clone);
     if (!parsed) {
       log.warn("Cannot parse clone URL, skipping repo", { repoId, clone: entry.clone });
       continue;
     }
+    repoEntries.push({ repoId, owner: parsed.owner, repo: parsed.repo });
+  }
 
-    const rawPrs = listPrsForRepo(parsed.owner, parsed.repo, state, limit);
+  const prListResults = await Promise.all(
+    repoEntries.map((r) => listPrsForRepo(r.owner, r.repo, state, limit)),
+  );
 
-    for (const pr of rawPrs) {
-      let comments: PrCommentStats | null = null;
-      if (includeComments) {
-        comments = fetchPrCommentStats(parsed.owner, parsed.repo, pr.number, currentUser);
-      }
-
-      allPrs.push({
-        url: pr.url,
-        number: pr.number,
-        title: pr.title,
-        state: pr.state,
-        headRefName: pr.headRefName,
-        updatedAt: pr.updatedAt,
-        createdAt: pr.createdAt,
-        author: pr.author?.login || "unknown",
-        repo: repoId,
-        repoFullName: `${parsed.owner}/${parsed.repo}`,
-        isDraft: pr.isDraft ?? false,
-        additions: pr.additions ?? 0,
-        deletions: pr.deletions ?? 0,
-        comments,
-      });
+  // Collect all raw PRs with their repo metadata
+  const rawPrsWithMeta: Array<{ pr: any; repoId: string; owner: string; repo: string }> = [];
+  for (let i = 0; i < repoEntries.length; i++) {
+    const r = repoEntries[i];
+    for (const pr of prListResults[i]) {
+      rawPrsWithMeta.push({ pr, repoId: r.repoId, owner: r.owner, repo: r.repo });
     }
+  }
+
+  // Fetch comment stats for all PRs in parallel
+  let commentResults: Array<PrCommentStats | null> = rawPrsWithMeta.map(() => null);
+  if (includeComments) {
+    commentResults = await Promise.all(
+      rawPrsWithMeta.map((item) =>
+        fetchPrCommentStats(item.owner, item.repo, item.pr.number, currentUser),
+      ),
+    );
+  }
+
+  for (let i = 0; i < rawPrsWithMeta.length; i++) {
+    const { pr, repoId, owner, repo } = rawPrsWithMeta[i];
+    allPrs.push({
+      url: pr.url,
+      number: pr.number,
+      title: pr.title,
+      state: pr.state,
+      headRefName: pr.headRefName,
+      updatedAt: pr.updatedAt,
+      createdAt: pr.createdAt,
+      author: pr.author?.login || "unknown",
+      repo: repoId,
+      repoFullName: `${owner}/${repo}`,
+      isDraft: pr.isDraft ?? false,
+      additions: pr.additions ?? 0,
+      deletions: pr.deletions ?? 0,
+      comments: commentResults[i],
+    });
   }
 
   // Sort by updatedAt descending

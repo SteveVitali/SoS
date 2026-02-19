@@ -209,7 +209,7 @@ export function createWebRoutes(config: ServerConfig): Router {
       const includeComments = qstr(req.query.include_comments) !== "false";
       const repoFilter = qstr(req.query.repo) || undefined;
 
-      const prs = listPrs({
+      const prs = await listPrs({
         registryPath: config.repoRegistryPath,
         state,
         limit,
@@ -255,7 +255,7 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       // Cap at 20 to avoid abuse
       const capped = urls.slice(0, 20);
-      const stats = fetchBatchPrStats(capped);
+      const stats = await fetchBatchPrStats(capped);
       res.json({ stats });
     } catch (err: any) {
       log.error("Batch PR stats error", { error: err.message });
