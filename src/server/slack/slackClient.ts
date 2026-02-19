@@ -80,6 +80,7 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
     async postEvent(job: JobDoc, type: string, payload?: any) {
       if (!job.slack?.channel_id || !job.slack?.thread_ts) return;
       const text = fmtEvent(job, type, payload);
+      if (!text) return;
       await postToThread(job.slack.channel_id, job.slack.thread_ts, text);
     },
 

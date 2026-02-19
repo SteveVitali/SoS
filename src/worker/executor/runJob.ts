@@ -375,22 +375,22 @@ export async function runJob(
         branch,
         10 * 60 * 1000, // 10 min CI timeout
       );
-      await events.emit("CI_STATUS", {
-        status: ciResult.success ? "success" : "failure",
-        conclusion: ciResult.success ? "success" : "failure",
-        url: ciResult.url,
-      });
-
       if (ciResult.success) {
+        await events.emit("CI_STATUS", {
+          status: "success",
+          conclusion: "success",
+          url: ciResult.url,
+        });
         ciPassed = true;
       } else if (ciFixEnabled) {
-        // CI fix loop
+        // CI fix loop — single yellow message per failure
+        let lastCiResult = ciResult;
         while (ciAttempt < config.maxCiFixAttempts && !ciPassed) {
           checkTimeout();
           ciAttempt++;
-          await events.emit("CI_FAILED", {
+          await events.emit("CI_FIXING", {
             attempt: ciAttempt,
-            summary: ciResult.summary.slice(0, 500),
+            summary: lastCiResult.summary.slice(0, 500),
           });
           await events.emit("CI_FIX_STARTED", { attempt: ciAttempt });
 
@@ -416,18 +416,32 @@ export async function runJob(
 
               // Wait for CI again
               const retryResult = await waitForCI(ciProvider, worktreePath, branch, 10 * 60 * 1000);
-              await events.emit("CI_STATUS", {
-                status: retryResult.success ? "success" : "failure",
-                conclusion: retryResult.success ? "success" : "failure",
-                url: retryResult.url,
-              });
 
               if (retryResult.success) {
+                await events.emit("CI_STATUS", {
+                  status: "success",
+                  conclusion: "success",
+                  url: retryResult.url,
+                });
                 ciPassed = true;
+              } else {
+                lastCiResult = retryResult;
               }
             }
           }
         }
+
+        // All fix attempts exhausted — send terminal red failure
+        if (!ciPassed) {
+          await events.emit("CI_FAILED", {
+            summary: lastCiResult.summary.slice(0, 500),
+          });
+        }
+      } else {
+        // CI fix disabled — single red failure message
+        await events.emit("CI_FAILED", {
+          summary: ciResult.summary.slice(0, 500),
+        });
       }
     }
 

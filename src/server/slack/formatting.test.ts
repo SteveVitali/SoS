@@ -3,6 +3,7 @@ import type { JobDoc } from "../../shared/types.js";
 import {
   fmtCanceled,
   fmtCiFailed,
+  fmtCiFixing,
   fmtCiGreen,
   fmtClaimed,
   fmtDone,
@@ -74,17 +75,34 @@ describe("fmtPrCreated", () => {
   });
 });
 
-describe("fmtCiFailed", () => {
-  it("includes attempt and summary", () => {
-    const result = fmtCiFailed(makeJob(), { attempt: 2, summary: "lint failed" });
-    expect(result).toContain("CI Failed");
-    expect(result).toContain("attempt 2");
+describe("fmtCiFixing", () => {
+  it("includes yellow dot, attempt, and summary", () => {
+    const result = fmtCiFixing(makeJob(), { attempt: 1, summary: "lint failed" });
+    expect(result).toContain("🟡");
+    expect(result).toContain("fixing");
+    expect(result).toContain("attempt 1");
     expect(result).toContain("lint failed");
   });
 
   it("handles missing payload fields", () => {
+    const result = fmtCiFixing(makeJob(), {});
+    expect(result).toContain("🟡");
+    expect(result).toContain("attempt 1");
+    expect(result).not.toContain("```");
+  });
+});
+
+describe("fmtCiFailed", () => {
+  it("includes red X and summary", () => {
+    const result = fmtCiFailed(makeJob(), { summary: "lint failed" });
+    expect(result).toContain("CI Failed");
+    expect(result).toContain("❌");
+    expect(result).toContain("lint failed");
+  });
+
+  it("handles missing summary", () => {
     const result = fmtCiFailed(makeJob(), {});
-    expect(result).toContain("attempt ?");
+    expect(result).toContain("CI Failed");
     expect(result).not.toContain("```");
   });
 });
@@ -167,10 +185,15 @@ describe("fmtEvent", () => {
     expect(result).toContain("CI Green");
   });
 
-  it("routes CI_STATUS without success to generic status", () => {
+  it("routes CI_STATUS without success to empty string", () => {
     const result = fmtEvent(makeJob(), "CI_STATUS", { status: "in_progress" });
-    expect(result).toContain("CI Status");
-    expect(result).toContain("in_progress");
+    expect(result).toBe("");
+  });
+
+  it("routes CI_FIXING to fmtCiFixing", () => {
+    const result = fmtEvent(makeJob(), "CI_FIXING", { attempt: 1, summary: "tests failed" });
+    expect(result).toContain("🟡");
+    expect(result).toContain("fixing");
   });
 
   it("routes DONE to fmtDone", () => {
