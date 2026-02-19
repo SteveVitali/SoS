@@ -40,6 +40,7 @@ export function SpawnWorkerModal({ onClose, onSpawned }: SpawnWorkerModalProps) 
         justifyContent: "center",
         zIndex: 1000,
         border: "none",
+        borderRadius: 0,
         padding: 0,
         margin: 0,
       }}

@@ -139,8 +139,7 @@ export async function runRespondToComments(
     let t0 = Date.now();
     await events.emit("PHASE_STARTED", { phase: "resolve_repo" });
     const { owner, repo: repoName } = parsePrUrl(prUrl);
-    const registryPath = `${config.workspaceRoot}/repo-registry.yaml`;
-    const registry = loadRegistry(registryPath);
+    const registry = loadRegistry(config.repoRegistryPath);
     const repo = findRepoByGitHubUrl(registry, owner, repoName);
     if (!repo) {
       throw new Error(
