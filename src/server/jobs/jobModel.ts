@@ -54,6 +54,21 @@ export const WorkerEventSchema = z.object({
   payload: z.any().optional(),
 });
 
+const MetricsSchema = z
+  .object({
+    durations: z.record(z.number()).optional(),
+    claude: z
+      .object({
+        sessions: z.array(z.any()).optional(),
+        total_input_tokens: z.number().optional(),
+        total_output_tokens: z.number().optional(),
+        total_cost_usd: z.number().optional(),
+        cost_source: z.enum(["provider", "computed"]).optional(),
+      })
+      .optional(),
+  })
+  .optional();
+
 export const CompleteJobSchema = z.object({
   node_id: z.string(),
   result_summary: z.string(),
@@ -73,6 +88,7 @@ export const CompleteJobSchema = z.object({
         .optional(),
     })
     .optional(),
+  metrics: MetricsSchema,
 });
 
 export const FailJobSchema = z.object({
@@ -98,4 +114,5 @@ export const FailJobSchema = z.object({
         .optional(),
     })
     .optional(),
+  metrics: MetricsSchema,
 });

@@ -52,6 +52,26 @@ export interface Job {
   };
   result_summary?: string;
   error?: { code?: string; message: string; details?: any };
+  metrics?: {
+    durations?: Record<string, number>;
+    claude?: {
+      sessions?: Array<{
+        phase: string;
+        model?: string;
+        input_tokens?: number;
+        output_tokens?: number;
+        duration_ms?: number;
+        duration_api_ms?: number;
+        num_turns?: number;
+        cost_usd?: number;
+        cost_source?: string;
+      }>;
+      total_input_tokens?: number;
+      total_output_tokens?: number;
+      total_cost_usd?: number;
+      cost_source?: string;
+    };
+  };
   events?: Array<{ at: string; node_id?: string; type: string; payload?: any }>;
   parent_task_id?: string;
 }

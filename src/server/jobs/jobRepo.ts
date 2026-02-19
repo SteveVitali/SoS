@@ -162,7 +162,7 @@ export async function updateJobFields(
 export async function completeJob(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any },
+  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
@@ -178,6 +178,7 @@ export async function completeJob(
         result_summary: data.result_summary,
         ...(data.pr_urls ? { pr_urls: data.pr_urls } : {}),
         ...(data.ci ? { ci: data.ci } : {}),
+        ...(data.metrics ? { metrics: data.metrics } : {}),
         run_ended_at: now,
         updated_at: now,
       },
@@ -191,7 +192,7 @@ export async function completeJob(
 export async function failJob(
   taskId: string,
   nodeId: string,
-  data: { error: any; pr_urls?: string[]; ci?: any },
+  data: { error: any; pr_urls?: string[]; ci?: any; metrics?: any },
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
@@ -207,6 +208,7 @@ export async function failJob(
         error: data.error,
         ...(data.pr_urls ? { pr_urls: data.pr_urls } : {}),
         ...(data.ci ? { ci: data.ci } : {}),
+        ...(data.metrics ? { metrics: data.metrics } : {}),
         run_ended_at: now,
         updated_at: now,
       },

@@ -42,6 +42,17 @@ function lastSubstantiveEvent(
   return events[events.length - 1];
 }
 
+function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  const s = Math.floor(ms / 1000);
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  const rem = s % 60;
+  if (m < 60) return rem > 0 ? `${m}m ${rem}s` : `${m}m`;
+  const h = Math.floor(m / 60);
+  return `${h}h ${m % 60}m`;
+}
+
 function formatPrUrl(url: string): string {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   if (m) return `${m[1]}/${m[2]}#${m[3]}`;
@@ -601,6 +612,8 @@ function JobsList() {
                     currentDir={sortDir}
                     onSort={handleSort}
                   />
+                  <th style={{ ...css.th, textAlign: "right" }}>Duration</th>
+                  <th style={{ ...css.th, textAlign: "right" }}>Cost</th>
                   <th style={css.th}>Actions</th>
                 </tr>
               </thead>
@@ -673,6 +686,29 @@ function JobsList() {
                           {formatPrUrl(url)}
                         </a>
                       )) || "—"}
+                    </td>
+                    <td
+                      style={{ ...css.td, textAlign: "right", fontSize: 12, whiteSpace: "nowrap" }}
+                    >
+                      {job.metrics?.durations?.total_ms
+                        ? formatDuration(job.metrics.durations.total_ms)
+                        : "—"}
+                    </td>
+                    <td
+                      style={{ ...css.td, textAlign: "right", fontSize: 12, whiteSpace: "nowrap" }}
+                    >
+                      {job.metrics?.claude?.total_cost_usd != null ? (
+                        <span
+                          title={
+                            job.metrics.claude.cost_source === "computed" ? "Estimated" : "Provider"
+                          }
+                        >
+                          {job.metrics.claude.cost_source === "computed" ? "~" : ""}$
+                          {job.metrics.claude.total_cost_usd.toFixed(3)}
+                        </span>
+                      ) : (
+                        "—"
+                      )}
                     </td>
                     <td style={css.td} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 4 }}>
@@ -1010,6 +1046,160 @@ function JobDetail() {
           </div>
         )}
       </div>
+
+      {/* Performance */}
+      {job.metrics && (
+        <div style={css.card}>
+          <div style={css.sectionTitle}>Performance</div>
+          {job.metrics.durations?.total_ms != null && (
+            <div style={{ marginBottom: 12, fontSize: 14 }}>
+              <b>Total duration:</b> {formatDuration(job.metrics.durations.total_ms)}
+            </div>
+          )}
+          {job.metrics.durations &&
+            (() => {
+              const d = job.metrics!.durations!;
+              const total = d.total_ms || 1;
+              const phases: Array<{ label: string; ms: number; color: string }> = [
+                { label: "Claude Code", ms: d.claude_code_ms || 0, color: "#8b5cf6" },
+                { label: "Self-review", ms: d.self_review_ms || 0, color: "#6366f1" },
+                { label: "Local checks", ms: d.local_checks_ms || 0, color: "#06b6d4" },
+                { label: "CI wait", ms: d.ci_wait_ms || 0, color: "#f59e0b" },
+                { label: "CI fix", ms: d.ci_fix_ms || 0, color: "#ef4444" },
+                { label: "Git ops", ms: d.commit_push_ms || 0, color: "#10b981" },
+                { label: "Workspace", ms: d.prepare_workspace_ms || 0, color: "#64748b" },
+              ].filter((p) => p.ms > 0);
+              return (
+                <div style={{ marginBottom: 12 }}>
+                  <div
+                    style={{
+                      display: "flex",
+                      height: 20,
+                      borderRadius: 6,
+                      overflow: "hidden",
+                      marginBottom: 8,
+                    }}
+                  >
+                    {phases.map((p, i) => (
+                      <div
+                        key={i}
+                        title={`${p.label}: ${formatDuration(p.ms)}`}
+                        style={{
+                          width: `${(p.ms / total) * 100}%`,
+                          background: p.color,
+                          minWidth: p.ms > 0 ? 2 : 0,
+                        }}
+                      />
+                    ))}
+                  </div>
+                  <div style={{ display: "flex", flexWrap: "wrap", gap: "8px 16px", fontSize: 12 }}>
+                    {phases.map((p, i) => (
+                      <span key={i}>
+                        <span
+                          style={{
+                            display: "inline-block",
+                            width: 8,
+                            height: 8,
+                            borderRadius: 2,
+                            background: p.color,
+                            marginRight: 4,
+                          }}
+                        />
+                        {p.label}: {formatDuration(p.ms)}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              );
+            })()}
+          {job.metrics.claude?.sessions && job.metrics.claude.sessions.length > 0 && (
+            <div>
+              <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 6, color: "var(--fg2)" }}>
+                Claude Usage
+              </div>
+              <table style={{ ...css.table, fontSize: 12 }}>
+                <thead>
+                  <tr>
+                    <th style={css.th}>Phase</th>
+                    <th style={css.th}>Model</th>
+                    <th style={{ ...css.th, textAlign: "right" }}>Input</th>
+                    <th style={{ ...css.th, textAlign: "right" }}>Output</th>
+                    <th style={{ ...css.th, textAlign: "right" }}>Duration</th>
+                    <th style={{ ...css.th, textAlign: "right" }}>Cost</th>
+                  </tr>
+                </thead>
+                <tbody>
+                  {job.metrics.claude.sessions.map((s, i) => (
+                    <tr key={i}>
+                      <td style={css.td}>{s.phase}</td>
+                      <td style={{ ...css.td, ...css.mono }}>
+                        {s.model?.replace("claude-", "") || "—"}
+                      </td>
+                      <td style={{ ...css.td, textAlign: "right" }}>
+                        {s.input_tokens ? `${(s.input_tokens / 1000).toFixed(1)}K` : "—"}
+                      </td>
+                      <td style={{ ...css.td, textAlign: "right" }}>
+                        {s.output_tokens ? `${(s.output_tokens / 1000).toFixed(1)}K` : "—"}
+                      </td>
+                      <td style={{ ...css.td, textAlign: "right" }}>
+                        {s.duration_ms ? formatDuration(s.duration_ms) : "—"}
+                      </td>
+                      <td style={{ ...css.td, textAlign: "right" }}>
+                        {s.cost_usd != null ? (
+                          <span
+                            title={
+                              s.cost_source === "computed"
+                                ? "Estimated from token counts"
+                                : "Direct from provider"
+                            }
+                          >
+                            {s.cost_source === "computed" ? "~" : ""}${s.cost_usd.toFixed(4)}
+                          </span>
+                        ) : (
+                          "—"
+                        )}
+                      </td>
+                    </tr>
+                  ))}
+                  {job.metrics.claude.sessions.length > 1 && (
+                    <tr style={{ fontWeight: 600 }}>
+                      <td style={css.td}>Total</td>
+                      <td style={css.td} />
+                      <td style={{ ...css.td, textAlign: "right" }}>
+                        {job.metrics.claude.total_input_tokens
+                          ? `${(job.metrics.claude.total_input_tokens / 1000).toFixed(1)}K`
+                          : ""}
+                      </td>
+                      <td style={{ ...css.td, textAlign: "right" }}>
+                        {job.metrics.claude.total_output_tokens
+                          ? `${(job.metrics.claude.total_output_tokens / 1000).toFixed(1)}K`
+                          : ""}
+                      </td>
+                      <td style={css.td} />
+                      <td style={{ ...css.td, textAlign: "right" }}>
+                        {job.metrics.claude.total_cost_usd != null ? (
+                          <span
+                            title={
+                              job.metrics.claude.cost_source === "computed"
+                                ? "Estimated from token counts"
+                                : "Direct from provider"
+                            }
+                          >
+                            {job.metrics.claude.cost_source === "computed" ? "~" : ""}$
+                            {job.metrics.claude.total_cost_usd.toFixed(4)}
+                          </span>
+                        ) : (
+                          ""
+                        )}
+                      </td>
+                    </tr>
+                  )}
+                </tbody>
+              </table>
+            </div>
+          )}
+        </div>
+      )}
 
       {/* Events Timeline */}
       {job.events && job.events.length > 0 && (

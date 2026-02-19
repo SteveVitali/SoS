@@ -126,11 +126,12 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
         return;
       }
-      const { node_id, result_summary, pr_urls, ci } = parsed.data;
+      const { node_id, result_summary, pr_urls, ci, metrics } = parsed.data;
       const job = await jobService.complete(pstr(req.params.task_id), node_id, {
         result_summary,
         pr_urls,
         ci,
+        metrics,
       });
       if (!job) {
         res.status(409).json({ error: "Complete failed: not owner or not active" });
@@ -172,8 +173,13 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
         return;
       }
-      const { node_id, error, pr_urls, ci } = parsed.data;
-      const job = await jobService.fail(pstr(req.params.task_id), node_id, { error, pr_urls, ci });
+      const { node_id, error, pr_urls, ci, metrics } = parsed.data;
+      const job = await jobService.fail(pstr(req.params.task_id), node_id, {
+        error,
+        pr_urls,
+        ci,
+        metrics,
+      });
       if (!job) {
         res.status(409).json({ error: "Fail update failed: not owner or not active" });
         return;

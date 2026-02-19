@@ -1,13 +1,14 @@
 import { execSync } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
+import { computeTokenCost } from "../../shared/modelPricing.js";
 import { slugify } from "../../shared/slug.js";
-import type { JobDoc } from "../../shared/types.js";
+import type { ClaudeSession, JobDoc, JobMetrics } from "../../shared/types.js";
 import type { WorkerApiClient } from "../apiClient.js";
 import type { WorkerConfig } from "../config.js";
 import { EventEmitter } from "../events.js";
 import type { CIProvider } from "./ci/ciProvider.js";
 import { createCIProvider } from "./ci/index.js";
-import { runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
+import { type ClaudeResult, runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
 import { commitAll, getDiff, hasChanges, hasNewCommits, hasUnpushedCommits, push } from "./git.js";
 import { createPr, detectExistingPr } from "./pr.js";
 import { loadRegistry } from "./repoRegistry.js";
@@ -129,6 +130,48 @@ export async function runJob(
   let acquiredSlot: WorktreeSlot | null = null;
   let resolvedRepoId: string | undefined;
 
+  // Metrics collection
+  const durations: NonNullable<JobMetrics["durations"]> = {};
+  const claudeSessions: ClaudeSession[] = [];
+
+  function toClaudeSession(result: ClaudeResult, phase: ClaudeSession["phase"]): ClaudeSession {
+    const session: ClaudeSession = { phase, duration_ms: result.duration_ms };
+    if (result.model) session.model = result.model;
+    if (result.input_tokens != null) session.input_tokens = result.input_tokens;
+    if (result.output_tokens != null) session.output_tokens = result.output_tokens;
+    if (result.duration_api_ms != null) session.duration_api_ms = result.duration_api_ms;
+    if (result.num_turns != null) session.num_turns = result.num_turns;
+    if (result.cost_usd != null) {
+      session.cost_usd = result.cost_usd;
+      session.cost_source = "provider";
+    } else if (result.model && result.input_tokens != null && result.output_tokens != null) {
+      const computed = computeTokenCost(result.model, result.input_tokens, result.output_tokens);
+      if (computed != null) {
+        session.cost_usd = computed;
+        session.cost_source = "computed";
+      }
+    }
+    return session;
+  }
+
+  function buildMetrics(): JobMetrics {
+    durations.total_ms = Date.now() - startTime;
+    const totalIn = claudeSessions.reduce((s, c) => s + (c.input_tokens || 0), 0);
+    const totalOut = claudeSessions.reduce((s, c) => s + (c.output_tokens || 0), 0);
+    const totalCost = claudeSessions.reduce((s, c) => s + (c.cost_usd || 0), 0);
+    const hasProviderCost = claudeSessions.some((c) => c.cost_source === "provider");
+    return {
+      durations,
+      claude: {
+        sessions: claudeSessions,
+        total_input_tokens: totalIn || undefined,
+        total_output_tokens: totalOut || undefined,
+        total_cost_usd: totalCost || undefined,
+        cost_source: hasProviderCost ? "provider" : totalCost ? "computed" : undefined,
+      },
+    };
+  }
+
   function checkTimeout() {
     if (Date.now() - startTime > maxRuntimeMs) {
       throw new Error(`Job exceeded max runtime of ${config.maxRuntimeMinutes} minutes`);
@@ -144,6 +187,7 @@ export async function runJob(
 
   try {
     // 1) Resolve repo
+    let t0 = Date.now();
     await events.emit("PHASE_STARTED", { phase: "resolve_repo" });
     const registry = loadRegistry(config.repoRegistryPath);
     const resolved = resolveRepo(registry, job.task_text, job.repo_hint);
@@ -162,9 +206,11 @@ export async function runJob(
       method: resolved.method,
       warning: resolved.warning,
     });
+    durations.resolve_repo_ms = Date.now() - t0;
     checkTimeout();
 
     // 2) Prepare workspace via worktree pool
+    t0 = Date.now();
     await events.emit("PHASE_STARTED", { phase: "prepare_workspace" });
     const clonePath = ensureClone(config.workspaceRoot, repo);
     const branch = `sos/${job.task_id.slice(0, 8)}-${slugify(job.task_text, 30)}`;
@@ -182,6 +228,7 @@ export async function runJob(
       branch,
       worktree_slot: acquiredSlot.slotName,
     });
+    durations.prepare_workspace_ms = Date.now() - t0;
     checkTimeout();
 
     // 3) Fetch Slack thread context (optional)
@@ -202,6 +249,7 @@ export async function runJob(
 
     // 4) Run Claude Code CLI
     await checkCanceled();
+    t0 = Date.now();
     await events.emit("CLAUDE_STARTED", {});
     const claudeResult = await runClaude(
       worktreePath,
@@ -210,6 +258,8 @@ export async function runJob(
       threadContext,
       job.attachments,
     );
+    durations.claude_code_ms = Date.now() - t0;
+    claudeSessions.push(toClaudeSession(claudeResult, "code"));
     await events.emit("CLAUDE_FINISHED", {
       summary: claudeResult.summary.slice(0, 1000),
     });
@@ -254,8 +304,10 @@ export async function runJob(
       // 6) Run local checks (only if there are uncommitted changes to validate)
       const testLevel = job.test_level || config.testLevelDefault;
       if (uncommitted) {
+        t0 = Date.now();
         await events.emit("LOCAL_CHECKS_STARTED", { level: testLevel });
         checks = runLocalChecks(worktreePath, repo.commands, testLevel);
+        durations.local_checks_ms = Date.now() - t0;
         await events.emit("LOCAL_CHECKS_FINISHED", {
           ok: checks.ok,
           summary: checks.summary.slice(0, 500),
@@ -283,10 +335,13 @@ export async function runJob(
 
       // 7) Self-review (only if there are uncommitted changes to review)
       if (uncommitted || hasChanges(worktreePath)) {
+        t0 = Date.now();
         await events.emit("SELF_REVIEW_STARTED", {});
         const diff = getDiff(worktreePath);
         if (diff) {
           const reviewResult = await runClaudeReview(worktreePath, repo, diff);
+          claudeSessions.push(toClaudeSession(reviewResult, "review"));
+          durations.self_review_ms = Date.now() - t0;
           await events.emit("SELF_REVIEW_FINISHED", {
             success: reviewResult.success,
             summary: reviewResult.summary.slice(0, 1000),
@@ -316,6 +371,7 @@ export async function runJob(
       checkTimeout();
 
       // 8) Commit + push (skip steps Claude already performed)
+      t0 = Date.now();
       await events.emit("PHASE_STARTED", { phase: "commit_push" });
       const shortSummary = claudeResult.summary.split("\n")[0]?.slice(0, 60) || "automated changes";
       if (hasChanges(worktreePath)) {
@@ -347,6 +403,8 @@ export async function runJob(
         log.info("Skipping push — branch already up to date with remote");
       }
       checkTimeout();
+
+      durations.commit_push_ms = Date.now() - t0;
 
       // 9) Create PR (detect if Claude already created one)
       await checkCanceled();
@@ -381,6 +439,7 @@ export async function runJob(
     const ciProviderName = ciProvider?.name || "none";
     const ciTestLevel = job.test_level || config.testLevelDefault;
 
+    const ciStartTime = Date.now();
     if (!ciProvider) {
       // No CI provider configured — skip monitoring entirely
       log.info("No CI provider configured, skipping CI monitoring", { repoId: repo.id });
@@ -418,6 +477,8 @@ export async function runJob(
 
           // Run Claude fix
           const fixResult = await runClaudeFix(worktreePath, repo, failureSummary);
+          claudeSessions.push(toClaudeSession(fixResult, "fix"));
+          durations.ci_fix_ms = (durations.ci_fix_ms || 0) + (fixResult.duration_ms || 0);
           await events.emit("CI_FIX_FINISHED", {
             attempt: ciAttempt,
             summary: fixResult.summary.slice(0, 500),
@@ -449,6 +510,7 @@ export async function runJob(
         }
       }
     }
+    durations.ci_wait_ms = Date.now() - ciStartTime - (durations.ci_fix_ms || 0);
 
     // 11) Complete or fail
     const resultSummary = buildResultSummary(
@@ -458,18 +520,22 @@ export async function runJob(
       prUrl,
     );
 
+    const metrics = buildMetrics();
+
     if (!ciPassed && ciFixEnabled && ciAttempt > 0) {
       // CI still failing after attempts, but PR exists — complete with warning
       await api.complete(job.task_id, workerId, {
         result_summary: `${resultSummary}\n\n⚠️ CI still failing after ${ciAttempt} fix attempts.`,
         pr_urls: [prUrl],
         ci: { provider: ciProviderName },
+        metrics,
       });
     } else {
       await api.complete(job.task_id, workerId, {
         result_summary: resultSummary,
         pr_urls: [prUrl],
         ci: { provider: ciProviderName },
+        metrics,
       });
     }
   } catch (err: any) {

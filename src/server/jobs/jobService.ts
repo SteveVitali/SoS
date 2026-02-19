@@ -210,7 +210,7 @@ export async function handleWorkerEvent(
 export async function complete(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any },
+  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
 ) {
   const job = await repoCompleteJob(taskId, nodeId, data);
   if (job) {
@@ -231,7 +231,7 @@ export async function complete(
 export async function fail(
   taskId: string,
   nodeId: string,
-  data: { error: any; pr_urls?: string[]; ci?: any },
+  data: { error: any; pr_urls?: string[]; ci?: any; metrics?: any },
 ) {
   const job = await repoFailJob(taskId, nodeId, data);
   if (job) {

@@ -76,6 +76,40 @@ export const JobEvent = z.object({
 });
 export type JobEvent = z.infer<typeof JobEvent>;
 
+// --- Metrics ---
+export interface ClaudeSession {
+  phase: "code" | "review" | "fix";
+  model?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  duration_ms?: number;
+  duration_api_ms?: number;
+  num_turns?: number;
+  cost_usd?: number;
+  cost_source?: "provider" | "computed";
+}
+
+export interface JobMetrics {
+  durations?: {
+    total_ms?: number;
+    resolve_repo_ms?: number;
+    prepare_workspace_ms?: number;
+    claude_code_ms?: number;
+    local_checks_ms?: number;
+    self_review_ms?: number;
+    commit_push_ms?: number;
+    ci_wait_ms?: number;
+    ci_fix_ms?: number;
+  };
+  claude?: {
+    sessions?: ClaudeSession[];
+    total_input_tokens?: number;
+    total_output_tokens?: number;
+    total_cost_usd?: number;
+    cost_source?: "provider" | "computed";
+  };
+}
+
 // --- Job Attachment ---
 export interface JobAttachment {
   file_id: string;
@@ -126,6 +160,9 @@ export interface JobDoc {
 
   // Events
   events?: JobEvent[];
+
+  // Metrics
+  metrics?: JobMetrics;
 
   // Linking
   parent_task_id?: string;

@@ -1,5 +1,5 @@
 import { createLogger } from "../shared/logger.js";
-import type { CIInfo, JobDoc, JobError, WorkerEventType } from "../shared/types.js";
+import type { CIInfo, JobDoc, JobError, JobMetrics, WorkerEventType } from "../shared/types.js";
 
 const log = createLogger("worker:apiClient");
 
@@ -87,7 +87,7 @@ export class WorkerApiClient {
   async complete(
     taskId: string,
     nodeId: string,
-    data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo },
+    data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
   ): Promise<JobDoc | null> {
     try {
       const res = await this.request<{ job: JobDoc }>(
@@ -105,7 +105,7 @@ export class WorkerApiClient {
   async fail(
     taskId: string,
     nodeId: string,
-    data: { error: JobError; pr_urls?: string[]; ci?: CIInfo },
+    data: { error: JobError; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
   ): Promise<JobDoc | null> {
     try {
       const res = await this.request<{ job: JobDoc }>("POST", `/api/worker/jobs/${taskId}/fail`, {

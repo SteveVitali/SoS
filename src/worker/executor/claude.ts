@@ -11,6 +11,13 @@ export interface ClaudeResult {
   success: boolean;
   summary: string;
   logPath: string;
+  model?: string;
+  input_tokens?: number;
+  output_tokens?: number;
+  duration_ms?: number;
+  duration_api_ms?: number;
+  num_turns?: number;
+  cost_usd?: number;
 }
 
 function writeAttachments(sosDir: string, attachments: JobAttachment[]): string[] {
@@ -276,6 +283,15 @@ function runClaudeProcess(
     let lineBuf = "";
     let receivedOutput = false;
 
+    // Metrics captured from stream-json events
+    let resultModel: string | undefined;
+    let resultInputTokens: number | undefined;
+    let resultOutputTokens: number | undefined;
+    let resultDurationMs: number | undefined;
+    let resultDurationApiMs: number | undefined;
+    let resultNumTurns: number | undefined;
+    let resultCostUsd: number | undefined;
+
     // Heartbeat: log every 10s while waiting for first output
     const heartbeat = setInterval(() => {
       if (!receivedOutput) {
@@ -296,6 +312,7 @@ function runClaudeProcess(
         if (obj.type === "system") {
           // Init event — show model info
           if (obj.subtype === "init") {
+            if (obj.model) resultModel = obj.model;
             const info = `\n🤖 Claude (${obj.model || "unknown"}) session started\n`;
             process.stdout.write(info);
           }
@@ -322,12 +339,23 @@ function runClaudeProcess(
             process.stdout.write(`   → ${preview.split("\n")[0]}\n`);
           }
         } else if (obj.type === "result") {
-          // Final result
+          // Final result with metadata
           if (obj.result) {
             process.stdout.write("\n--- Claude Result ---\n");
             process.stdout.write(`${obj.result}\n`);
             textChunks.push(obj.result);
           }
+          // Capture metrics from result event
+          if (obj.model) resultModel = obj.model;
+          if (obj.duration_ms != null) resultDurationMs = obj.duration_ms;
+          if (obj.duration_api_ms != null) resultDurationApiMs = obj.duration_api_ms;
+          if (obj.num_turns != null) resultNumTurns = obj.num_turns;
+          if (obj.total_cost_usd != null) resultCostUsd = obj.total_cost_usd;
+          else if (obj.cost_usd != null) resultCostUsd = obj.cost_usd;
+          // Usage may be nested under a usage object or at top level
+          const usage = obj.usage || obj;
+          if (usage.input_tokens != null) resultInputTokens = usage.input_tokens;
+          if (usage.output_tokens != null) resultOutputTokens = usage.output_tokens;
         }
       } catch {
         // Not JSON — print raw
@@ -369,7 +397,18 @@ function runClaudeProcess(
         summary_len: summary.length,
       });
 
-      resolve({ success, summary, logPath });
+      resolve({
+        success,
+        summary,
+        logPath,
+        model: resultModel,
+        input_tokens: resultInputTokens,
+        output_tokens: resultOutputTokens,
+        duration_ms: resultDurationMs ?? Date.now() - startTime,
+        duration_api_ms: resultDurationApiMs,
+        num_turns: resultNumTurns,
+        cost_usd: resultCostUsd,
+      });
     });
   });
 }
