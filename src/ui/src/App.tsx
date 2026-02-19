@@ -316,6 +316,75 @@ function StatusBadge({ status }: { status: string }) {
   return <span style={css.badge(color)}>{status}</span>;
 }
 
+// --- Sorting ---
+type SortKey =
+  | "task_id"
+  | "status"
+  | "requested_by"
+  | "created_at"
+  | "repo"
+  | "worktree_slot"
+  | "pr";
+type SortDir = "asc" | "desc";
+
+function getJobSortValue(job: Job, key: SortKey): string {
+  switch (key) {
+    case "task_id":
+      return job.task_id;
+    case "status":
+      return job.status;
+    case "requested_by": {
+      const cached = slackNameCache.get(job.requested_by);
+      return (cached?.displayName || job.requested_by).toLowerCase();
+    }
+    case "created_at":
+      return job.created_at;
+    case "repo":
+      return (job.repos_resolved?.join(", ") || job.repo_hint || "").toLowerCase();
+    case "worktree_slot":
+      return (job.worktree_slot || "").toLowerCase();
+    case "pr":
+      return (job.pr_urls?.join(", ") || "").toLowerCase();
+    default:
+      return "";
+  }
+}
+
+function sortJobs(jobs: Job[], key: SortKey, dir: SortDir): Job[] {
+  const sorted = [...jobs].sort((a, b) => {
+    const va = getJobSortValue(a, key);
+    const vb = getJobSortValue(b, key);
+    if (va < vb) return -1;
+    if (va > vb) return 1;
+    return 0;
+  });
+  return dir === "desc" ? sorted.reverse() : sorted;
+}
+
+function SortableHeader({
+  label,
+  sortKey,
+  currentKey,
+  currentDir,
+  onSort,
+}: {
+  label: string;
+  sortKey: SortKey;
+  currentKey: SortKey | null;
+  currentDir: SortDir;
+  onSort: (key: SortKey) => void;
+}) {
+  const active = currentKey === sortKey;
+  return (
+    <th
+      style={{ ...css.th, cursor: "pointer", userSelect: "none" }}
+      onClick={() => onSort(sortKey)}
+    >
+      {label} {active ? (currentDir === "asc" ? "▲" : "▼") : ""}
+    </th>
+  );
+}
+
 // --- Jobs List ---
 function JobsList({
   onSelect,
@@ -333,7 +402,20 @@ function JobsList({
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<string[]>([]);
   const [offset, setOffset] = useState(0);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const limit = 25;
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("asc");
+    }
+  };
+
+  const sortedJobs = sortKey ? sortJobs(jobs, sortKey, sortDir) : jobs;
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -450,19 +532,60 @@ function JobsList({
             <table style={css.table}>
               <thead>
                 <tr>
-                  <th style={css.th}>Task ID</th>
-                  <th style={css.th}>Status</th>
-                  <th style={css.th}>User</th>
-                  <th style={css.th}>Created</th>
-                  <th style={css.th}>Updated</th>
-                  <th style={css.th}>Repo</th>
-                  <th style={css.th}>Worktree</th>
-                  <th style={css.th}>PR</th>
+                  <SortableHeader
+                    label="Task ID"
+                    sortKey="task_id"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Status"
+                    sortKey="status"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="User"
+                    sortKey="requested_by"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Created"
+                    sortKey="created_at"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Repo"
+                    sortKey="repo"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="Worktree"
+                    sortKey="worktree_slot"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
+                    label="PR"
+                    sortKey="pr"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
                   <th style={css.th}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {jobs.map((job) => (
+                {sortedJobs.map((job) => (
                   <tr
                     key={job.task_id}
                     style={{ cursor: "pointer" }}
