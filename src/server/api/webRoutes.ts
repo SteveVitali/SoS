@@ -178,6 +178,32 @@ export function createWebRoutes(config: ServerConfig): Router {
     }
   });
 
+  // POST /api/web/jobs/:task_id/confirm-plan
+  router.post("/jobs/:task_id/confirm-plan", async (req: Request, res: Response) => {
+    try {
+      const taskId = pstr(req.params.task_id);
+      const existing = await jobService.findJobByTaskId(taskId);
+      if (!existing) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
+      if (existing.status !== "PENDING_CONFIRMATION") {
+        res.status(409).json({ error: "Job is not awaiting plan confirmation" });
+        return;
+      }
+      const revisedTaskText: string | undefined = req.body?.revised_task_text;
+      const job = await jobService.confirmJob(taskId, revisedTaskText);
+      if (!job) {
+        res.status(409).json({ error: "Confirm failed" });
+        return;
+      }
+      res.json({ job });
+    } catch (err: any) {
+      log.error("Confirm plan error", { error: err.message, task_id: pstr(req.params.task_id) });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // POST /api/web/jobs/:task_id/retry
   router.post("/jobs/:task_id/retry", async (req: Request, res: Response) => {
     try {

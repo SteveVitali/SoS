@@ -5,6 +5,7 @@ import {
   CompleteJobSchema,
   FailJobSchema,
   HeartbeatSchema,
+  SubmitPlanSchema,
   WorkerEventSchema,
 } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
@@ -198,6 +199,32 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
       res.json({ job });
     } catch (err: any) {
       log.error("Await approval error", { error: err.message, task_id: pstr(req.params.task_id) });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/worker/jobs/:task_id/submit-plan
+  router.post("/jobs/:task_id/submit-plan", async (req: Request, res: Response) => {
+    try {
+      const parsed = SubmitPlanSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+        return;
+      }
+      const { node_id, plan_summary, metrics } = parsed.data;
+      const job = await jobService.submitPlan(
+        pstr(req.params.task_id),
+        node_id,
+        plan_summary,
+        metrics,
+      );
+      if (!job) {
+        res.status(409).json({ error: "Submit plan failed: not owner or not in PLANNING status" });
+        return;
+      }
+      res.json({ job });
+    } catch (err: any) {
+      log.error("Submit plan error", { error: err.message, task_id: pstr(req.params.task_id) });
       res.status(500).json({ error: "Internal error" });
     }
   });

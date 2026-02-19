@@ -187,6 +187,26 @@ export class WorkerApiClient {
     }
   }
 
+  async submitPlan(
+    taskId: string,
+    nodeId: string,
+    data: { plan_summary: string; metrics?: JobMetrics },
+  ): Promise<JobDoc | null> {
+    try {
+      const res = await this.requestWithRetry<{ job: JobDoc }>(
+        "POST",
+        `/api/worker/jobs/${taskId}/submit-plan`,
+        { node_id: nodeId, ...data },
+        5,
+        2000,
+      );
+      return res.job;
+    } catch (err: any) {
+      if (err.status === 409) return null;
+      throw err;
+    }
+  }
+
   async getJobStatus(taskId: string): Promise<string | null> {
     try {
       const data = await this.request<{ status: string }>(
