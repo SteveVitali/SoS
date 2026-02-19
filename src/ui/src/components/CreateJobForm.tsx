@@ -2,10 +2,12 @@ import type React from "react";
 import { useState } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { createJob, createRespondToCommentsJob } from "../api.js";
+import { useAppData } from "../stores/AppDataContext.js";
 import { css } from "../styles/theme.js";
 
 export function CreateJobForm() {
   const navigate = useNavigate();
+  const { refreshJobs } = useAppData();
   const [mode, setMode] = useState<"create" | "respond">("create");
   const [requestedBy, setRequestedBy] = useState(localStorage.getItem("sos_last_user") || "");
   const [taskText, setTaskText] = useState("");
@@ -34,6 +36,7 @@ export function CreateJobForm() {
           requested_by: requestedBy,
           pr_url: prUrl,
         });
+        refreshJobs();
         navigate(`/jobs/${res.job.task_id}`);
       } else {
         if (!requestedBy || !taskText) {
@@ -54,6 +57,7 @@ export function CreateJobForm() {
                 .filter(Boolean)
             : undefined,
         });
+        refreshJobs();
         navigate(`/jobs/${res.job.task_id}`);
       }
     } catch (err: unknown) {

@@ -75,9 +75,11 @@ async function listPrsForRepo(
   repo: string,
   state: "open" | "closed" | "merged" | "all",
   limit: number,
+  authorFilter?: string,
 ): Promise<any[]> {
   const stateFlag = state === "all" ? "--state=all" : `--state=${state}`;
-  const cmd = `gh pr list --repo "${owner}/${repo}" ${stateFlag} --limit ${limit} --json number,title,state,headRefName,updatedAt,createdAt,author,isDraft,additions,deletions,url`;
+  const authorFlag = authorFilter ? ` --author "${authorFilter}"` : "";
+  const cmd = `gh pr list --repo "${owner}/${repo}" ${stateFlag}${authorFlag} --limit ${limit} --json number,title,state,headRefName,updatedAt,createdAt,author,isDraft,additions,deletions,url`;
   try {
     const { stdout } = await exec(cmd, { timeout: 30_000 });
     return JSON.parse(stdout);
@@ -232,7 +234,7 @@ export async function listPrs(opts: ListPrsOptions): Promise<GitHubPr[]> {
   }
 
   const prListResults = await Promise.all(
-    repoEntries.map((r) => listPrsForRepo(r.owner, r.repo, state, limit)),
+    repoEntries.map((r) => listPrsForRepo(r.owner, r.repo, state, limit, currentUser || undefined)),
   );
 
   // Collect all raw PRs with their repo metadata

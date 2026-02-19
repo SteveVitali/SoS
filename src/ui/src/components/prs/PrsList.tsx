@@ -9,7 +9,7 @@ import { PrRow } from "./PrRow.js";
 
 export function PrsList() {
   const navigate = useNavigate();
-  const { prs: prsState, refreshPrs } = useAppData();
+  const { prs: prsState, refreshPrs, refreshJobs } = useAppData();
   const { prs, loading, error } = prsState;
 
   const [state, setState] = useState<"open" | "closed" | "merged" | "all">("open");
@@ -35,6 +35,7 @@ export function PrsList() {
         requested_by: requestedBy,
         pr_url: pr.url,
       });
+      refreshJobs();
       navigate(`/jobs/${res.job.task_id}`);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : String(err));

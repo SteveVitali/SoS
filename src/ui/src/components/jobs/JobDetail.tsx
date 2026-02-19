@@ -10,6 +10,7 @@ import {
   retryJob,
 } from "../../api.js";
 import { getSlackNameCache, useSlackNames } from "../../hooks/useSlackNames.js";
+import { useAppData } from "../../stores/AppDataContext.js";
 import { css } from "../../styles/theme.js";
 import { formatPrUrl, formatUser, relativeTime, shortId } from "../../utils/format.js";
 import { JobTypeBadge, StatusBadge } from "../shared/Badge.js";
@@ -19,6 +20,7 @@ import { PerformanceCard } from "./PerformanceCard.js";
 export function JobDetail() {
   const { taskId } = useParams<{ taskId: string }>();
   const navigate = useNavigate();
+  const { refreshJobs } = useAppData();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -52,17 +54,22 @@ export function JobDetail() {
       if (action === "cancel") {
         await cancelJob(taskId);
         load();
+        refreshJobs();
       } else if (action === "retry") {
         const res = await retryJob(taskId);
+        refreshJobs();
         navigate(`/jobs/${res.job.task_id}`);
       } else if (action === "delete") {
         await deleteJob(taskId);
+        refreshJobs();
         navigate("/");
       } else if (action === "promote") {
         await promotePr(taskId);
         load();
+        refreshJobs();
       } else if (action === "respond_comments") {
         const res = await respondToComments(taskId);
+        refreshJobs();
         navigate(`/jobs/${res.job.task_id}`);
       }
     } catch (err: unknown) {

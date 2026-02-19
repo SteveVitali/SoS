@@ -183,10 +183,10 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refreshRegistry();
   }, [refreshJobs, refreshPrs, refreshRegistry]);
 
-  // --- Polling: refresh jobs every 15s, PRs every 30s ---
+  // --- Polling: refresh jobs every 3s, PRs every 120s ---
   useEffect(() => {
-    const jobsTimer = setInterval(() => refreshJobs(), 15_000);
-    const prsTimer = setInterval(() => refreshPrs(), 30_000);
+    const jobsTimer = setInterval(() => refreshJobs(), 3_000);
+    const prsTimer = setInterval(() => refreshPrs(), 120_000);
     return () => {
       clearInterval(jobsTimer);
       clearInterval(prsTimer);
