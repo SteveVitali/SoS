@@ -29,6 +29,12 @@ function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
+function formatPrUrl(url: string): string {
+  const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
+  if (m) return `${m[1]}/${m[2]}#${m[3]}`;
+  return url;
+}
+
 // --- Slack User Name Cache ---
 const slackNameCache = new Map<string, SlackUser>();
 const pendingIds = new Set<string>();
@@ -479,16 +485,17 @@ function JobsList({
                     <td style={{ ...css.td, ...css.mono, fontSize: 12 }}>
                       {job.worktree_slot || "—"}
                     </td>
-                    <td style={css.td}>
+                    <td style={{ ...css.td, ...css.mono, fontSize: 12 }}>
                       {job.pr_urls?.map((url, i) => (
                         <a
                           key={i}
                           href={url}
                           target="_blank"
                           rel="noopener"
+                          style={{ marginRight: 8 }}
                           onClick={(e) => e.stopPropagation()}
                         >
-                          PR {i + 1}
+                          {formatPrUrl(url)}
                         </a>
                       )) || "—"}
                     </td>
@@ -784,8 +791,14 @@ function JobDetail({
           <div style={{ marginBottom: 8 }}>
             <span style={{ color: "var(--fg2)", fontSize: 13 }}>PRs: </span>
             {job.pr_urls.map((url, i) => (
-              <a key={i} href={url} target="_blank" rel="noopener" style={{ marginRight: 12 }}>
-                {url}
+              <a
+                key={i}
+                href={url}
+                target="_blank"
+                rel="noopener"
+                style={{ marginRight: 12, ...css.mono, fontSize: 13 }}
+              >
+                {formatPrUrl(url)}
               </a>
             ))}
           </div>
