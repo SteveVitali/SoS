@@ -1,0 +1,160 @@
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+import type { RepoEntry } from "./repoRegistry.js";
+
+// Mock child_process and fs before importing the module
+vi.mock("node:child_process", () => ({
+  execSync: vi.fn(() => ""),
+}));
+
+vi.mock("node:fs", () => ({
+  existsSync: vi.fn(() => true),
+  mkdirSync: vi.fn(),
+  readdirSync: vi.fn(() => []),
+}));
+
+// Import after mocks are set up
+const { worktreePool } = await import("./worktreePool.js");
+const { existsSync, readdirSync } = await import("node:fs");
+
+function makeRepo(overrides: Partial<RepoEntry> = {}): RepoEntry {
+  return {
+    id: "my-repo",
+    clone: "git@github.com:org/my-repo.git",
+    default_branch: "main",
+    max_worktrees: 2,
+    clean_mode: "light",
+    ...overrides,
+  };
+}
+
+describe("WorktreePool", () => {
+  beforeEach(() => {
+    // Re-init pool for each test with a clean workspace root
+    // Access the private slots map to reset state between tests
+    (worktreePool as any).slots = new Map();
+    worktreePool.init("/tmp/test-workspace");
+
+    // Default: existsSync returns true (worktree dir exists), readdirSync returns empty
+    vi.mocked(existsSync).mockReturnValue(true);
+    vi.mocked(readdirSync).mockReturnValue([]);
+  });
+
+  afterEach(() => {
+    vi.clearAllMocks();
+  });
+
+  describe("acquire", () => {
+    it("creates a new slot when pool is empty", () => {
+      const repo = makeRepo({ max_worktrees: 2 });
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/fix-bug");
+
+      expect(slot).not.toBeNull();
+      expect(slot!.slotName).toBe("my-repo-n-1");
+      expect(slot!.slotIndex).toBe(1);
+      expect(slot!.repoId).toBe("my-repo");
+      expect(slot!.worktreePath).toContain("worktrees/my-repo-n-1");
+    });
+
+    it("creates a second slot when first is in use", () => {
+      const repo = makeRepo({ max_worktrees: 2 });
+      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
+
+      expect(slot2).not.toBeNull();
+      expect(slot2!.slotName).toBe("my-repo-n-2");
+      expect(slot2!.slotIndex).toBe(2);
+    });
+
+    it("returns null when all slots are occupied and at max", () => {
+      const repo = makeRepo({ max_worktrees: 1 });
+      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
+
+      expect(slot2).toBeNull();
+    });
+
+    it("reuses a released slot", () => {
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot1 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      expect(slot1).not.toBeNull();
+
+      worktreePool.release("my-repo", slot1!.slotName);
+
+      const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
+      expect(slot2).not.toBeNull();
+      expect(slot2!.slotName).toBe(slot1!.slotName); // same slot reused
+    });
+  });
+
+  describe("release", () => {
+    it("marks a slot as available", () => {
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(true);
+
+      worktreePool.release("my-repo", slot!.slotName);
+      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(false);
+    });
+
+    it("is a no-op for unknown repo", () => {
+      // Should not throw
+      worktreePool.release("nonexistent", "fake-slot");
+    });
+  });
+
+  describe("isInUse", () => {
+    it("returns false for unknown repo", () => {
+      expect(worktreePool.isInUse("unknown", "slot")).toBe(false);
+    });
+
+    it("returns correct state after acquire and release", () => {
+      const repo = makeRepo();
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+
+      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(true);
+      worktreePool.release("my-repo", slot!.slotName);
+      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(false);
+    });
+  });
+
+  describe("discovery of existing worktrees", () => {
+    it("picks up existing worktree directories on first access", () => {
+      vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any, "my-repo-n-2" as any]);
+
+      const repo = makeRepo({ max_worktrees: 3 });
+      // First acquire should discover the 2 existing slots, reuse one
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+
+      expect(slot).not.toBeNull();
+      expect(slot!.slotName).toBe("my-repo-n-1"); // reuses first discovered
+    });
+
+    it("respects max_worktrees even with discovered slots", () => {
+      vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any, "my-repo-n-2" as any]);
+
+      const repo = makeRepo({ max_worktrees: 2 });
+      // Acquire both discovered slots
+      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/b2");
+
+      // Third should return null — at max
+      const slot3 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-3", "sos/b3");
+      expect(slot3).toBeNull();
+    });
+  });
+
+  describe("independent repo pools", () => {
+    it("manages slots independently per repo", () => {
+      const repo1 = makeRepo({ id: "repo-a", max_worktrees: 1 });
+      const repo2 = makeRepo({ id: "repo-b", max_worktrees: 1 });
+
+      const slot1 = worktreePool.acquire(repo1, "/tmp/clones/repo-a", "t1", "sos/b1");
+      const slot2 = worktreePool.acquire(repo2, "/tmp/clones/repo-b", "t2", "sos/b2");
+
+      expect(slot1).not.toBeNull();
+      expect(slot2).not.toBeNull();
+      expect(slot1!.repoId).toBe("repo-a");
+      expect(slot2!.repoId).toBe("repo-b");
+    });
+  });
+});
