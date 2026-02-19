@@ -94,23 +94,28 @@ export async function startWorkerLoop(
       // Start heartbeat — returns abort signal that fires on lease loss
       const leaseSignal = heartbeatManager.start(claimed.task_id);
 
+      // Keep worker registry status fresh while job runs (stale timeout = 60s)
+      const statusTimer = setInterval(() => reportStatus("busy"), 30_000);
+
       try {
         await dispatchJob(claimed, workerId, config, api, leaseSignal);
-      } catch (jobErr: any) {
+      } catch (jobErr: unknown) {
         // Last-resort: runJob's own catch block already tried api.fail(),
         // but if that also threw, try one final time from here.
-        log.error("runJob threw unexpectedly", { task_id: claimed.task_id, error: jobErr.message });
+        const msg = jobErr instanceof Error ? jobErr.message : String(jobErr);
+        log.error("runJob threw unexpectedly", { task_id: claimed.task_id, error: msg });
         try {
           await api.fail(claimed.task_id, workerId, {
             error: {
               code: "WORKER_CRASH",
-              message: `Worker-level failure: ${jobErr.message}`,
+              message: `Worker-level failure: ${msg}`,
             },
           });
         } catch {
           /* truly nothing we can do */
         }
       } finally {
+        clearInterval(statusTimer);
         heartbeatManager.stop(claimed.task_id);
       }
 

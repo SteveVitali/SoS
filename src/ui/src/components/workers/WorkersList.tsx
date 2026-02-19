@@ -15,6 +15,27 @@ export function WorkersList() {
   const navigate = useNavigate();
   const [showSpawnModal, setShowSpawnModal] = useState(false);
   const [actionError, setActionError] = useState("");
+  const [expandedIds, setExpandedIds] = useState<Set<string>>(new Set());
+
+  const toggleExpand = (id: string) => {
+    setExpandedIds((prev) => {
+      const next = new Set(prev);
+      if (next.has(id)) next.delete(id);
+      else next.add(id);
+      return next;
+    });
+  };
+
+  const onlineIds = workers.filter((w) => w.status !== "offline").map((w) => w.worker_id);
+  const allExpanded = onlineIds.length > 0 && onlineIds.every((id) => expandedIds.has(id));
+
+  const toggleAll = () => {
+    if (allExpanded) {
+      setExpandedIds(new Set());
+    } else {
+      setExpandedIds(new Set(onlineIds));
+    }
+  };
 
   const onlineWorkers = workers.filter((w) => w.status !== "offline");
   const busyWorkers = onlineWorkers.filter((w) => w.loops[0]?.status === "busy");
@@ -46,6 +67,11 @@ export function WorkersList() {
         count={workers.length}
         actions={
           <>
+            {onlineIds.length > 0 && (
+              <button type="button" style={css.btn} onClick={toggleAll}>
+                {allExpanded ? "Collapse All" : "Expand All"}
+              </button>
+            )}
             <button type="button" style={css.btn} onClick={() => refreshWorkerNodes()}>
               ↻ Refresh
             </button>
@@ -79,6 +105,8 @@ export function WorkersList() {
         <WorkerCard
           key={w.worker_id}
           worker={w}
+          expanded={expandedIds.has(w.worker_id)}
+          onToggleExpand={() => toggleExpand(w.worker_id)}
           onViewLogs={() => navigate(`/workers/${encodeURIComponent(w.worker_id)}`)}
           onShutdown={() => handleShutdown(w)}
           onRemove={() => handleRemove(w)}
