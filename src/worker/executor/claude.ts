@@ -56,25 +56,25 @@ function writeAttachments(sosDir: string, attachments: JobAttachment[]): string[
   return writtenPaths;
 }
 
-function buildPrompt(
-  taskText: string,
+type AttachmentPath = { path: string; mimetype: string; size_bytes: number };
+
+/** Shared prompt sections: thread context, attachments, repo info, commands. */
+function buildContextSections(
   repo: RepoEntry,
+  headingLevel: "#" | "##",
   threadContext?: string,
-  attachmentPaths?: { path: string; mimetype: string; size_bytes: number }[],
-): string {
+  attachmentPaths?: AttachmentPath[],
+): string[] {
   const lines: string[] = [];
-  lines.push("# Task");
-  lines.push(taskText);
-  lines.push("");
 
   if (threadContext) {
-    lines.push("# Slack Thread Context");
+    lines.push(`${headingLevel} Slack Thread Context`);
     lines.push(threadContext);
     lines.push("");
   }
 
   if (attachmentPaths && attachmentPaths.length > 0) {
-    lines.push("# Attached Files");
+    lines.push(`${headingLevel} Attached Files`);
     lines.push("");
     lines.push("The user attached the following files in the Slack thread. They have been");
     lines.push("saved to the `.sonofsteve/attachments/` directory in this worktree:");
@@ -84,17 +84,17 @@ function buildPrompt(
       lines.push(`- \`${att.path}\` (${att.mimetype}, ${sizeKb}KB)`);
     }
     lines.push("");
-    lines.push("Review these files for context before starting work.");
+    lines.push("Review these files for context.");
     lines.push("");
   }
 
-  lines.push("# Repository");
+  lines.push(`${headingLevel} Repository`);
   lines.push(`- Repo: ${repo.id}`);
   lines.push(`- Default branch: ${repo.default_branch}`);
   lines.push("");
 
   if (repo.commands) {
-    lines.push("# Available Commands");
+    lines.push(`${headingLevel} Available Commands`);
     if (repo.commands.lint) lines.push(`- Lint: \`${repo.commands.lint.join(" ")}\``);
     if (repo.commands.test_fast)
       lines.push(`- Test (fast): \`${repo.commands.test_fast.join(" ")}\``);
@@ -103,11 +103,77 @@ function buildPrompt(
     lines.push("");
   }
 
+  return lines;
+}
+
+function buildPrompt(
+  taskText: string,
+  repo: RepoEntry,
+  threadContext?: string,
+  attachmentPaths?: AttachmentPath[],
+  planSummary?: string,
+): string {
+  const lines: string[] = [];
+  lines.push("# Task");
+  lines.push(taskText);
+  lines.push("");
+
+  if (planSummary) {
+    lines.push("# Pre-approved Implementation Plan");
+    lines.push("");
+    lines.push(
+      "The following plan was generated during a prior analysis of the codebase and approved by the user.",
+    );
+    lines.push(
+      "Follow this plan closely, but use your judgment if you discover issues during implementation.",
+    );
+    lines.push("");
+    lines.push(planSummary);
+    lines.push("");
+  }
+
+  lines.push(...buildContextSections(repo, "#", threadContext, attachmentPaths));
+
   lines.push("# Constraints");
   lines.push("- Keep changes minimal and focused on the task");
   lines.push("- Run lint and tests per the commands above before finishing");
   lines.push("- Produce a clear, concise PR description when done");
   lines.push("- Do not modify unrelated files");
+
+  return lines.join("\n");
+}
+
+function buildPlanPrompt(
+  taskText: string,
+  repo: RepoEntry,
+  threadContext?: string,
+  attachmentPaths?: AttachmentPath[],
+): string {
+  const lines: string[] = [];
+  lines.push("# Planning Mode");
+  lines.push("");
+  lines.push(
+    "Analyze the codebase and produce a technical implementation plan for the following task.",
+  );
+  lines.push("Do NOT make any code changes. Do NOT create, modify, or delete any files.");
+  lines.push("");
+  lines.push("## Task");
+  lines.push(taskText);
+  lines.push("");
+
+  lines.push(...buildContextSections(repo, "##", threadContext, attachmentPaths));
+
+  lines.push("## Instructions");
+  lines.push("1. Read relevant source files to understand the current architecture");
+  lines.push("2. Identify which files need to be created or modified");
+  lines.push("3. Outline the specific changes needed in each file");
+  lines.push("4. Note any risks, edge cases, or design decisions that need input");
+  lines.push("5. Estimate complexity (small / medium / large)");
+  lines.push("");
+  lines.push(
+    "Output a concise, numbered implementation plan. Be specific about file paths and function names.",
+  );
+  lines.push("Keep it under 500 words.");
 
   return lines.join("\n");
 }
@@ -119,6 +185,7 @@ export async function runClaude(
   threadContext?: string,
   attachments?: JobAttachment[],
   abortSignal?: AbortSignal,
+  planSummary?: string,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -139,7 +206,7 @@ export async function runClaude(
   const promptPath = path.join(sosDir, "prompt.md");
   const logPath = path.join(sosDir, "claude.log");
 
-  const prompt = buildPrompt(taskText, repo, threadContext, attachmentPaths);
+  const prompt = buildPrompt(taskText, repo, threadContext, attachmentPaths, planSummary);
   writeFileSync(promptPath, prompt, "utf-8");
 
   log.info("Running Claude Code CLI", { worktree: worktreePath });
@@ -157,6 +224,54 @@ export async function runClaude(
     worktreePath,
     logPath,
     30 * 60 * 1000,
+    abortSignal,
+  );
+}
+
+export async function runClaudePlan(
+  worktreePath: string,
+  taskText: string,
+  repo: RepoEntry,
+  threadContext?: string,
+  attachments?: JobAttachment[],
+  abortSignal?: AbortSignal,
+): Promise<ClaudeResult> {
+  const sosDir = path.join(worktreePath, ".sonofsteve");
+  if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
+  ensureSosGitignore(sosDir);
+
+  let attachmentPaths: AttachmentPath[] | undefined;
+  if (attachments && attachments.length > 0) {
+    const writtenPaths = writeAttachments(sosDir, attachments);
+    attachmentPaths = attachments.map((att, i) => ({
+      path: writtenPaths[i],
+      mimetype: att.mimetype,
+      size_bytes: att.size_bytes,
+    }));
+  }
+
+  const promptPath = path.join(sosDir, "plan-prompt.md");
+  const logPath = path.join(sosDir, "claude-plan.log");
+
+  const prompt = buildPlanPrompt(taskText, repo, threadContext, attachmentPaths);
+  writeFileSync(promptPath, prompt, "utf-8");
+
+  log.info("Running Claude Code CLI for planning", { worktree: worktreePath });
+
+  return runClaudeProcess(
+    [
+      "claude",
+      "-p",
+      promptPath,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--allowedTools",
+      "Read,Grep,Glob,LS,Bash(find:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*)",
+    ],
+    worktreePath,
+    logPath,
+    10 * 60 * 1000, // 10 min timeout for planning
     abortSignal,
   );
 }

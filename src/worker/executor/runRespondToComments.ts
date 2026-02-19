@@ -5,6 +5,7 @@ import type { WorkerApiClient } from "../apiClient.js";
 import type { WorkerConfig } from "../config.js";
 import { EventEmitter } from "../events.js";
 import { type ClaudeResult, runClaudeRespondToComment } from "./claude.js";
+import { LeaseAbortedError, RequeueError } from "./errors.js";
 import {
   fetchUnresolvedThreads,
   getPrBranch,
@@ -24,22 +25,6 @@ class CanceledError extends Error {
   constructor() {
     super("Job was canceled during execution");
     this.name = "CanceledError";
-  }
-}
-
-/** Sentinel error to signal the job should be requeued. */
-class RequeueError extends Error {
-  constructor(public reason: string) {
-    super(reason);
-    this.name = "RequeueError";
-  }
-}
-
-/** Sentinel error when the heartbeat signals lease loss / server unreachable. */
-class LeaseAbortedError extends Error {
-  constructor(reason?: string) {
-    super(reason || "Job aborted: lease lost or server unreachable");
-    this.name = "LeaseAbortedError";
   }
 }
 

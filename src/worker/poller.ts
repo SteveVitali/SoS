@@ -4,6 +4,7 @@ import type { WorkerApiClient } from "./apiClient.js";
 import type { WorkerConfig } from "./config.js";
 import { setClaudeLogContext } from "./executor/claude.js";
 import { runJob } from "./executor/runJob.js";
+import { runPlanJob } from "./executor/runPlanJob.js";
 import { runRespondToComments } from "./executor/runRespondToComments.js";
 import { HeartbeatManager } from "./heartbeat.js";
 
@@ -142,6 +143,9 @@ function dispatchJob(
   api: WorkerApiClient,
   leaseSignal: AbortSignal,
 ): Promise<void> {
+  if (job.status === "PLANNING") {
+    return runPlanJob(job, workerId, config, api, leaseSignal);
+  }
   if (job.job_type === "respond_to_pr_comments") {
     return runRespondToComments(job, workerId, config, api, leaseSignal);
   }

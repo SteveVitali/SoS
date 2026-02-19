@@ -9,6 +9,7 @@ import { EventEmitter } from "../events.js";
 import type { CIProvider } from "./ci/ciProvider.js";
 import { createCIProvider } from "./ci/index.js";
 import { type ClaudeResult, runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
+import { LeaseAbortedError, RequeueError } from "./errors.js";
 import { commitAll, getDiff, hasChanges, hasNewCommits, hasUnpushedCommits, push } from "./git.js";
 import { createPr, detectExistingPr, isPrDraft } from "./pr.js";
 import { loadRegistry } from "./repoRegistry.js";
@@ -101,27 +102,11 @@ function sleep(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
 
-/** Sentinel error to signal the job should be requeued, not failed. */
-class RequeueError extends Error {
-  constructor(public reason: string) {
-    super(reason);
-    this.name = "RequeueError";
-  }
-}
-
 /** Sentinel error when a job is canceled mid-execution. */
 class CanceledError extends Error {
   constructor() {
     super("Job was canceled during execution");
     this.name = "CanceledError";
-  }
-}
-
-/** Sentinel error when the heartbeat signals lease loss / server unreachable. */
-class LeaseAbortedError extends Error {
-  constructor(reason?: string) {
-    super(reason || "Job aborted: lease lost or server unreachable");
-    this.name = "LeaseAbortedError";
   }
 }
 
@@ -275,6 +260,7 @@ export async function runJob(
       threadContext,
       job.attachments,
       leaseSignal,
+      job.plan?.summary,
     );
     durations.claude_code_ms = Date.now() - t0;
     claudeSessions.push(toClaudeSession(claudeResult, "code"));
