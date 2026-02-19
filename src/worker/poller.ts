@@ -56,11 +56,11 @@ export async function startWorkerLoop(
         attempt: claimed.attempt,
       });
 
-      // Start heartbeat
-      heartbeatManager.start(claimed.task_id);
+      // Start heartbeat — returns abort signal that fires on lease loss
+      const leaseSignal = heartbeatManager.start(claimed.task_id);
 
       try {
-        await dispatchJob(claimed, workerId, config, api);
+        await dispatchJob(claimed, workerId, config, api, leaseSignal);
       } catch (jobErr: any) {
         // Last-resort: runJob's own catch block already tried api.fail(),
         // but if that also threw, try one final time from here.
@@ -96,11 +96,12 @@ function dispatchJob(
   workerId: string,
   config: WorkerConfig,
   api: WorkerApiClient,
+  leaseSignal: AbortSignal,
 ): Promise<void> {
   if (job.job_type === "respond_to_pr_comments") {
-    return runRespondToComments(job, workerId, config, api);
+    return runRespondToComments(job, workerId, config, api, leaseSignal);
   }
-  return runJob(job, workerId, config, api);
+  return runJob(job, workerId, config, api, leaseSignal);
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {

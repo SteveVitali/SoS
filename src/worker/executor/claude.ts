@@ -109,6 +109,7 @@ export async function runClaude(
   repo: RepoEntry,
   threadContext?: string,
   attachments?: JobAttachment[],
+  abortSignal?: AbortSignal,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -147,6 +148,7 @@ export async function runClaude(
     worktreePath,
     logPath,
     30 * 60 * 1000,
+    abortSignal,
   );
 }
 
@@ -154,6 +156,7 @@ export async function runClaudeFix(
   worktreePath: string,
   repo: RepoEntry,
   failureSummary: string,
+  abortSignal?: AbortSignal,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -195,6 +198,7 @@ export async function runClaudeFix(
     worktreePath,
     logPath,
     15 * 60 * 1000,
+    abortSignal,
   );
 }
 
@@ -202,6 +206,7 @@ export async function runClaudeReview(
   worktreePath: string,
   repo: RepoEntry,
   diff: string,
+  abortSignal?: AbortSignal,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -258,6 +263,7 @@ export async function runClaudeReview(
     worktreePath,
     logPath,
     15 * 60 * 1000,
+    abortSignal,
   );
 }
 
@@ -269,12 +275,22 @@ export interface RespondToCommentOptions {
   line: number | null;
   comments: Array<{ author: string; body: string; diffHunk: string }>;
   branch: string;
+  abortSignal?: AbortSignal;
 }
 
 export async function runClaudeRespondToComment(
   opts: RespondToCommentOptions,
 ): Promise<ClaudeResult> {
-  const { worktreePath, repo, threadIndex, path: filePath, line, comments, branch } = opts;
+  const {
+    worktreePath,
+    repo,
+    threadIndex,
+    path: filePath,
+    line,
+    comments,
+    branch,
+    abortSignal,
+  } = opts;
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
   ensureSosGitignore(sosDir);
@@ -334,6 +350,7 @@ export async function runClaudeRespondToComment(
     worktreePath,
     logPath,
     5 * 60 * 1000,
+    abortSignal,
   );
 }
 
@@ -348,6 +365,7 @@ function runClaudeProcess(
   cwd: string,
   logPath: string,
   timeoutMs: number,
+  abortSignal?: AbortSignal,
 ): Promise<ClaudeResult> {
   const [bin, ...rest] = args;
   log.info("Spawning Claude", { bin, args: rest.join(" ").slice(0, 200) });
@@ -454,10 +472,25 @@ function runClaudeProcess(
     });
 
     const timer = setTimeout(() => {
+      log.warn("Claude process timed out, killing", { pid: child.pid, timeoutMs });
       child.kill("SIGTERM");
     }, timeoutMs);
 
+    // Kill subprocess if lease is lost / server unreachable
+    const onAbort = () => {
+      log.warn("Aborting Claude process due to lease loss", { pid: child.pid });
+      child.kill("SIGTERM");
+    };
+    if (abortSignal) {
+      if (abortSignal.aborted) {
+        child.kill("SIGTERM");
+      } else {
+        abortSignal.addEventListener("abort", onAbort, { once: true });
+      }
+    }
+
     child.on("close", (code) => {
+      abortSignal?.removeEventListener("abort", onAbort);
       clearTimeout(timer);
       clearInterval(heartbeat);
       if (lineBuf) processLine(lineBuf);

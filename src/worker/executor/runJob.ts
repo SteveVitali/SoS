@@ -117,11 +117,20 @@ class CanceledError extends Error {
   }
 }
 
+/** Sentinel error when the heartbeat signals lease loss / server unreachable. */
+class LeaseAbortedError extends Error {
+  constructor(reason?: string) {
+    super(reason || "Job aborted: lease lost or server unreachable");
+    this.name = "LeaseAbortedError";
+  }
+}
+
 export async function runJob(
   job: JobDoc,
   workerId: string,
   config: WorkerConfig,
   api: WorkerApiClient,
+  leaseSignal?: AbortSignal,
 ): Promise<void> {
   const events = new EventEmitter(api, workerId, job.task_id);
   const startTime = Date.now();
@@ -179,7 +188,14 @@ export async function runJob(
     }
   }
 
+  function checkLeaseAborted() {
+    if (leaseSignal?.aborted) {
+      throw new LeaseAbortedError(String(leaseSignal.reason || ""));
+    }
+  }
+
   async function checkCanceled() {
+    checkLeaseAborted();
     const status = await api.getJobStatus(job.task_id);
     if (status === "CANCELED") {
       throw new CanceledError();
@@ -258,6 +274,7 @@ export async function runJob(
       repo,
       threadContext,
       job.attachments,
+      leaseSignal,
     );
     durations.claude_code_ms = Date.now() - t0;
     claudeSessions.push(toClaudeSession(claudeResult, "code"));
@@ -323,6 +340,9 @@ export async function runJob(
             worktreePath,
             `Fix the following failures:\n${checks.summary}`,
             repo,
+            undefined,
+            undefined,
+            leaseSignal,
           );
           if (fixResult.success) {
             checks = runLocalChecks(worktreePath, repo.commands, testLevel);
@@ -341,7 +361,7 @@ export async function runJob(
         await events.emit("SELF_REVIEW_STARTED", {});
         const diff = getDiff(worktreePath);
         if (diff) {
-          const reviewResult = await runClaudeReview(worktreePath, repo, diff);
+          const reviewResult = await runClaudeReview(worktreePath, repo, diff, leaseSignal);
           claudeSessions.push(toClaudeSession(reviewResult, "review"));
           durations.self_review_ms = Date.now() - t0;
           await events.emit("SELF_REVIEW_FINISHED", {
@@ -479,7 +499,8 @@ export async function runJob(
           const failureSummary = await ciProvider.getFailureSummary(worktreePath, branch);
 
           // Run Claude fix
-          const fixResult = await runClaudeFix(worktreePath, repo, failureSummary);
+          checkLeaseAborted();
+          const fixResult = await runClaudeFix(worktreePath, repo, failureSummary, leaseSignal);
           claudeSessions.push(toClaudeSession(fixResult, "fix"));
           durations.ci_fix_ms = (durations.ci_fix_ms || 0) + (fixResult.duration_ms || 0);
           await events.emit("CI_FIX_FINISHED", {
@@ -553,6 +574,11 @@ export async function runJob(
   } catch (err: any) {
     if (err instanceof CanceledError) {
       log.info("Job canceled during execution", { task_id: job.task_id });
+      return;
+    }
+
+    if (err instanceof LeaseAbortedError) {
+      log.warn("Job aborted due to lease loss", { task_id: job.task_id, reason: err.message });
       return;
     }
 

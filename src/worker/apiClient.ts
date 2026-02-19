@@ -9,6 +9,38 @@ export class WorkerApiClient {
     private token: string,
   ) {}
 
+  private async requestWithRetry<T>(
+    method: string,
+    path: string,
+    body?: any,
+    retries = 3,
+    baseDelayMs = 1000,
+  ): Promise<T> {
+    let lastErr: any;
+    for (let attempt = 0; attempt <= retries; attempt++) {
+      try {
+        return await this.request<T>(method, path, body);
+      } catch (err: any) {
+        lastErr = err;
+        // Don't retry client errors (4xx) — they won't succeed on retry
+        if (err.status && err.status >= 400 && err.status < 500) throw err;
+        if (attempt < retries) {
+          const delay = baseDelayMs * 2 ** attempt;
+          log.warn("Transient API error, retrying", {
+            method,
+            path,
+            attempt: attempt + 1,
+            maxRetries: retries,
+            delayMs: delay,
+            error: err.message,
+          });
+          await new Promise((r) => setTimeout(r, delay));
+        }
+      }
+    }
+    throw lastErr;
+  }
+
   private async request<T>(method: string, path: string, body?: any): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const res = await fetch(url, {
@@ -65,9 +97,8 @@ export class WorkerApiClient {
       });
       return true;
     } catch (err: any) {
-      if (err.status === 409) return false;
-      log.warn("Heartbeat request failed", { task_id: taskId, error: err.message });
-      return false;
+      if (err.status === 409) return false; // Lease genuinely lost
+      throw err; // Network/transient error — let caller decide
     }
   }
 
@@ -77,7 +108,7 @@ export class WorkerApiClient {
     type: WorkerEventType,
     payload?: any,
   ): Promise<void> {
-    await this.request("POST", `/api/worker/jobs/${taskId}/events`, {
+    await this.requestWithRetry("POST", `/api/worker/jobs/${taskId}/events`, {
       node_id: nodeId,
       type,
       payload,
@@ -90,10 +121,12 @@ export class WorkerApiClient {
     data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
   ): Promise<JobDoc | null> {
     try {
-      const res = await this.request<{ job: JobDoc }>(
+      const res = await this.requestWithRetry<{ job: JobDoc }>(
         "POST",
         `/api/worker/jobs/${taskId}/complete`,
         { node_id: nodeId, ...data },
+        5, // more retries for completion — this is critical
+        2000,
       );
       return res.job;
     } catch (err: any) {
@@ -108,10 +141,13 @@ export class WorkerApiClient {
     data: { error: JobError; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
   ): Promise<JobDoc | null> {
     try {
-      const res = await this.request<{ job: JobDoc }>("POST", `/api/worker/jobs/${taskId}/fail`, {
-        node_id: nodeId,
-        ...data,
-      });
+      const res = await this.requestWithRetry<{ job: JobDoc }>(
+        "POST",
+        `/api/worker/jobs/${taskId}/fail`,
+        { node_id: nodeId, ...data },
+        5,
+        2000,
+      );
       return res.job;
     } catch (err: any) {
       if (err.status === 409) return null;
@@ -121,7 +157,7 @@ export class WorkerApiClient {
 
   async requeue(taskId: string, nodeId: string, reason: string): Promise<JobDoc | null> {
     try {
-      const res = await this.request<{ job: JobDoc }>(
+      const res = await this.requestWithRetry<{ job: JobDoc }>(
         "POST",
         `/api/worker/jobs/${taskId}/requeue`,
         { node_id: nodeId, reason },
@@ -139,7 +175,7 @@ export class WorkerApiClient {
     data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
   ): Promise<JobDoc | null> {
     try {
-      const res = await this.request<{ job: JobDoc }>(
+      const res = await this.requestWithRetry<{ job: JobDoc }>(
         "POST",
         `/api/worker/jobs/${taskId}/await-approval`,
         { node_id: nodeId, ...data },

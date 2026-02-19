@@ -35,6 +35,14 @@ class RequeueError extends Error {
   }
 }
 
+/** Sentinel error when the heartbeat signals lease loss / server unreachable. */
+class LeaseAbortedError extends Error {
+  constructor(reason?: string) {
+    super(reason || "Job aborted: lease lost or server unreachable");
+    this.name = "LeaseAbortedError";
+  }
+}
+
 interface ThreadResult {
   thread: ReviewThread;
   commitSha?: string;
@@ -47,6 +55,7 @@ export async function runRespondToComments(
   workerId: string,
   config: WorkerConfig,
   api: WorkerApiClient,
+  leaseSignal?: AbortSignal,
 ): Promise<void> {
   const events = new EventEmitter(api, workerId, job.task_id);
   const startTime = Date.now();
@@ -103,7 +112,14 @@ export async function runRespondToComments(
     }
   }
 
+  function checkLeaseAborted() {
+    if (leaseSignal?.aborted) {
+      throw new LeaseAbortedError(String(leaseSignal.reason || ""));
+    }
+  }
+
   async function checkCanceled() {
+    checkLeaseAborted();
     const status = await api.getJobStatus(job.task_id);
     if (status === "CANCELED") {
       throw new CanceledError();
@@ -201,6 +217,7 @@ export async function runRespondToComments(
         line: thread.line,
         comments: thread.comments,
         branch,
+        abortSignal: leaseSignal,
       });
       claudeSessions.push(toClaudeSession(claudeResult, "respond_comments"));
 
@@ -268,6 +285,11 @@ export async function runRespondToComments(
   } catch (err: any) {
     if (err instanceof CanceledError) {
       log.info("Job canceled during execution", { task_id: job.task_id });
+      return;
+    }
+
+    if (err instanceof LeaseAbortedError) {
+      log.warn("Job aborted due to lease loss", { task_id: job.task_id, reason: err.message });
       return;
     }
 
