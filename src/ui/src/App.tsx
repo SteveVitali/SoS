@@ -139,7 +139,12 @@ const STATUS_COLORS: Record<string, string> = {
 
 // --- Styles ---
 const css = {
-  container: { maxWidth: 1200, margin: "0 auto", padding: "20px 24px" } as React.CSSProperties,
+  container: {
+    maxWidth: 1200,
+    margin: "0 auto",
+    padding: "20px 24px",
+    overflowX: "hidden",
+  } as React.CSSProperties,
   header: {
     display: "flex",
     alignItems: "center",
@@ -192,21 +197,33 @@ const css = {
     padding: 20,
     marginBottom: 16,
   } as React.CSSProperties,
-  table: { width: "100%", borderCollapse: "collapse" as const, fontSize: 14 },
+  table: {
+    width: "100%",
+    minWidth: 900,
+    borderCollapse: "collapse" as const,
+    tableLayout: "fixed" as const,
+    fontSize: 14,
+  },
   th: {
     textAlign: "left" as const,
-    padding: "10px 12px",
+    padding: "10px 8px",
     borderBottom: "1px solid var(--border)",
     color: "var(--fg2)",
     fontWeight: 600,
     fontSize: 12,
     textTransform: "uppercase" as const,
     letterSpacing: 0.5,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
   },
   td: {
-    padding: "10px 12px",
+    padding: "10px 8px",
     borderBottom: "1px solid var(--border)",
     verticalAlign: "top" as const,
+    overflow: "hidden",
+    textOverflow: "ellipsis",
+    whiteSpace: "nowrap" as const,
   },
   badge: (color: string) => ({
     display: "inline-block",
@@ -586,6 +603,19 @@ function JobsList() {
         <>
           <div style={{ overflowX: "auto" }}>
             <table style={css.table}>
+              <colgroup>
+                <col style={{ width: "17%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "12%" }} />
+                <col style={{ width: "9%" }} />
+                <col style={{ width: "8%" }} />
+                <col style={{ width: "11%" }} />
+                <col style={{ width: "6%" }} />
+                <col style={{ width: "5%" }} />
+                <col style={{ width: "10%" }} />
+              </colgroup>
               <thead>
                 <tr>
                   <SortableHeader
@@ -656,8 +686,18 @@ function JobsList() {
                     style={{ cursor: "pointer" }}
                     onClick={() => navigate(`/jobs/${job.task_id}`)}
                   >
-                    <td style={{ ...css.td, maxWidth: 260 }}>
-                      <span style={css.link}>{job.title || job.task_text.slice(0, 60)}</span>
+                    <td style={{ ...css.td, whiteSpace: "normal", overflow: "hidden" }}>
+                      <div
+                        style={{
+                          overflow: "hidden",
+                          textOverflow: "ellipsis",
+                          display: "-webkit-box",
+                          WebkitLineClamp: 2,
+                          WebkitBoxOrient: "vertical",
+                        }}
+                      >
+                        <span style={css.link}>{job.title || job.task_text.slice(0, 60)}</span>
+                      </div>
                       <div style={{ ...css.mono, fontSize: 11, color: "var(--fg3)", marginTop: 2 }}>
                         {shortId(job.task_id)}
                       </div>
@@ -665,8 +705,8 @@ function JobsList() {
                     <td style={css.td}>
                       <StatusBadge status={job.status} />
                     </td>
-                    <td style={{ ...css.td, fontSize: 12 }} title={job.requested_by}>
-                      {formatUser(job.requested_by)}
+                    <td style={{ ...css.td, fontSize: 12 }} title={formatUser(job.requested_by)}>
+                      {formatUserShort(job.requested_by)}
                     </td>
                     <td style={css.td} title={new Date(job.created_at).toLocaleString()}>
                       {relativeTime(job.created_at)}
@@ -683,14 +723,12 @@ function JobsList() {
                           }
                         >
                           {ev ? (
-                            <>
-                              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fg2)" }}>
+                            <span style={{ fontSize: 11 }}>
+                              <span style={{ fontWeight: 600, color: "var(--fg2)" }}>
                                 {ev.type}
                               </span>{" "}
-                              <span style={{ fontSize: 12, color: "var(--fg3)" }}>
-                                {relativeTime(ev.at)}
-                              </span>
-                            </>
+                              <span style={{ color: "var(--fg3)" }}>{relativeTime(ev.at)}</span>
+                            </span>
                           ) : (
                             <span style={{ fontSize: 12, color: "var(--fg3)" }}>
                               {relativeTime(job.updated_at)}
@@ -699,20 +737,28 @@ function JobsList() {
                         </td>
                       );
                     })()}
-                    <td style={{ ...css.td, fontSize: 13 }}>
+                    <td
+                      style={{ ...css.td, fontSize: 13 }}
+                      title={job.repos_resolved?.join(", ") || job.repo_hint || ""}
+                    >
                       {job.repos_resolved?.join(", ") || job.repo_hint || "—"}
                     </td>
-                    <td style={{ ...css.td, ...css.mono, fontSize: 12 }}>
+                    <td
+                      style={{ ...css.td, ...css.mono, fontSize: 12 }}
+                      title={job.worktree_slot || ""}
+                    >
                       {job.worktree_slot || "—"}
                     </td>
-                    <td style={{ ...css.td, ...css.mono, fontSize: 12 }}>
+                    <td
+                      style={{ ...css.td, ...css.mono, fontSize: 12 }}
+                      title={job.pr_urls?.join(", ") || ""}
+                    >
                       {job.pr_urls?.map((url, i) => (
                         <a
                           key={i}
                           href={url}
                           target="_blank"
                           rel="noopener"
-                          style={{ marginRight: 8 }}
                           onClick={(e) => e.stopPropagation()}
                         >
                           {formatPrUrl(url)}
@@ -742,8 +788,16 @@ function JobsList() {
                         "—"
                       )}
                     </td>
-                    <td style={css.td} onClick={(e) => e.stopPropagation()}>
-                      <div style={{ display: "flex", gap: 4 }}>
+                    <td
+                      style={{
+                        ...css.td,
+                        overflow: "visible",
+                        whiteSpace: "nowrap",
+                        padding: "10px 4px",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      <div style={{ display: "flex", gap: 2 }}>
                         {["QUEUED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(
                           job.status,
                         ) && (

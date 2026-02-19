@@ -1,14 +1,25 @@
 import { getDiffStats } from "./git.js";
 
+/** Strip lines that duplicate the PR URL already shown in the Slack header. */
+export function stripPrLines(text: string): string {
+  return text
+    .split("\n")
+    .filter((l) => !/^\*{0,2}PR\*{0,2}\s*:\s*https?:\/\//i.test(l.trim()))
+    .join("\n")
+    .trim();
+}
+
 export function buildResultSummary(
   worktreePath: string,
   claudeSummary: string,
   checksSummary: string,
-  prUrl?: string,
+  _prUrl?: string,
 ): string {
   const lines: string[] = [];
 
-  if (prUrl) lines.push(`PR: ${prUrl}`);
+  // PR URL is intentionally omitted here — the Slack "Done" message
+  // already shows it via job.pr_urls, so including it in the summary
+  // would duplicate the link.
 
   const diff = getDiffStats(worktreePath);
   if (diff) {
@@ -21,7 +32,10 @@ export function buildResultSummary(
   }
 
   if (claudeSummary) {
-    lines.push(`Claude summary: ${claudeSummary.slice(0, 500)}`);
+    const cleaned = stripPrLines(claudeSummary);
+    if (cleaned) {
+      lines.push(`Claude summary: ${cleaned.slice(0, 500)}`);
+    }
   }
 
   return lines.join("\n").slice(0, 3000);
