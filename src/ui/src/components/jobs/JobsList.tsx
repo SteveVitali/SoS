@@ -135,7 +135,6 @@ export function JobsList() {
         count={total}
         actions={
           <>
-            <LastUpdated at={lastRefreshedAt} />
             <button type="button" style={css.btn} onClick={() => refreshJobs()}>
               ↻ Refresh
             </button>
@@ -144,6 +143,7 @@ export function JobsList() {
             </button>
           </>
         }
+        subtitle={<LastUpdated at={lastRefreshedAt} />}
       />
       <div style={css.filters}>
         <select

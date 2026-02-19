@@ -50,13 +50,11 @@ export function PrsList() {
         title="Pull Requests"
         count={prs.length}
         actions={
-          <>
-            <LastUpdated at={lastRefreshedAt} />
-            <button type="button" style={css.btn} onClick={() => refreshPrs()}>
-              ↻ Refresh
-            </button>
-          </>
+          <button type="button" style={css.btn} onClick={() => refreshPrs()}>
+            ↻ Refresh
+          </button>
         }
+        subtitle={<LastUpdated at={lastRefreshedAt} />}
       />
       <div style={css.filters}>
         <select
