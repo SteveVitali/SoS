@@ -28,6 +28,15 @@ export function detectExistingPr(worktreePath: string, branch: string): string |
   }
 }
 
+export function isPrDraft(worktreePath: string, branch: string): boolean {
+  try {
+    const result = exec(`gh pr view ${branch} --json isDraft -q .isDraft`, worktreePath);
+    return result === "true";
+  } catch {
+    return false;
+  }
+}
+
 export function createPr(
   worktreePath: string,
   repo: RepoEntry,

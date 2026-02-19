@@ -10,7 +10,7 @@ import type { CIProvider } from "./ci/ciProvider.js";
 import { createCIProvider } from "./ci/index.js";
 import { type ClaudeResult, runClaude, runClaudeFix, runClaudeReview } from "./claude.js";
 import { commitAll, getDiff, hasChanges, hasNewCommits, hasUnpushedCommits, push } from "./git.js";
-import { createPr, detectExistingPr } from "./pr.js";
+import { createPr, detectExistingPr, isPrDraft } from "./pr.js";
 import { loadRegistry } from "./repoRegistry.js";
 import { resolveRepo } from "./repoResolver.js";
 import { buildResultSummary } from "./summarize.js";
@@ -318,7 +318,8 @@ export async function runJob(
         pr: claudeCreatedPr,
       });
       prUrl = claudeCreatedPr;
-      await events.emit("PR_CREATED", { url: prUrl, claude_created: true });
+      prIsDraft = isPrDraft(worktreePath, branch);
+      await events.emit("PR_CREATED", { url: prUrl, claude_created: true, draft: prIsDraft });
     } else {
       // 6) Run local checks (only if there are uncommitted changes to validate)
       const testLevel = job.test_level || config.testLevelDefault;
@@ -434,8 +435,9 @@ export async function runJob(
       const existingPr = detectExistingPr(worktreePath, branch);
       if (existingPr) {
         prUrl = existingPr;
-        log.info("Using existing PR created by Claude", { url: prUrl });
-        await events.emit("PR_CREATED", { url: prUrl, claude_created: true });
+        prIsDraft = isPrDraft(worktreePath, branch);
+        log.info("Using existing PR created by Claude", { url: prUrl, draft: prIsDraft });
+        await events.emit("PR_CREATED", { url: prUrl, claude_created: true, draft: prIsDraft });
       } else {
         const prResult = createPr(
           worktreePath,

@@ -4,6 +4,7 @@ import {
   mkdirSync,
   readdirSync,
   readFileSync,
+  rmSync,
   unlinkSync,
   writeFileSync,
 } from "node:fs";
@@ -331,6 +332,10 @@ class WorktreePoolImpl {
     const worktreePath = path.join(this.workspaceRoot, "worktrees", slotName);
 
     mkdirSync(path.dirname(worktreePath), { recursive: true });
+    if (existsSync(worktreePath)) {
+      log.info("Removing stale worktree directory", { worktreePath });
+      rmSync(worktreePath, { recursive: true, force: true });
+    }
     this.gitExec("git worktree prune", clonePath);
 
     // Fetch the remote branch and create worktree tracking it
