@@ -60,10 +60,10 @@ export interface GitHubPr {
 /** Extract owner/repo from a clone URL. */
 function parseCloneUrl(cloneUrl: string): { owner: string; repo: string } | null {
   const normalized = cloneUrl.replace(/\.git$/, "");
-  // SSH: git@github.com:foursquare/foursquare.web
+  // SSH: git@github.com:SteveVitali/son-of-steve
   const sshMatch = normalized.match(/github\.com[:/]([^/]+)\/(.+)$/);
   if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
-  // HTTPS: https://github.com/foursquare/foursquare.web
+  // HTTPS: https://github.com/SteveVitali/son-of-steve
   const httpsMatch = normalized.match(/github\.com\/([^/]+)\/(.+)$/);
   if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
   return null;

@@ -3,8 +3,8 @@ import { parseModifiers } from "./eventHandlers.js";
 
 describe("parseModifiers", () => {
   it("extracts repo= hint", () => {
-    expect(parseModifiers("fix the bug repo=fsq-graph")).toEqual({
-      repo_hint: "fsq-graph",
+    expect(parseModifiers("fix the bug repo=son-of-steve")).toEqual({
+      repo_hint: "son-of-steve",
     });
   });
 
@@ -44,11 +44,9 @@ describe("parseModifiers", () => {
   });
 
   it("extracts all modifiers at once", () => {
-    const result = parseModifiers(
-      "fix auth repo=foursquare.web tests=fast ci_fix=on review=@alice",
-    );
+    const result = parseModifiers("fix auth repo=son-of-steve tests=fast ci_fix=on review=@alice");
     expect(result).toEqual({
-      repo_hint: "foursquare.web",
+      repo_hint: "son-of-steve",
       test_level: "fast",
       ci_fix_enabled: true,
       reviewers: ["alice"],

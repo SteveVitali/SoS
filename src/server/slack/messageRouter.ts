@@ -65,7 +65,7 @@ const TOOLS: ToolDefinition[] = [
         task_text: { type: "string", description: "Clean task description" },
         repo_hint: {
           type: "string",
-          description: "Repository ID hint (e.g. 'fsq-graph', 'foursquare.web')",
+          description: "Repository ID hint (e.g. 'son-of-steve', 'my-api')",
         },
         test_level: { type: "string", enum: ["fast", "full", "none"], description: "Test level" },
         reviewers: {

@@ -60,7 +60,7 @@ function removeLockfile(worktreePath: string): void {
 const log = createLogger("worker:worktreePool");
 
 export interface WorktreeSlot {
-  slotName: string; // e.g. "fsq-graph-n-1"
+  slotName: string; // e.g. "son-of-steve-n-1"
   slotIndex: number; // 1-based
   worktreePath: string; // absolute path on disk
   repoId: string;
