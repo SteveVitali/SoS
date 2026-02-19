@@ -96,6 +96,7 @@ export interface JobDoc {
   created_at: Date;
   updated_at: Date;
   slack?: SlackPointers;
+  title?: string;
   task_text: string;
   repo_hint?: string;
   test_level?: TestLevel;

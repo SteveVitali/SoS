@@ -21,6 +21,7 @@ import {
   updateJobFields,
 } from "./jobRepo.js";
 import { claimJob, extendLease } from "./lease.js";
+import { generateTitle } from "./titleGenerator.js";
 
 const log = createLogger("server:jobService");
 
@@ -82,6 +83,9 @@ export async function createJobFromSlack(
       await slackPoster.postQueued(job);
     }
 
+    // Fire-and-forget title generation
+    generateTitle(taskId, input.task_text).catch(() => {});
+
     return { job, created: true };
   } catch (err: any) {
     // Handle duplicate key error (race condition on event_id)
@@ -115,6 +119,10 @@ export async function createJobFromWeb(input: CreateJobFromWeb): Promise<JobDoc>
 
   const job = await insertJob(doc);
   log.info("Job created from web", { task_id: taskId });
+
+  // Fire-and-forget title generation
+  generateTitle(taskId, input.task_text).catch(() => {});
+
   return job;
 }
 
@@ -294,6 +302,7 @@ export async function retry(taskId: string): Promise<JobDoc | null> {
     created_at: now,
     updated_at: now,
     slack: original.slack,
+    title: original.title,
     task_text: original.task_text,
     repo_hint: original.repo_hint,
     test_level: original.test_level,

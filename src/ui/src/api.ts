@@ -30,6 +30,7 @@ export interface Job {
   created_at: string;
   updated_at: string;
   slack?: { channel_id?: string; thread_ts?: string; message_ts?: string; permalink?: string };
+  title?: string;
   task_text: string;
   repo_hint?: string;
   test_level?: string;

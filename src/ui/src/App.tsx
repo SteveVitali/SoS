@@ -533,7 +533,7 @@ function JobsList({
               <thead>
                 <tr>
                   <SortableHeader
-                    label="Task ID"
+                    label="Task"
                     sortKey="task_id"
                     currentKey={sortKey}
                     currentDir={sortDir}
@@ -591,8 +591,11 @@ function JobsList({
                     style={{ cursor: "pointer" }}
                     onClick={() => onSelect(job.task_id)}
                   >
-                    <td style={{ ...css.td, ...css.mono }}>
-                      <span style={css.link}>{shortId(job.task_id)}</span>
+                    <td style={{ ...css.td, maxWidth: 260 }}>
+                      <span style={css.link}>{job.title || job.task_text.slice(0, 60)}</span>
+                      <div style={{ ...css.mono, fontSize: 11, color: "var(--fg3)", marginTop: 2 }}>
+                        {shortId(job.task_id)}
+                      </div>
                     </td>
                     <td style={css.td}>
                       <StatusBadge status={job.status} />
@@ -602,29 +605,6 @@ function JobsList({
                     </td>
                     <td style={css.td} title={new Date(job.created_at).toLocaleString()}>
                       {relativeTime(job.created_at)}
-                    </td>
-                    <td
-                      style={css.td}
-                      title={
-                        job.events?.length
-                          ? `${job.events[job.events.length - 1].type} at ${new Date(job.events[job.events.length - 1].at).toLocaleString()}`
-                          : new Date(job.updated_at).toLocaleString()
-                      }
-                    >
-                      {job.events?.length ? (
-                        <>
-                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fg2)" }}>
-                            {job.events[job.events.length - 1].type}
-                          </span>{" "}
-                          <span style={{ fontSize: 12, color: "var(--fg3)" }}>
-                            {relativeTime(job.events[job.events.length - 1].at)}
-                          </span>
-                        </>
-                      ) : (
-                        <span style={{ fontSize: 12, color: "var(--fg3)" }}>
-                          {relativeTime(job.updated_at)}
-                        </span>
-                      )}
                     </td>
                     <td style={{ ...css.td, fontSize: 13 }}>
                       {job.repos_resolved?.join(", ") || job.repo_hint || "—"}
@@ -783,7 +763,12 @@ function JobDetail({
           }}
         >
           <div>
-            <h2 style={{ ...css.mono, fontSize: 18, marginBottom: 8 }}>{job.task_id}</h2>
+            <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 4 }}>
+              {job.title || job.task_text.slice(0, 80)}
+            </h2>
+            <div style={{ ...css.mono, fontSize: 13, color: "var(--fg3)", marginBottom: 8 }}>
+              {job.task_id}
+            </div>
             <div style={css.row}>
               <StatusBadge status={job.status} />
               <span style={{ color: "var(--fg2)", fontSize: 13 }} title={job.requested_by}>

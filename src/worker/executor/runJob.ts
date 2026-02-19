@@ -313,6 +313,16 @@ export async function runJob(
       }
       checkTimeout();
 
+      // Re-check: if changes were reverted during self-review, there may be nothing to ship
+      if (!hasChanges(worktreePath) && !hasNewCommits(worktreePath, repo.default_branch)) {
+        log.warn("No changes remain after self-review", { task_id: job.task_id });
+        await api.complete(job.task_id, workerId, {
+          result_summary:
+            "Claude Code completed but all changes were reverted during self-review. Task may already be done or was not actionable.",
+        });
+        return;
+      }
+
       if (hasUnpushedCommits(worktreePath, branch)) {
         push(worktreePath, branch);
         await events.emit("BRANCH_PUSHED", { branch });

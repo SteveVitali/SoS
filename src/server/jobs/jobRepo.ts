@@ -298,7 +298,7 @@ export async function queryJobs(query: WebJobsQuery): Promise<{ jobs: JobDoc[]; 
 
   if (query.q) {
     const regex = { $regex: query.q, $options: "i" };
-    filter.$or = [{ task_text: regex }, { task_id: regex }];
+    filter.$or = [{ task_text: regex }, { task_id: regex }, { title: regex }];
   }
 
   const limit = Math.min(query.limit || 50, 200);

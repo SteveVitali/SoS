@@ -7,6 +7,7 @@ import { createRouter } from "./api/router.js";
 import { loadServerConfig } from "./config.js";
 import { setSlackPoster } from "./jobs/jobService.js";
 import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
+import { initTitleGenerator } from "./jobs/titleGenerator.js";
 import { createLLMProvider } from "./llm/index.js";
 import { closeMongo, connectMongo } from "./mongo.js";
 import { initMessageRouter } from "./slack/messageRouter.js";
@@ -46,6 +47,7 @@ async function main() {
         baseUrl: config.llmBaseUrl || undefined,
       });
       initMessageRouter(llmProvider, config.llmModel);
+      initTitleGenerator(llmProvider, config.llmModel);
     } catch (err: any) {
       log.warn(
         "Failed to initialize LLM provider — message routing will treat all mentions as jobs",
