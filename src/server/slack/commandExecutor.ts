@@ -2,6 +2,7 @@ import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
 import {
   cancel,
+  confirmJob,
   createJobFromSlack,
   createJobFromWeb,
   createRespondToCommentsJob,
@@ -84,6 +85,79 @@ export async function executeCommand(
         return {
           reply: `${reply}\n\n⚠️ Failed to queue task: ${err.message}`,
           actionTaken: "create_job failed",
+        };
+      }
+    }
+
+    case "plan_job": {
+      try {
+        const job =
+          ctx.source === "slack" && ctx.slack
+            ? (
+                await createJobFromSlack({
+                  event_id: ctx.eventId,
+                  requested_by: ctx.userId,
+                  slack_requester: ctx.userId,
+                  task_text: args.task_text || "(no task description)",
+                  channel_id: ctx.slack.channelId,
+                  thread_ts: ctx.slack.threadTs,
+                  message_ts: ctx.slack.messageTs,
+                  repo_hint: args.repo_hint,
+                  test_level: args.test_level,
+                  reviewers: args.reviewers,
+                  attachments: ctx.attachments,
+                  needs_plan: true,
+                })
+              ).job
+            : await createJobFromWeb({
+                requested_by: ctx.ownerId,
+                task_text: args.task_text || "(no task description)",
+                repo_hint: args.repo_hint,
+                test_level: args.test_level,
+                reviewers: args.reviewers,
+                needs_plan: true,
+              });
+        return {
+          reply: `${reply}\n\n📋 Planning task: \`${job.task_id.slice(0, 8)}…\` — I'll analyze the codebase and propose a plan.`,
+          actionTaken: `plan_job ${job.task_id}`,
+          taskId: job.task_id,
+        };
+      } catch (err: any) {
+        log.error("Failed to create plan job", { error: err.message });
+        return {
+          reply: `${reply}\n\n⚠️ Failed to queue planning task: ${err.message}`,
+          actionTaken: "plan_job failed",
+        };
+      }
+    }
+
+    case "confirm_job": {
+      const taskId = await resolveTaskId(args.task_id || "");
+      if (!taskId) {
+        return {
+          reply: `${reply}\n\n❓ Couldn't find a job matching \`${args.task_id}\`.`,
+          actionTaken: "confirm_job: not found",
+        };
+      }
+      const existing = await findJobByTaskId(taskId);
+      if (!existing || existing.status !== "PENDING_CONFIRMATION") {
+        return {
+          reply: `${reply}\n\n⚠️ \`${taskId.slice(0, 8)}…\` isn't awaiting confirmation (status: ${existing?.status || "not found"}).`,
+          actionTaken: "confirm_job: wrong status",
+        };
+      }
+      try {
+        await confirmJob(taskId, args.revised_task_text);
+        return {
+          reply: `${reply}\n\n✅ Plan confirmed — executing \`${taskId.slice(0, 8)}…\``,
+          actionTaken: `confirm_job: ${taskId}`,
+          taskId,
+        };
+      } catch (err: any) {
+        log.error("Failed to confirm job", { error: err.message });
+        return {
+          reply: `${reply}\n\n⚠️ Failed to confirm: ${err.message}`,
+          actionTaken: "confirm_job failed",
         };
       }
     }

@@ -8,6 +8,8 @@ const log = createLogger("server:slack:router");
 export interface RoutedAction {
   command:
     | "create_job"
+    | "plan_job"
+    | "confirm_job"
     | "job_status"
     | "cancel_job"
     | "retry_job"
@@ -30,7 +32,9 @@ You will receive the full conversation history from the Slack thread. Messages a
 
 ## Available Actions (use the tools)
 
-- **create_job**: The user wants you to write code, fix a bug, implement a feature, etc. This is the most common action. Extract the task description, and optionally a repo hint, test level, and reviewers. Incorporate relevant context from the thread into the task description.
+- **create_job**: The user wants you to write code, fix a bug, implement a feature, etc. Use this for simple, clearly-scoped tasks (typo fixes, small bug fixes, straightforward features). Extract the task description, and optionally a repo hint, test level, and reviewers. Incorporate relevant context from the thread into the task description.
+- **plan_job**: Like create_job, but first generates a technical plan from the codebase for the user to review before execution begins. Use this for complex, ambiguous, multi-step, or high-risk tasks where a plan would be valuable. The agent will analyze the codebase and present a numbered implementation plan. The user must explicitly confirm before execution starts.
+- **confirm_job**: The user has reviewed a plan and wants to proceed with execution. Use when there is a PENDING_CONFIRMATION job in the recent jobs context and the user says something like "go", "ship it", "looks good", "approved", "do it", "confirmed", etc. Extract the task_id of the pending job.
 - **job_status**: The user is asking about the status of a specific job. Extract the task_id (can be partial).
 - **cancel_job**: The user wants to cancel a running job. Extract the task_id.
 - **retry_job**: The user wants to retry a failed job. Extract the task_id.
@@ -50,6 +54,10 @@ You will receive the full conversation history from the Slack thread. Messages a
 - If the latest message is clearly not addressed to you (e.g., two humans talking to each other in the thread), use no_op.
 - If someone @-mentions you directly, always respond — never no_op a direct mention.
 - When someone compliments you — calls you a "good boy", says you did great, or praises your work — accept it graciously. Say thank you, own the compliment, and feel free to add a little flair (🙇 is encouraged). You're still Steve — dry wit intact — but you appreciate the recognition. No deflecting, no false modesty, no "I'm not a golden retriever" energy.
+
+## Pre-flight Planning
+
+When there is an active PENDING_CONFIRMATION job visible in the recent jobs context, look for explicit user confirmation ("go", "ship it", "looks good", "approved", "do it", thumbs up, etc.) and use confirm_job. If the user asks questions or requests changes to the plan, respond conversationally with chat — they can confirm when ready. If the user wants to abandon the plan, they can cancel it.
 
 ## Recent Jobs Context
 {JOBS_CONTEXT}
@@ -75,6 +83,44 @@ const TOOLS: ToolDefinition[] = [
         },
       },
       required: ["task_text"],
+    },
+  },
+  {
+    name: "plan_job",
+    description:
+      "Create a job that first analyzes the codebase and generates a technical plan for the user to review before execution begins. Use for complex, ambiguous, multi-step, or high-risk tasks. For simple/obvious tasks, use create_job directly.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_text: { type: "string", description: "Clean task description" },
+        repo_hint: {
+          type: "string",
+          description: "Repository ID hint (e.g. 'son-of-steve', 'my-api')",
+        },
+        test_level: { type: "string", enum: ["fast", "full", "none"], description: "Test level" },
+        reviewers: {
+          type: "array",
+          items: { type: "string" },
+          description: "GitHub usernames for PR reviewers",
+        },
+      },
+      required: ["task_text"],
+    },
+  },
+  {
+    name: "confirm_job",
+    description:
+      "User has confirmed a pending plan. Transition the job from PENDING_CONFIRMATION to QUEUED for execution. Use when the user approves the proposed plan.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_id: { type: "string", description: "Full or partial task_id of the pending job" },
+        revised_task_text: {
+          type: "string",
+          description: "Optional revised task text incorporating clarification answers",
+        },
+      },
+      required: ["task_id"],
     },
   },
   {
@@ -202,7 +248,11 @@ async function buildJobsContext(): Promise<string> {
       .map((j) => {
         const prs = j.pr_urls?.length ? ` | PRs: ${j.pr_urls.join(", ")}` : "";
         const err = j.error?.message ? ` | Error: ${j.error.message.slice(0, 100)}` : "";
-        return `- ${j.task_id.slice(0, 8)}… | ${j.status} | "${j.task_text?.slice(0, 80)}"${prs}${err}`;
+        const plan =
+          j.status === "PENDING_CONFIRMATION" && j.plan?.summary
+            ? `\n  Plan: ${j.plan.summary.slice(0, 300)}`
+            : "";
+        return `- ${j.task_id.slice(0, 8)}… | ${j.status} | "${j.task_text?.slice(0, 80)}"${prs}${err}${plan}`;
       })
       .join("\n");
   } catch (err: any) {
