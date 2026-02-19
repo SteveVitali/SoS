@@ -8,6 +8,7 @@ import {
   awaitApprovalJob,
   cancelJob,
   completeJob,
+  confirmJobPlan,
   failJob,
   findJobByEventId,
   findJobByTaskId,
@@ -17,6 +18,7 @@ import {
   queryJobs,
   requeueJob,
   softDeleteJob,
+  submitPlanJob,
   updateHeartbeat,
 } from "./jobRepo.js";
 
@@ -554,5 +556,112 @@ describe("appendEvent", () => {
     const evt = job!.events![job!.events!.length - 1];
     expect(evt.payload._truncated).toBe(true);
     expect(evt.payload.preview.length).toBeLessThanOrEqual(2001);
+  });
+});
+
+describe("atomicClaim with needs_plan", () => {
+  it("claims a needs_plan job as PLANNING", async () => {
+    await insertJob(makeJob({ task_id: "plan-claim-1", needs_plan: true }));
+
+    const claimed = await atomicClaim("plan-claim-1", "U_OWNER", "worker-1", 120);
+    expect(claimed).not.toBeNull();
+    expect(claimed!.status).toBe("PLANNING");
+    expect(claimed!.claimed_by).toBe("worker-1");
+  });
+
+  it("claims a normal job as RUNNING", async () => {
+    await insertJob(makeJob({ task_id: "normal-claim-1" }));
+
+    const claimed = await atomicClaim("normal-claim-1", "U_OWNER", "worker-1", 120);
+    expect(claimed).not.toBeNull();
+    expect(claimed!.status).toBe("RUNNING");
+  });
+
+  it("claims a needs_plan job with existing plan as RUNNING (confirmed re-execution)", async () => {
+    await insertJob(
+      makeJob({
+        task_id: "plan-claim-2",
+        needs_plan: true,
+        plan: { summary: "the plan", generated_at: new Date() },
+      }),
+    );
+
+    const claimed = await atomicClaim("plan-claim-2", "U_OWNER", "worker-1", 120);
+    expect(claimed).not.toBeNull();
+    expect(claimed!.status).toBe("RUNNING");
+  });
+});
+
+describe("submitPlanJob", () => {
+  it("transitions PLANNING to PENDING_CONFIRMATION", async () => {
+    await insertJob(
+      makeJob({
+        task_id: "sp-1",
+        status: "PLANNING" as JobStatus,
+        claimed_by: "w1",
+        needs_plan: true,
+      }),
+    );
+
+    const result = await submitPlanJob("sp-1", "w1", { summary: "Plan: do X then Y" });
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("PENDING_CONFIRMATION");
+    expect(result!.plan?.summary).toBe("Plan: do X then Y");
+    expect(result!.claimed_by).toBeUndefined();
+  });
+
+  it("returns null if wrong node_id", async () => {
+    await insertJob(
+      makeJob({ task_id: "sp-2", status: "PLANNING" as JobStatus, claimed_by: "w1" }),
+    );
+
+    const result = await submitPlanJob("sp-2", "wrong-worker", { summary: "plan" });
+    expect(result).toBeNull();
+  });
+
+  it("returns null if not in PLANNING status", async () => {
+    await insertJob(makeJob({ task_id: "sp-3", status: "RUNNING" as JobStatus, claimed_by: "w1" }));
+
+    const result = await submitPlanJob("sp-3", "w1", { summary: "plan" });
+    expect(result).toBeNull();
+  });
+});
+
+describe("confirmJobPlan", () => {
+  it("transitions PENDING_CONFIRMATION to QUEUED", async () => {
+    await insertJob(
+      makeJob({
+        task_id: "cp-1",
+        status: "PENDING_CONFIRMATION" as JobStatus,
+        plan: { summary: "the plan", generated_at: new Date() },
+      }),
+    );
+
+    const result = await confirmJobPlan("cp-1");
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("QUEUED");
+    expect(result!.plan?.summary).toBe("the plan");
+  });
+
+  it("updates task_text when revised_task_text provided", async () => {
+    await insertJob(
+      makeJob({
+        task_id: "cp-2",
+        status: "PENDING_CONFIRMATION" as JobStatus,
+        task_text: "original",
+      }),
+    );
+
+    const result = await confirmJobPlan("cp-2", "revised task");
+    expect(result).not.toBeNull();
+    expect(result!.task_text).toBe("revised task");
+    expect(result!.status).toBe("QUEUED");
+  });
+
+  it("returns null if not PENDING_CONFIRMATION", async () => {
+    await insertJob(makeJob({ task_id: "cp-3", status: "QUEUED" as JobStatus }));
+
+    const result = await confirmJobPlan("cp-3");
+    expect(result).toBeNull();
   });
 });

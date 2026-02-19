@@ -5,6 +5,7 @@ import { closeMongo, connectMongo, getJobsCollection } from "../mongo.js";
 import {
   cancel,
   complete,
+  confirmJob,
   createJobFromSlack,
   createJobFromWeb,
   fail,
@@ -13,6 +14,7 @@ import {
   requeue,
   retry,
   setSlackPoster,
+  submitPlan,
 } from "./jobService.js";
 
 let mongod: MongoMemoryServer;
@@ -311,5 +313,157 @@ describe("requeue", () => {
     const rqEvent = updated!.events!.find((e: any) => e.type === "REQUEUED");
     expect(rqEvent).toBeDefined();
     expect(rqEvent!.payload.reason).toBe("no worktree available");
+  });
+});
+
+describe("needs_plan (pre-flight planning)", () => {
+  it("creates a Slack job with needs_plan=true", async () => {
+    const { job } = await createJobFromSlack({
+      event_id: "evt_plan_1",
+      requested_by: "U_OWNER",
+      task_text: "implement OAuth2",
+      channel_id: "C1",
+      thread_ts: "111.222",
+      needs_plan: true,
+    });
+    expect(job.status).toBe("QUEUED");
+    expect(job.needs_plan).toBe(true);
+  });
+
+  it("creates a web job with needs_plan=true", async () => {
+    const job = await createJobFromWeb({
+      requested_by: "u1",
+      task_text: "implement OAuth2",
+      needs_plan: true,
+    });
+    expect(job.status).toBe("QUEUED");
+    expect(job.needs_plan).toBe(true);
+  });
+
+  it("creates a job without needs_plan by default", async () => {
+    const job = await createJobFromWeb({
+      requested_by: "u1",
+      task_text: "fix typo",
+    });
+    expect(job.needs_plan).toBeUndefined();
+  });
+});
+
+describe("submitPlan", () => {
+  it("transitions a PLANNING job to PENDING_CONFIRMATION with plan", async () => {
+    const job = await createJobFromWeb({
+      requested_by: "u1",
+      task_text: "implement feature",
+      needs_plan: true,
+    });
+
+    // Simulate worker claiming → PLANNING
+    const col = getJobsCollection();
+    await col.updateOne(
+      { task_id: job.task_id },
+      { $set: { status: "PLANNING", claimed_by: "w1" } },
+    );
+
+    const result = await submitPlan(job.task_id, "w1", "1. Modify foo.ts\n2. Add bar.ts");
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("PENDING_CONFIRMATION");
+    expect(result!.plan?.summary).toBe("1. Modify foo.ts\n2. Add bar.ts");
+    expect(result!.plan?.generated_at).toBeDefined();
+    expect(result!.claimed_by).toBeUndefined();
+
+    // Verify PLAN_GENERATED event was appended
+    const updated = await findJobByTaskId(job.task_id);
+    const planEvent = updated!.events!.find((e: any) => e.type === "PLAN_GENERATED");
+    expect(planEvent).toBeDefined();
+  });
+
+  it("returns null if job is not in PLANNING status", async () => {
+    const job = await createJobFromWeb({
+      requested_by: "u1",
+      task_text: "test",
+    });
+    const result = await submitPlan(job.task_id, "w1", "some plan");
+    expect(result).toBeNull();
+  });
+});
+
+describe("confirmJob", () => {
+  it("transitions a PENDING_CONFIRMATION job to QUEUED", async () => {
+    const job = await createJobFromWeb({
+      requested_by: "u1",
+      task_text: "implement feature",
+      needs_plan: true,
+    });
+
+    // Simulate planning phase completion
+    const col = getJobsCollection();
+    await col.updateOne(
+      { task_id: job.task_id },
+      {
+        $set: {
+          status: "PENDING_CONFIRMATION",
+          plan: { summary: "the plan", generated_at: new Date() },
+        },
+      },
+    );
+
+    const result = await confirmJob(job.task_id);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("QUEUED");
+
+    // Plan should still be present
+    expect(result!.plan?.summary).toBe("the plan");
+
+    // Verify PLAN_CONFIRMED event
+    const updated = await findJobByTaskId(job.task_id);
+    const confirmEvent = updated!.events!.find((e: any) => e.type === "PLAN_CONFIRMED");
+    expect(confirmEvent).toBeDefined();
+  });
+
+  it("allows revised_task_text on confirmation", async () => {
+    const job = await createJobFromWeb({
+      requested_by: "u1",
+      task_text: "original task",
+      needs_plan: true,
+    });
+
+    const col = getJobsCollection();
+    await col.updateOne(
+      { task_id: job.task_id },
+      {
+        $set: {
+          status: "PENDING_CONFIRMATION",
+          plan: { summary: "the plan", generated_at: new Date() },
+        },
+      },
+    );
+
+    const result = await confirmJob(job.task_id, "revised task with extra details");
+    expect(result).not.toBeNull();
+    expect(result!.task_text).toBe("revised task with extra details");
+    expect(result!.status).toBe("QUEUED");
+  });
+
+  it("returns null if job is not PENDING_CONFIRMATION", async () => {
+    const job = await createJobFromWeb({ requested_by: "u1", task_text: "test" });
+    const result = await confirmJob(job.task_id);
+    expect(result).toBeNull();
+  });
+});
+
+describe("cancel PENDING_CONFIRMATION", () => {
+  it("cancels a PENDING_CONFIRMATION job", async () => {
+    const job = await createJobFromWeb({
+      requested_by: "u1",
+      task_text: "implement feature",
+      needs_plan: true,
+    });
+
+    const col = getJobsCollection();
+    await col.updateOne({ task_id: job.task_id }, { $set: { status: "PENDING_CONFIRMATION" } });
+
+    const result = await cancel(job.task_id);
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("CANCELED");
   });
 });
