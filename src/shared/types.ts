@@ -107,6 +107,7 @@ export interface JobDoc {
   lease_expires_at?: Date;
   heartbeat_at?: Date;
   attempt?: number;
+  not_before?: Date;
   run_started_at?: Date;
   run_ended_at?: Date;
 

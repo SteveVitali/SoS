@@ -1,6 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { createLogger } from "../../shared/logger.js";
-import { nowDate } from "../../shared/time.js";
+import { addSeconds, nowDate } from "../../shared/time.js";
 import type { JobDoc, JobEvent } from "../../shared/types.js";
 import { SLACK_NOTIFY_EVENTS } from "../../shared/types.js";
 import type { SlackPoster } from "../slack/slackClient.js";
@@ -132,7 +132,10 @@ export async function claim(
 ) {
   const job = await claimJob(taskId, requestedBy, nodeId, leaseSeconds);
   if (job && slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
-    await slackPoster.postClaimed(job);
+    // Only post "Claimed" on first real claim to avoid spamming on requeue cycles
+    if ((job.attempt || 1) <= 1) {
+      await slackPoster.postClaimed(job);
+    }
   }
   return job;
 }
@@ -238,16 +241,21 @@ export async function fail(
 }
 
 // --- Requeue (worker releasing a claimed job back to QUEUED) ---
-export async function requeue(taskId: string, nodeId: string, reason: string) {
-  const job = await repoRequeueJob(taskId, nodeId);
+export async function requeue(taskId: string, nodeId: string, reason: string, backoffSeconds = 30) {
+  const notBefore = addSeconds(nowDate(), backoffSeconds);
+  const job = await repoRequeueJob(taskId, nodeId, notBefore);
   if (job) {
     await appendEvent(taskId, {
       at: nowDate(),
       node_id: nodeId,
       type: "REQUEUED",
-      payload: { reason },
+      payload: { reason, not_before: notBefore.toISOString() },
     });
-    log.info("Job requeued", { task_id: taskId, reason });
+    log.info("Job requeued with backoff", {
+      task_id: taskId,
+      reason,
+      not_before: notBefore.toISOString(),
+    });
   }
   return job;
 }
