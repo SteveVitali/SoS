@@ -152,14 +152,10 @@ export type WorkerEventType =
   | "CANCELED";
 
 // Events that trigger Slack updates
-export const SLACK_NOTIFY_EVENTS: string[] = [
-  "PR_CREATED",
-  "CI_FAILED",
-  "CI_STATUS",
-  "DONE",
-  "FAILED",
-  "CANCELED",
-];
+// Terminal states (DONE, FAILED, CANCELED) are NOT included here because
+// the service functions (complete, fail, cancel) already post to Slack.
+// Including them would cause duplicate notifications.
+export const SLACK_NOTIFY_EVENTS: string[] = ["PR_CREATED", "CI_FAILED", "CI_STATUS"];
 
 // --- API Request/Response Types ---
 export interface ClaimRequest {
