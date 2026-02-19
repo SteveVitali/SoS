@@ -39,11 +39,12 @@ export interface GitHubPr {
 
 /** Extract owner/repo from a clone URL. */
 function parseCloneUrl(cloneUrl: string): { owner: string; repo: string } | null {
-  // SSH: git@github.com:foursquare/fsq-graph.git
-  const sshMatch = cloneUrl.match(/github\.com[:/]([^/]+)\/([^/.]+)/);
+  const normalized = cloneUrl.replace(/\.git$/, "");
+  // SSH: git@github.com:foursquare/foursquare.web
+  const sshMatch = normalized.match(/github\.com[:/]([^/]+)\/(.+)$/);
   if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
-  // HTTPS: https://github.com/foursquare/fsq-graph.git
-  const httpsMatch = cloneUrl.match(/github\.com\/([^/]+)\/([^/.]+)/);
+  // HTTPS: https://github.com/foursquare/foursquare.web
+  const httpsMatch = normalized.match(/github\.com\/([^/]+)\/(.+)$/);
   if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
   return null;
 }
