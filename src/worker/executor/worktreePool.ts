@@ -188,6 +188,9 @@ class WorktreePoolImpl {
 
     log.info("Resetting worktree slot", { slot: slot.slotName, branch });
 
+    // Reset first to clear modified tracked files (e.g. package-lock.json from npm install)
+    this.gitExec("git reset --hard HEAD", worktreePath);
+
     // Detach HEAD and reset to remote default branch (clone was already fetched by ensureClone)
     this.gitExec(`git checkout origin/${repo.default_branch} --detach`, worktreePath);
 
@@ -199,7 +202,6 @@ class WorktreePoolImpl {
       // Light: only remove untracked files, keep .gitignore'd (build artifacts)
       this.gitExec("git clean -fd", worktreePath);
     }
-    this.gitExec("git reset --hard HEAD", worktreePath);
 
     // Delete old local branch if it exists, then create fresh one
     try {
