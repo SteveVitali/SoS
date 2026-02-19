@@ -1,7 +1,15 @@
 import { WebClient } from "@slack/web-api";
 import { createLogger } from "../../shared/logger.js";
 import type { JobDoc } from "../../shared/types.js";
-import { fmtCanceled, fmtClaimed, fmtDone, fmtEvent, fmtFailed, fmtQueued } from "./formatting.js";
+import {
+  fmtCanceled,
+  fmtClaimed,
+  fmtDone,
+  fmtEvent,
+  fmtFailed,
+  fmtPlan,
+  fmtQueued,
+} from "./formatting.js";
 
 const log = createLogger("server:slack");
 
@@ -26,6 +34,7 @@ export interface SlackPoster {
   postDone(job: JobDoc): Promise<void>;
   postFailed(job: JobDoc): Promise<void>;
   postCanceled(job: JobDoc): Promise<void>;
+  postPlan(job: JobDoc): Promise<void>;
   postEvent(job: JobDoc, type: string, payload?: any): Promise<void>;
   fetchThread(channelId: string, threadTs: string, limit?: number): Promise<SlackThreadMessage[]>;
   downloadFile(urlPrivate: string): Promise<Buffer>;
@@ -75,6 +84,11 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
     async postCanceled(job: JobDoc) {
       if (!job.slack?.channel_id || !job.slack?.thread_ts) return;
       await postToThread(job.slack.channel_id, job.slack.thread_ts, fmtCanceled(job));
+    },
+
+    async postPlan(job: JobDoc) {
+      if (!job.slack?.channel_id || !job.slack?.thread_ts) return;
+      await postToThread(job.slack.channel_id, job.slack.thread_ts, fmtPlan(job));
     },
 
     async postEvent(job: JobDoc, type: string, payload?: any) {

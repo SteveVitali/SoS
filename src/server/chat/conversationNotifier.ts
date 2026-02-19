@@ -29,6 +29,12 @@ function formatStatusMessage(job: JobDoc, eventType: string): string {
       const prs = job.pr_urls?.length ? `\nDraft PR: ${job.pr_urls.join(", ")}` : "";
       return `Job \`${tid}…\` awaiting approval${prs}`;
     }
+    case "PENDING_CONFIRMATION": {
+      const planText = job.plan?.summary ? `\n${job.plan.summary.slice(0, 500)}` : "";
+      return `📝 Plan ready for job \`${tid}…\`${planText}\n\n_Reply "go" to confirm, or ask questions._`;
+    }
+    case "PLAN_CONFIRMED":
+      return `✅ Plan confirmed for job \`${tid}…\` — executing`;
     case "PR_PROMOTED":
       return `PR promoted to ready-for-review for job \`${tid}…\``;
     default:

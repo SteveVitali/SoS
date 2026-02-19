@@ -58,6 +58,15 @@ export async function atomicClaim(
   const now = nowDate();
   const leaseExpires = addSeconds(now, leaseSeconds);
 
+  // Peek at the job to determine the correct target status.
+  // Note: this peek is not atomic with the update below, but it's safe because
+  // the findOneAndUpdate filter ensures only QUEUED (or expired-lease) jobs are
+  // claimed. If two workers race, at most one succeeds; a stale peek just means
+  // the target status could theoretically be wrong, but in practice needs_plan
+  // and plan fields don't change while a job is QUEUED.
+  const peek = await col.findOne({ task_id: taskId, requested_by: requestedBy });
+  const targetStatus: JobStatus = peek?.needs_plan && !peek?.plan ? "PLANNING" : "RUNNING";
+
   const result = await col.findOneAndUpdate(
     {
       task_id: taskId,
@@ -65,14 +74,14 @@ export async function atomicClaim(
       $or: [
         { status: "QUEUED" },
         {
-          status: { $in: ["RUNNING", "FIXING_CI"] },
+          status: { $in: ["RUNNING", "FIXING_CI", "PLANNING"] },
           lease_expires_at: { $lt: now },
         },
       ],
     },
     {
       $set: {
-        status: "RUNNING" as JobStatus,
+        status: targetStatus,
         claimed_by: nodeId,
         lease_expires_at: leaseExpires,
         heartbeat_at: now,
@@ -110,7 +119,7 @@ export async function updateHeartbeat(
     {
       task_id: taskId,
       claimed_by: nodeId,
-      status: { $in: ["RUNNING", "FIXING_CI"] },
+      status: { $in: ["RUNNING", "FIXING_CI", "PLANNING"] },
     },
     {
       $set: {
@@ -186,7 +195,7 @@ async function transitionJob(
     {
       task_id: taskId,
       claimed_by: nodeId,
-      status: { $in: ["RUNNING", "FIXING_CI"] },
+      status: { $in: ["RUNNING", "FIXING_CI", "PLANNING"] },
     },
     {
       $set: {
@@ -243,7 +252,7 @@ export async function failJob(
     {
       task_id: taskId,
       claimed_by: nodeId,
-      status: { $in: ["RUNNING", "FIXING_CI", "QUEUED"] },
+      status: { $in: ["RUNNING", "FIXING_CI", "PLANNING", "QUEUED"] },
     },
     {
       $set: {
@@ -273,7 +282,7 @@ export async function requeueJob(
     {
       task_id: taskId,
       claimed_by: nodeId,
-      status: { $in: ["RUNNING", "FIXING_CI"] },
+      status: { $in: ["RUNNING", "FIXING_CI", "PLANNING"] },
     },
     {
       $set: {
@@ -362,6 +371,64 @@ export async function queryJobs(query: WebJobsQuery): Promise<{ jobs: JobDoc[]; 
   ]);
 
   return { jobs, total };
+}
+
+export async function submitPlanJob(
+  taskId: string,
+  nodeId: string,
+  plan: {
+    summary: string;
+    model?: string;
+    input_tokens?: number;
+    output_tokens?: number;
+    cost_usd?: number;
+  },
+  metrics?: JobMetrics,
+): Promise<JobDoc | null> {
+  const col = getJobsCollection();
+  const now = nowDate();
+  const result = await col.findOneAndUpdate(
+    {
+      task_id: taskId,
+      claimed_by: nodeId,
+      status: "PLANNING" as JobStatus,
+    },
+    {
+      $set: {
+        status: "PENDING_CONFIRMATION" as JobStatus,
+        plan: { ...plan, generated_at: now },
+        ...(metrics ? { metrics } : {}),
+        updated_at: now,
+      },
+      $unset: { claimed_by: "", lease_expires_at: "", heartbeat_at: "" },
+    },
+    { returnDocument: "after" },
+  );
+  return result as JobDoc | null;
+}
+
+export async function confirmJobPlan(
+  taskId: string,
+  revisedTaskText?: string,
+): Promise<JobDoc | null> {
+  const col = getJobsCollection();
+  const now = nowDate();
+  const setFields: Record<string, any> = {
+    status: "QUEUED" as JobStatus,
+    updated_at: now,
+  };
+  if (revisedTaskText) {
+    setFields.task_text = revisedTaskText;
+  }
+  const result = await col.findOneAndUpdate(
+    {
+      task_id: taskId,
+      status: "PENDING_CONFIRMATION" as JobStatus,
+    },
+    { $set: setFields },
+    { returnDocument: "after" },
+  );
+  return result as JobDoc | null;
 }
 
 export async function getDistinctRequestedBy(): Promise<string[]> {

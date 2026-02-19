@@ -28,10 +28,12 @@ import {
   awaitApprovalJob as repoAwaitApprovalJob,
   cancelJob as repoCancelJob,
   completeJob as repoCompleteJob,
+  confirmJobPlan as repoConfirmJobPlan,
   failJob as repoFailJob,
   promoteJob as repoPromoteJob,
   requeueJob as repoRequeueJob,
   softDeleteJob as repoSoftDeleteJob,
+  submitPlanJob as repoSubmitPlanJob,
   updateJobFields,
 } from "./jobRepo.js";
 import { claimJob, extendLease } from "./lease.js";
@@ -81,6 +83,7 @@ export async function createJobFromSlack(
     ci_fix_enabled: input.ci_fix_enabled ?? true,
     reviewers: input.reviewers,
     attachments: input.attachments,
+    ...(input.needs_plan ? { needs_plan: true } : {}),
     events: [{ at: now, type: "QUEUED", payload: { source: "slack" } }],
   };
 
@@ -128,6 +131,7 @@ export async function createJobFromWeb(input: CreateJobFromWeb): Promise<JobDoc>
     test_level: input.test_level,
     ci_fix_enabled: input.ci_fix_enabled ?? true,
     reviewers: input.reviewers,
+    ...(input.needs_plan ? { needs_plan: true } : {}),
     events: [{ at: now, type: "QUEUED", payload: { source: "web" } }],
   };
 
@@ -435,6 +439,48 @@ export async function retry(taskId: string): Promise<JobDoc | null> {
     await slackPoster.postQueued(job);
   }
 
+  return job;
+}
+
+// --- Submit Plan (worker finished planning, awaiting user confirmation) ---
+export async function submitPlan(
+  taskId: string,
+  nodeId: string,
+  planSummary: string,
+  metrics?: JobMetrics,
+) {
+  const job = await repoSubmitPlanJob(taskId, nodeId, { summary: planSummary }, metrics);
+  if (job) {
+    await appendEvent(taskId, {
+      at: nowDate(),
+      node_id: nodeId,
+      type: "PLAN_GENERATED",
+      payload: { summary: planSummary.slice(0, 500) },
+    });
+    if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
+      await slackPoster.postPlan(job);
+    }
+    notifyConversations(job, "PENDING_CONFIRMATION").catch(() => {});
+    log.info("Plan submitted", { task_id: taskId });
+  }
+  return job;
+}
+
+// --- Confirm Plan (user approved, move to execution queue) ---
+export async function confirmJob(taskId: string, revisedTaskText?: string) {
+  const job = await repoConfirmJobPlan(taskId, revisedTaskText);
+  if (job) {
+    await appendEvent(taskId, {
+      at: nowDate(),
+      type: "PLAN_CONFIRMED",
+      payload: revisedTaskText ? { revised_task_text: revisedTaskText.slice(0, 200) } : undefined,
+    });
+    if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
+      await slackPoster.postQueued(job);
+    }
+    notifyConversations(job, "PLAN_CONFIRMED").catch(() => {});
+    log.info("Plan confirmed, job re-queued", { task_id: taskId });
+  }
   return job;
 }
 

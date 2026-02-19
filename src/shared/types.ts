@@ -3,6 +3,8 @@ import { z } from "zod";
 // --- Job Status ---
 export const JobStatus = z.enum([
   "QUEUED",
+  "PLANNING",
+  "PENDING_CONFIRMATION",
   "RUNNING",
   "FIXING_CI",
   "WAITING_FOR_APPROVAL",
@@ -19,7 +21,7 @@ export const TERMINAL_STATUSES: readonly JobStatus[] = [
   "CANCELED",
   "DELETED",
 ] as const;
-export const ACTIVE_STATUSES: readonly JobStatus[] = ["RUNNING", "FIXING_CI"] as const;
+export const ACTIVE_STATUSES: readonly JobStatus[] = ["RUNNING", "FIXING_CI", "PLANNING"] as const;
 
 // --- Test Level ---
 export const TestLevel = z.enum(["fast", "full", "none"]);
@@ -80,7 +82,7 @@ export type JobEvent = z.infer<typeof JobEvent>;
 export type JobType = "create" | "respond_to_pr_comments";
 
 export interface ClaudeSession {
-  phase: "code" | "review" | "fix" | "respond_comments";
+  phase: "plan" | "code" | "review" | "fix" | "respond_comments";
   model?: string;
   input_tokens?: number;
   output_tokens?: number;
@@ -100,6 +102,7 @@ export interface JobMetrics {
     local_checks_ms?: number;
     self_review_ms?: number;
     commit_push_ms?: number;
+    plan_ms?: number;
     ci_wait_ms?: number;
     ci_fix_ms?: number;
   };
@@ -168,6 +171,17 @@ export interface JobDoc {
   // Metrics
   metrics?: JobMetrics;
 
+  // Pre-flight planning
+  needs_plan?: boolean;
+  plan?: {
+    summary: string;
+    generated_at: Date;
+    model?: string;
+    input_tokens?: number;
+    output_tokens?: number;
+    cost_usd?: number;
+  };
+
   // Linking
   parent_task_id?: string;
 }
@@ -190,6 +204,9 @@ export type WorkerEventType =
   | "CI_FAILED"
   | "CI_FIX_STARTED"
   | "CI_FIX_FINISHED"
+  | "PLAN_STARTED"
+  | "PLAN_GENERATED"
+  | "PLAN_CONFIRMED"
   | "PR_READY_FOR_APPROVAL"
   | "PR_PROMOTED"
   | "COMMENTS_FETCHED"
@@ -241,6 +258,12 @@ export interface FailRequest {
   ci?: CIInfo;
 }
 
+export interface SubmitPlanRequest {
+  node_id: string;
+  plan_summary: string;
+  metrics?: JobMetrics;
+}
+
 export interface WebCreateJobRequest {
   requested_by: string;
   task_text: string;
@@ -248,6 +271,7 @@ export interface WebCreateJobRequest {
   test_level?: TestLevel;
   ci_fix_enabled?: boolean;
   reviewers?: string[];
+  needs_plan?: boolean;
 }
 
 export interface WebRespondToCommentsRequest {

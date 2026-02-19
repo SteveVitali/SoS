@@ -53,6 +53,11 @@ export function fmtPrPromoted(job: JobDoc, payload: any): string {
   return `PR promoted to ready-for-review ✅ \`task_id=${job.task_id}\`${prs}`;
 }
 
+export function fmtPlan(job: JobDoc): string {
+  const plan = job.plan?.summary ? `\n${truncate(job.plan.summary, 2000)}` : "";
+  return `📝 *Plan for \`${job.task_id.slice(0, 8)}…\`*${plan}\n\n_Reply "go" to confirm, or ask questions._`;
+}
+
 export function fmtCanceled(job: JobDoc): string {
   return `Canceled ⛔ \`task_id=${job.task_id}\``;
 }
@@ -72,6 +77,8 @@ export function fmtEvent(job: JobDoc, type: string, payload: any): string {
       return fmtDone(job);
     case "FAILED":
       return fmtFailed(job);
+    case "PLAN_GENERATED":
+      return fmtPlan(job);
     case "WAITING_FOR_APPROVAL":
       return fmtAwaitingApproval(job, payload);
     case "PR_PROMOTED":
