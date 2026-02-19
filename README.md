@@ -10,24 +10,28 @@ Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your re
 
 - **Local-first** — runs on your machine; code never sent to a third-party cloud
 - **Full pipeline** — not just code generation: lint → test → self-review → commit → PR → CI → auto-fix CI failures
+- **PR comment review** — point it at any PR and it reads unresolved review threads, fixes each one, pushes, and replies
 - **Slack-native** — LLM-powered intent routing turns @-mentions into jobs, status checks, cancellations, or conversation
+- **Chat interface** — conversational web UI with the same LLM routing as Slack, including job creation and status checks
 - **Multi-repo** — a repo registry with per-repo commands, CI providers, and keyword-based detection
 - **Enterprise-ready** — worktree pooling with build cache preservation for large monorepos (Bazel, etc.)
-- **Observable** — web dashboard with full event timeline, Slack thread updates at every lifecycle stage
+- **Worker management** — spawn, monitor, and shut down worker processes from the web UI with live log streaming
+- **Observable** — web dashboard with job timeline, PR stats, worker health, live Claude output, and Slack thread updates
 - **Crash-safe** — lease-based job claims with automatic recovery when workers crash
+- **Cost tracking** — per-session token counts and estimated USD cost from Claude API pricing
 
 ---
 
 ## How It Works
 
 ```
-Slack ──Socket Mode──▶ sos-server ◀──HTTP──▶ sos-worker (N loops)
-                           │                      │
-                           ▼                      ▼
-                        MongoDB             Claude Code CLI
-                           ▲                  git / gh
+Slack ──Socket Mode──▶ sos-server ◀──HTTP+WS──▶ sos-worker (N loops)
+                           │                        │
+                           ▼                        ▼
+                        MongoDB               Claude Code CLI
+                           ▲                    git / gh
                            │
-                        Web UI
+                     Web UI (React)
 ```
 
 1. You **@-mention the bot** in Slack (or create a job via the web UI)
@@ -153,7 +157,12 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack app creation, LLM routi
 
 1. Open `http://localhost:3000`
 2. Enter your `SOS_INTERNAL_API_TOKEN`
-3. Use the dashboard to create, view, cancel, retry, or delete jobs
+3. Use the dashboard:
+   - **Chats** — conversational interface with the same LLM routing as Slack
+   - **Jobs** — create, view, cancel, retry, or delete jobs; full event timeline with cost metrics
+   - **PRs** — view open PRs across registered repos with comment/review thread stats
+   - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
+   - **Repos** — edit the repo registry (YAML) directly from the browser
 
 ---
 
@@ -186,10 +195,18 @@ The worker resolves which repo to use based on:
 
 ---
 
+## Job Types
+
+| Type | Description |
+|---|---|
+| `create` (default) | Full pipeline: resolve repo → worktree → Claude → lint/test → self-review → commit → PR → CI → fix CI |
+| `respond_to_pr_comments` | Read unresolved PR review threads → Claude fixes each → commit → push → reply to threads |
+
 ## Job Lifecycle
 
 ```
-QUEUED → RUNNING → (FIXING_CI →)* DONE
+QUEUED → RUNNING → WAITING_FOR_APPROVAL → DONE
+                 → (FIXING_CI →)*          ↗
                                    ↘ FAILED
                                    ↘ CANCELED
 ```
@@ -201,9 +218,9 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 ## Roadmap
 
 - **Jenkins CI provider** — complete the existing stub for Jenkins-based repos
-- **Human-in-the-loop approval** — pause before PR, show diff in Slack/web, wait for sign-off (`WAITING_FOR_APPROVAL` status)
+- **Human-in-the-loop approval** — full UI flow for the existing `WAITING_FOR_APPROVAL` status (show diff, approve/reject)
 - **Worker cancellation checks** — honor cancel requests mid-execution before expensive steps
-- **Cost tracking** — Claude API token usage per job, budgets per user/team
+- **Cost budgets** — per-user/team spending limits based on the existing per-job cost tracking
 - **Multi-model executors** — plug in Aider, OpenHands, or custom scripts alongside Claude Code
 
 ---
@@ -239,6 +256,7 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - Check `SOS_REQUESTED_BY_SLACK_USER` matches the Slack user who created the job
 - Verify `SOS_INTERNAL_API_TOKEN` matches between server and worker
 - Check worker logs for poll/claim errors
+- Open the **Workers** tab in the web UI to verify the worker is registered and online
 
 ### Worktree cleanup
 Worktrees are not auto-deleted. To clean up:

@@ -10,9 +10,9 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `SOS_INTERNAL_API_TOKEN` | **Yes** | Shared secret for worker ↔ server auth |
 | `MONGO_URI` | **Yes** | MongoDB connection string |
 | `MONGO_DB` | No (default: `son_of_steve`) | Database name |
-| `SLACK_APP_TOKEN` | **Yes** | Socket Mode app token (`xapp-...`) |
-| `SLACK_BOT_TOKEN` | **Yes** | Bot OAuth token (`xoxb-...`) |
-| `SLACK_BOT_USER_ID` | **Yes** | Bot's Slack user ID (`U...`) |
+| `SLACK_APP_TOKEN` | No | Socket Mode app token (`xapp-...`). Slack is optional — leave blank to disable. |
+| `SLACK_BOT_TOKEN` | No | Bot OAuth token (`xoxb-...`). Required if Slack is enabled. |
+| `SLACK_BOT_USER_ID` | No | Bot's Slack user ID (`U...`). Required if Slack is enabled. |
 | `SOS_LLM_PROVIDER` | No (default: `anthropic`) | LLM provider: `anthropic` or `openai_compatible` ([setup](SLACK_SETUP.md#llm-powered-message-routing-optional)) |
 | `SOS_LLM_MODEL` | No (default: `claude-sonnet-4-20250514`) | Model name/string for the LLM provider |
 | `SOS_LLM_API_KEY` | No | API key for the LLM provider. Falls back to `ANTHROPIC_API_KEY` if not set. |
@@ -23,6 +23,10 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |
+| `SOS_SLACK_NOTIFY_USER` | No | Always @-mention this Slack user ID in bot messages (for personal notifications) |
+| `SOS_GH_BOT_LOGINS` | No (default: `son-of-steve,son-of-steve[bot]`) | Comma-separated GitHub logins to treat as "bot" when computing PR comment stats |
+| `SOS_WORKSPACE_ROOT` | No | Directory for clones/worktrees (also used by server for worktree status endpoint) |
+| `SOS_REPO_REGISTRY` | No | Path to `repo-registry.yaml` (also used by server for PR listing and registry editor) |
 | `WEB_BASIC_AUTH_USER` | No | Optional basic auth for web UI |
 | `WEB_BASIC_AUTH_PASS` | No | Optional basic auth for web UI |
 

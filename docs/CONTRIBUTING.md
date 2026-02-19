@@ -76,7 +76,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 1. Add to `JobDoc` interface in `src/shared/types.ts`
 2. Add Zod validation if it's an API input (`src/server/jobs/jobModel.ts`)
 3. Set it during creation in `jobService.ts` (`createJobFromSlack` / `createJobFromWeb`)
-4. Display it in the web UI (`src/ui/src/App.tsx` — job detail section)
+4. Display it in the web UI (`src/ui/src/components/jobs/JobDetail.tsx`)
 5. If it comes from Slack, parse it in `eventHandlers.ts` (`parseModifiers`)
 
 ### Adding a new worker event type
@@ -105,11 +105,23 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 1. Add the route in the appropriate file:
    - Worker endpoint → `src/server/api/workerRoutes.ts`
    - Web endpoint → `src/server/api/webRoutes.ts`
+   - Chat endpoint → `src/server/chat/chatRoutes.ts`
 2. Add Zod validation schema if needed (`src/server/jobs/jobModel.ts`)
 3. Add business logic in `jobService.ts`
 4. Add the corresponding client method:
    - Worker client → `src/worker/apiClient.ts`
    - Web client → `src/ui/src/api.ts`
+5. If the endpoint involves a new UI feature, add a component under `src/ui/src/components/` and wire it into `App.tsx`
+
+### Adding a new job type
+
+1. Add the type to the `JobType` union in `src/shared/types.ts`
+2. Add a creation schema in `src/server/jobs/jobModel.ts`
+3. Add a service function in `jobService.ts`
+4. Add a web route in `webRoutes.ts` and optionally a Slack command in `commandExecutor.ts`
+5. Add the worker executor in `src/worker/executor/` (see `runRespondToComments.ts` as an example)
+6. Add dispatch logic in `src/worker/poller.ts` (`dispatchJob`)
+7. Add the UI API function in `src/ui/src/api.ts`
 
 ## Testing
 
@@ -158,8 +170,8 @@ Tracked priorities for contributors (see also the [Roadmap](../README.md#roadmap
 1. **Jenkins CI provider** — complete the existing stub in `src/worker/executor/ci/jenkins.ts`
 2. **Worker cancellation checks** — check job status before expensive steps (push, PR creation) to honor mid-flight cancellations
 3. **Integration tests for claim logic** — the atomic claim filter is the most critical correctness property; it deserves dedicated tests using `mongodb-memory-server`
-4. **Human-in-the-loop approval** (`WAITING_FOR_APPROVAL`) — pause before PR, show diff in Slack/web, wait for sign-off
-5. **Cost / token tracking** — track Claude API usage per job for budgeting
+4. **Human-in-the-loop approval UI** — full flow for the existing `WAITING_FOR_APPROVAL` status (show diff, approve/reject buttons)
+5. **Cost budgets** — per-user/team spending limits based on the existing per-job cost tracking (`metrics.claude.total_cost_usd`)
 6. **Metrics/observability** — request counts, job durations, error rates
 7. **Rate limiting** — on the web API to prevent abuse
 8. **Multi-model executors** — support plugging in Aider, OpenHands, or custom scripts alongside Claude Code

@@ -10,19 +10,22 @@ Son of Steve is a **local-first coding agent orchestrator**. It receives coding 
 ┌─────────────────────────────────────────────────────────────────┐
 │                        Local Machine                            │
 │                                                                 │
-│  ┌──────────────┐    HTTP API     ┌──────────────────────────┐  │
+│  ┌──────────────┐  HTTP + WS      ┌──────────────────────────┐  │
 │  │  sos-server   │◄──────────────►│  sos-worker (N loops)    │  │
 │  │              │                 │                          │  │
 │  │  • Express   │                 │  • Poll/claim jobs       │  │
 │  │  • Slack Bot │                 │  • Heartbeat leases      │  │
 │  │  • Web UI    │                 │  • Claude Code CLI       │  │
 │  │  • Mongo     │                 │  • git / gh CLI          │  │
+│  │  • Worker WS │ (log stream)    │  • WS log streaming     │  │
+│  │  • Chat API  │                 │  • Status reporting      │  │
 │  └──────┬───────┘                 └──────────────────────────┘  │
 │         │                                                       │
 │         ▼                                                       │
 │  ┌──────────────┐                                               │
 │  │   MongoDB     │ (local or Atlas)                             │
-│  │  • jobs col   │                                              │
+│  │  • jobs col   │
+│  │  • convos col │                                              │
 │  └──────────────┘                                               │
 │                                                                 │
 │  ┌──────────────┐                                               │
@@ -42,7 +45,12 @@ The server is the **single source of truth** for job state. It:
 3. **Exposes an HTTP API** for workers to poll/claim/heartbeat/update/complete/fail jobs
 4. **Exposes an HTTP API** for the web UI to list/view/create/cancel/retry/delete jobs
 5. **Posts Slack thread updates** for key lifecycle events (queued, claimed, PR, CI, done/failed)
-6. **Serves the React SPA** as static files (production build)
+6. **Manages an in-memory worker registry** (register, deregister, status, stale detection)
+7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
+8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
+9. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
+10. **Can spawn and kill worker processes** via `child_process` (local machine)
+11. **Serves the React SPA** as static files (production build)
 
 The server **holds all Slack credentials**. Workers never touch Slack directly.
 
@@ -57,11 +65,18 @@ The worker runs a **configurable pool of independent loops** (default 4). Each l
 5. **Reports** structured events back to the server (which may trigger Slack updates)
 6. **Completes or fails** the job
 
+The worker also supports a second job type, `respond_to_pr_comments`, which fetches unresolved PR review threads, runs Claude to address each thread, commits, pushes, and replies to the threads.
+
+On startup, the worker **registers** with the server (hostname, PID, concurrency) and opens a **WebSocket** connection for real-time log streaming and receiving commands (e.g., shutdown). Each loop reports its status (idle/busy, current task) on every poll cycle. Claude's raw stream-json output is teed to the server via WebSocket so it can be viewed live in the web UI.
+
 Workers are **stateless** — all persistent state lives in MongoDB via the server API. If a worker crashes, its lease expires and another worker can reclaim the job.
 
 ### MongoDB
 
-Single collection: `jobs`. Stores the full job document including status, lease info, outputs, and an append-only events log.
+Two collections:
+
+- **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
+- **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
 
 **Key indexes:**
 - `source.event_id` — unique partial (idempotency for Slack events)
@@ -73,10 +88,13 @@ Single collection: `jobs`. Stores the full job document including status, lease 
 
 A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same `SOS_INTERNAL_API_TOKEN` (stored in localStorage). Provides:
 
-- Job list with filters (status, user, search)
-- Job detail with full event timeline
-- Create job form
-- Cancel / retry / delete actions
+- **Chats** — conversational interface using the same LLM routing as Slack; can create jobs, check status, and chat
+- **Jobs** — list with filters (status, user, search), detail view with full event timeline and cost metrics, create/cancel/retry/delete, respond-to-PR-comments
+- **PRs** — open PRs across registered repos with review thread / unresolved comment stats
+- **Workers** — live worker health dashboard with per-loop status, spawn new workers, shutdown, live log terminal with Claude output streaming via SSE
+- **Repos** — in-browser YAML editor for the repo registry
+
+The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
 
 ## Job Lifecycle
 
@@ -107,7 +125,7 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 | `QUEUED` | Waiting for a worker to claim |
 | `RUNNING` | Claimed and being executed by a worker |
 | `FIXING_CI` | Worker is attempting a CI fix iteration |
-| `WAITING_FOR_APPROVAL` | Reserved for future use (manual approval flow) |
+| `WAITING_FOR_APPROVAL` | PR created as draft; awaiting human approval before promotion |
 | `DONE` | Successfully completed — PR created, CI passed (or warned) |
 | `FAILED` | Execution failed — error details in job doc |
 | `CANCELED` | Manually canceled via web UI (or API) |
@@ -160,7 +178,8 @@ This means there is **no single point of failure** for job execution — as long
 
 ## Authentication Model
 
-- **Worker ↔ Server**: Bearer token (`SOS_INTERNAL_API_TOKEN`), shared secret
+- **Worker ↔ Server (HTTP)**: Bearer token (`SOS_INTERNAL_API_TOKEN`), shared secret
+- **Worker ↔ Server (WebSocket)**: Same token, passed as `?token=` query param on `ws://host/api/worker/ws`
 - **Web UI ↔ Server**: Same Bearer token (stored in browser localStorage) OR optional HTTP Basic Auth
 - **Server → Slack**: Bot token (`SLACK_BOT_TOKEN`) and App token (`SLACK_APP_TOKEN`)
 - **Worker → GitHub**: Relies on local `gh` CLI auth (user must run `gh auth login`)
@@ -183,40 +202,53 @@ Workers emit structured events to the server via `POST /api/worker/jobs/:task_id
 
 1. **Stored** in the `jobs.events[]` array (truncated to 10KB per payload)
 2. **Used to update job fields** (e.g., `PR_CREATED` adds to `pr_urls`, `WORKTREE_READY` sets `branch_name`)
-3. **Selectively forwarded to Slack** for key types: `PR_CREATED`, `CI_FAILED`, `CI_STATUS`, `DONE`, `FAILED`, `CANCELED`
+3. **Selectively forwarded to Slack** for key types: `PR_CREATED`, `CI_FAILED`, `CI_STATUS`
+4. **Forwarded to linked chat conversations** for key lifecycle events (claimed, PR created, done, failed, etc.)
 
-See `src/shared/types.ts` for the full `WorkerEventType` union.
+Terminal states (`DONE`, `FAILED`, `CANCELED`) are posted to Slack by the service functions directly (not via the event system) to avoid duplicate notifications.
+
+See `src/shared/types.ts` for the full `WorkerEventType` union, which includes:
+`PHASE_STARTED`, `REPO_RESOLVED`, `WORKTREE_READY`, `CLAUDE_STARTED`, `CLAUDE_FINISHED`, `LOCAL_CHECKS_STARTED`, `LOCAL_CHECKS_FINISHED`, `SELF_REVIEW_STARTED`, `SELF_REVIEW_FINISHED`, `COMMIT_CREATED`, `BRANCH_PUSHED`, `PR_CREATED`, `CI_STATUS`, `CI_FAILED`, `CI_FIX_STARTED`, `CI_FIX_FINISHED`, `PR_READY_FOR_APPROVAL`, `PR_PROMOTED`, `COMMENTS_FETCHED`, `COMMENT_ADDRESSED`, `COMMENTS_PUSHED`, `DONE`, `FAILED`, `CANCELED`
 
 ## Directory Structure
 
 ```
 son-of-steve/
 ├── src/
-│   ├── shared/              # Shared between server and worker
-│   │   ├── types.ts         # Zod schemas, JobDoc interface, event types
-│   │   ├── time.ts          # Date helpers (nowDate, addSeconds, isExpired)
-│   │   ├── slug.ts          # Text slugification for branch names
-│   │   └── logger.ts        # Structured JSON logger with secret redaction
+│   ├── shared/                # Shared between server and worker
+│   │   ├── types.ts           # Zod schemas, JobDoc, event types, worker registry types
+│   │   ├── modelPricing.ts    # Claude model pricing for cost estimation
+│   │   ├── time.ts            # Date helpers (nowDate, addSeconds, isExpired)
+│   │   ├── slug.ts            # Text slugification for branch names
+│   │   └── logger.ts          # Structured JSON logger with secret redaction
 │   │
-│   ├── server/              # sos-server process
-│   │   ├── index.ts         # Entry point: Express + Slack Socket Mode startup
-│   │   ├── config.ts        # Environment variable parsing
-│   │   ├── mongo.ts         # MongoDB connection + index creation
+│   ├── server/                # sos-server process
+│   │   ├── index.ts           # Entry point: Express + Slack + WebSocket startup
+│   │   ├── config.ts          # Environment variable parsing
+│   │   ├── mongo.ts           # MongoDB connection + index creation
 │   │   ├── auth/
-│   │   │   └── internalAuth.ts  # Bearer token + optional Basic Auth middleware
+│   │   │   └── internalAuth.ts    # Bearer token + optional Basic Auth middleware
 │   │   ├── jobs/
-│   │   │   ├── jobModel.ts      # Zod validation schemas for API inputs
-│   │   │   ├── jobRepo.ts       # MongoDB queries (CRUD, claim, heartbeat, poll)
-│   │   │   ├── jobService.ts    # Business logic orchestrating repo + Slack + events
-│   │   │   ├── lease.ts         # Claim + heartbeat helpers
-│   │   │   ├── leaseReaper.ts   # Periodic check for stale RUNNING jobs
-│   │   │   ├── idempotency.ts   # Slack event deduplication
-│   │   │   └── titleGenerator.ts # LLM-based job title generation
+│   │   │   ├── jobModel.ts        # Zod validation schemas for API inputs
+│   │   │   ├── jobRepo.ts         # MongoDB queries (CRUD, claim, heartbeat, poll)
+│   │   │   ├── jobService.ts      # Business logic orchestrating repo + Slack + events
+│   │   │   ├── lease.ts           # Claim + heartbeat helpers
+│   │   │   ├── leaseReaper.ts     # Periodic check for stale RUNNING jobs
+│   │   │   ├── idempotency.ts     # Slack event deduplication
+│   │   │   └── titleGenerator.ts   # LLM-based job title generation
+│   │   ├── chat/
+│   │   │   ├── chatRoutes.ts          # /api/web/chats/* CRUD + message send
+│   │   │   ├── conversationRepo.ts    # MongoDB CRUD for conversations
+│   │   │   ├── conversationNotifier.ts # Push job status updates into linked chats
+│   │   │   └── titleGen.ts            # LLM-based conversation title generation
+│   │   ├── workers/
+│   │   │   ├── workerRegistry.ts  # In-memory registry (status, logs, SSE fan-out)
+│   │   │   └── workerWs.ts        # WebSocket server for worker log streaming + commands
 │   │   ├── llm/
-│   │   │   ├── llmProvider.ts       # LLM provider interface
-│   │   │   ├── anthropicProvider.ts # Anthropic API implementation
-│   │   │   ├── openaiProvider.ts    # OpenAI-compatible implementation
-│   │   │   └── index.ts             # Provider factory
+│   │   │   ├── llmProvider.ts         # LLM provider interface
+│   │   │   ├── anthropicProvider.ts   # Anthropic API implementation
+│   │   │   ├── openaiProvider.ts      # OpenAI-compatible implementation
+│   │   │   └── index.ts               # Provider factory
 │   │   ├── slack/
 │   │   │   ├── socketMode.ts      # Slack Bolt app with Socket Mode
 │   │   │   ├── eventHandlers.ts   # app_mention → job creation logic
@@ -226,43 +258,60 @@ son-of-steve/
 │   │   │   ├── userResolver.ts    # Resolve Slack user IDs to display names
 │   │   │   └── formatting.ts      # Slack message templates
 │   │   └── api/
-│   │       ├── router.ts        # Mount worker + web routes with auth
-│   │       ├── workerRoutes.ts  # /api/worker/* endpoints
-│   │       └── webRoutes.ts     # /api/web/* endpoints
+│   │       ├── router.ts        # Mount worker + web + chat routes with auth
+│   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)
+│   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, worktrees)
+│   │       └── ghPrs.ts         # GitHub PR listing + comment stats (with TTL cache)
 │   │
-│   ├── worker/              # sos-worker process
-│   │   ├── index.ts         # Entry point: start N worker loops
-│   │   ├── config.ts        # Environment variable parsing
-│   │   ├── apiClient.ts     # Typed HTTP client for server API
-│   │   ├── poller.ts        # Poll → claim → execute → repeat loop
-│   │   ├── heartbeat.ts     # Interval-based lease extension manager
-│   │   ├── events.ts        # Event emission helper
+│   ├── worker/                # sos-worker process
+│   │   ├── index.ts           # Entry point: register, start loops, connect WS
+│   │   ├── config.ts          # Environment variable parsing
+│   │   ├── apiClient.ts       # Typed HTTP client for server API
+│   │   ├── poller.ts          # Poll → claim → report status → execute → repeat
+│   │   ├── heartbeat.ts       # Interval-based lease extension manager
+│   │   ├── events.ts          # Event emission helper
+│   │   ├── workerWs.ts        # WebSocket client for log streaming + commands
 │   │   └── executor/
-│   │       ├── runJob.ts        # Main orchestrator: the full job workflow
-│   │       ├── repoRegistry.ts  # YAML registry loader
-│   │       ├── repoResolver.ts  # Hint/keyword-based repo resolution
-│   │       ├── workspace.ts     # Git clone management (ensureClone)
-│   │       ├── worktreePool.ts  # Reusable worktree slot pool (singleton)
-│   │       ├── claude.ts        # Claude Code CLI subprocess integration
-│   │       ├── git.ts           # Git operations (commit, push, diff)
-│   │       ├── pr.ts            # GitHub PR creation via gh CLI
-│   │       ├── summarize.ts     # Result summary builder
+│   │       ├── runJob.ts              # Main orchestrator: full create-job workflow
+│   │       ├── runRespondToComments.ts # PR comment review workflow
+│   │       ├── repoRegistry.ts        # YAML registry loader
+│   │       ├── repoResolver.ts        # Hint/keyword-based repo resolution
+│   │       ├── workspace.ts           # Git clone management (ensureClone)
+│   │       ├── worktreePool.ts        # Reusable worktree slot pool (singleton)
+│   │       ├── claude.ts              # Claude Code CLI + stream-json output + WS tee
+│   │       ├── ghComments.ts          # GitHub PR thread fetching + replying
+│   │       ├── git.ts                 # Git operations (commit, push, diff)
+│   │       ├── pr.ts                  # GitHub PR creation via gh CLI
+│   │       ├── summarize.ts           # Result summary builder
 │   │       └── ci/
-│   │           ├── ciProvider.ts     # CI provider interface
-│   │           ├── githubActions.ts  # GitHub Actions check polling
-│   │           └── jenkins.ts        # Jenkins stub (not yet implemented)
+│   │           ├── ciProvider.ts       # CI provider interface
+│   │           ├── githubActions.ts    # GitHub Actions check polling
+│   │           └── jenkins.ts          # Jenkins stub (not yet implemented)
 │   │
-│   └── ui/                  # React + Vite SPA
+│   └── ui/                    # React + Vite SPA
 │       ├── vite.config.ts
 │       ├── tsconfig.json
 │       ├── index.html
 │       └── src/
 │           ├── main.tsx
-│           ├── App.tsx      # Full SPA: list, detail, create views
-│           └── api.ts       # Typed fetch client for /api/web/*
+│           ├── App.tsx            # SPA shell: nav tabs + routing
+│           ├── api.ts             # Typed fetch client for /api/web/*
+│           ├── stores/
+│           │   └── AppDataContext.tsx  # Shared state + polling (jobs, PRs, workers, etc.)
+│           └── components/
+│               ├── chat/          # ChatsList, ChatDetail
+│               ├── jobs/          # JobsList, JobDetail, JobRow, etc.
+│               ├── prs/           # PrsList, PrRow
+│               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal
+│               ├── registry/      # RepoRegistryEditor
+│               └── shared/        # PageHeader, NavTab, HoverRow, Badge, Spinner, etc.
 │
+├── docs/                  # Documentation
 ├── package.json
 ├── tsconfig.json
+├── vitest.config.ts
+├── biome.json
+├── docker-compose.yml     # Local MongoDB for development
 ├── .env.example
 ├── .gitignore
 ├── repo-registry.example.yaml
@@ -298,3 +347,15 @@ Creating a fresh git worktree per job is expensive for large repos — especiall
 ### Why a self-review pass?
 
 After Claude Code generates changes, the diff is fed back through a second Claude invocation acting as a Staff Engineer code reviewer. This catches dead code, naming issues, missing error handling, test gaps, and security concerns before the PR is even created. The review prompt is opinionated (checks correctness, design, naming, error handling, tests, security, performance) and instructs Claude to fix issues directly rather than just listing them. Post-review local checks are re-run to ensure the fixes don't break anything.
+
+### Why an in-memory worker registry instead of persisting to MongoDB?
+
+Worker state is inherently ephemeral — a worker's PID, loop status, and log buffer are only meaningful while the process is alive. An in-memory `Map` with 60-second stale detection is simpler and faster than a MongoDB collection that would need constant cleanup. If the server restarts, workers re-register automatically on their next heartbeat.
+
+### Why WebSocket for worker logs instead of HTTP polling?
+
+Claude Code can produce hundreds of stream-json lines per second during an active session. HTTP polling at any reasonable interval would either miss output or waste bandwidth. A persistent WebSocket lets the worker tee every line to the server in real time with minimal overhead. The server buffers the last 1000 lines per worker in a ring buffer and fans out to UI clients via SSE.
+
+### Why a separate "respond to PR comments" job type?
+
+Responding to PR review comments is fundamentally different from creating new code: the worker needs to check out the existing PR branch, read specific review threads, fix each one, and reply inline. Rather than cramming this into the `create` pipeline with flags, a dedicated `respond_to_pr_comments` job type has its own clean workflow in `runRespondToComments.ts`.

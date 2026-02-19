@@ -9,6 +9,30 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Worker management system** — spawn, monitor, and shut down worker processes from the web UI
+  - In-memory worker registry on the server with 60s stale detection
+  - WebSocket server (`/api/worker/ws`) for real-time log streaming and command dispatch
+  - Worker registration on startup, status reporting per loop, deregistration on shutdown
+  - Claude output teed to server via WebSocket for live viewing
+  - Web UI: Workers tab with health dashboard, per-loop status, live log terminal, spawn modal
+  - SSE endpoint for streaming worker logs to the browser
+- **Chat / conversation system** — web UI chat interface using the same LLM routing as Slack
+  - MongoDB-backed conversation storage with message history
+  - Job status updates pushed into linked conversations
+  - LLM-generated conversation titles
+- **Respond to PR comments** job type — reads unresolved review threads, fixes each with Claude, commits, pushes, replies
+  - `ghComments.ts` for GitHub GraphQL thread fetching and replying
+  - `runRespondToComments.ts` for the per-thread pipeline
+  - Web UI and Slack support for creating respond-to-comments jobs
+- **PR dashboard** — web UI tab listing open PRs across registered repos with review thread stats
+  - TTL-cached GitHub GraphQL queries to avoid API rate limits
+- **Cost tracking** — per-session token counts and estimated USD cost from Claude API pricing
+  - `modelPricing.ts` with pricing lookup for Anthropic models
+  - `JobMetrics` with `claude.sessions[]`, `total_cost_usd`, per-phase breakdown
+- **Waiting for approval** status — draft PR creation with `WAITING_FOR_APPROVAL` status and promote-PR endpoint
+- **Repo registry editor** — edit `repo-registry.yaml` directly from the web UI
+- **Worktree status dashboard** — web UI view of worktree slot lock status
+- **Job requeue with backoff** — `POST /requeue` endpoint for when no worktree slot is available
 - MIT license
 - Biome linter and formatter with project-specific rules
 - Husky pre-commit hooks with lint-staged (auto-lint on commit)
@@ -25,6 +49,8 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 - Expanded `.gitignore` with common Node/TS/macOS patterns
 - Auto-formatted entire codebase with Biome
+- Decoupled PR stats fetching from job polling to avoid GitHub API rate limit exhaustion
+- Web UI expanded from single-page to tabbed layout (Chats, Jobs, PRs, Workers, Repos)
 
 ## [0.1.0] - 2025-06-01
 

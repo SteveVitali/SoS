@@ -26,3 +26,5 @@ repos:
       reviewers_default: ["charlie"]
     ci:
       provider: "github_actions"
+    max_worktrees: 2          # concurrent worktree slots (default: 1)
+    clean_mode: "light"       # "light" preserves .gitignore'd build caches; "full" cleans everything
