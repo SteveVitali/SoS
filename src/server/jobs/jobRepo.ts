@@ -28,7 +28,10 @@ export async function findPollableJobs(requestedBy: string, limit: number): Prom
   const filter: Filter<JobDoc> = {
     requested_by: requestedBy,
     $or: [
-      { status: "QUEUED" },
+      {
+        status: "QUEUED",
+        $or: [{ not_before: { $exists: false } }, { not_before: { $lte: now } }],
+      },
       {
         status: { $in: ["RUNNING", "FIXING_CI"] },
         lease_expires_at: { $lt: now },
@@ -69,6 +72,7 @@ export async function atomicClaim(
         updated_at: now,
       },
       $inc: { attempt: 1 },
+      $unset: { not_before: "" },
       $setOnInsert: { run_started_at: now },
     },
     { returnDocument: "after" },
@@ -213,7 +217,11 @@ export async function failJob(
   return result as JobDoc | null;
 }
 
-export async function requeueJob(taskId: string, nodeId: string): Promise<JobDoc | null> {
+export async function requeueJob(
+  taskId: string,
+  nodeId: string,
+  notBefore?: Date,
+): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
   const result = await col.findOneAndUpdate(
@@ -226,6 +234,7 @@ export async function requeueJob(taskId: string, nodeId: string): Promise<JobDoc
       $set: {
         status: "QUEUED" as JobStatus,
         updated_at: now,
+        ...(notBefore ? { not_before: notBefore } : {}),
       },
       $unset: { claimed_by: "", lease_expires_at: "", heartbeat_at: "" },
     },

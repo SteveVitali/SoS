@@ -8,8 +8,6 @@ export function buildResultSummary(
 ): string {
   const lines: string[] = [];
 
-  if (prUrl) lines.push(`PR: ${prUrl}`);
-
   const diff = getDiffStats(worktreePath);
   if (diff) {
     lines.push("Changes:");
