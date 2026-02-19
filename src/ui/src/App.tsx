@@ -30,6 +30,18 @@ function shortId(id: string): string {
   return id.slice(0, 8);
 }
 
+const TERMINAL_EVENT_TYPES = new Set(["DONE", "FAILED", "CANCELED", "QUEUED", "REAPED"]);
+
+function lastSubstantiveEvent(
+  events?: Array<{ at: string; type: string }>,
+): { at: string; type: string } | undefined {
+  if (!events?.length) return undefined;
+  for (let i = events.length - 1; i >= 0; i--) {
+    if (!TERMINAL_EVENT_TYPES.has(events[i].type)) return events[i];
+  }
+  return events[events.length - 1];
+}
+
 function formatPrUrl(url: string): string {
   const m = url.match(/github\.com\/([^/]+)\/([^/]+)\/pull\/(\d+)/);
   if (m) return `${m[1]}/${m[2]}#${m[3]}`;
@@ -323,6 +335,7 @@ type SortKey =
   | "status"
   | "requested_by"
   | "created_at"
+  | "updated"
   | "repo"
   | "worktree_slot"
   | "pr";
@@ -340,6 +353,10 @@ function getJobSortValue(job: Job, key: SortKey): string {
     }
     case "created_at":
       return job.created_at;
+    case "updated": {
+      const ev = lastSubstantiveEvent(job.events);
+      return ev ? ev.at : job.updated_at || job.created_at;
+    }
     case "repo":
       return (job.repos_resolved?.join(", ") || job.repo_hint || "").toLowerCase();
     case "worktree_slot":
@@ -557,6 +574,13 @@ function JobsList() {
                     onSort={handleSort}
                   />
                   <SortableHeader
+                    label="Updated"
+                    sortKey="updated"
+                    currentKey={sortKey}
+                    currentDir={sortDir}
+                    onSort={handleSort}
+                  />
+                  <SortableHeader
                     label="Repo"
                     sortKey="repo"
                     currentKey={sortKey}
@@ -602,6 +626,34 @@ function JobsList() {
                     <td style={css.td} title={new Date(job.created_at).toLocaleString()}>
                       {relativeTime(job.created_at)}
                     </td>
+                    {(() => {
+                      const ev = lastSubstantiveEvent(job.events);
+                      return (
+                        <td
+                          style={css.td}
+                          title={
+                            ev
+                              ? `${ev.type} at ${new Date(ev.at).toLocaleString()}`
+                              : new Date(job.updated_at).toLocaleString()
+                          }
+                        >
+                          {ev ? (
+                            <>
+                              <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fg2)" }}>
+                                {ev.type}
+                              </span>{" "}
+                              <span style={{ fontSize: 12, color: "var(--fg3)" }}>
+                                {relativeTime(ev.at)}
+                              </span>
+                            </>
+                          ) : (
+                            <span style={{ fontSize: 12, color: "var(--fg3)" }}>
+                              {relativeTime(job.updated_at)}
+                            </span>
+                          )}
+                        </td>
+                      );
+                    })()}
                     <td style={{ ...css.td, fontSize: 13 }}>
                       {job.repos_resolved?.join(", ") || job.repo_hint || "—"}
                     </td>

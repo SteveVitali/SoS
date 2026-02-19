@@ -16,15 +16,10 @@ export function fmtPrCreated(job: JobDoc, url: string): string {
   return `PR Created 🔗 \`task_id=${job.task_id}\`\n${url}`;
 }
 
-export function fmtCiFixing(job: JobDoc, payload: any): string {
-  const attempt = payload?.attempt ?? 1;
-  const summary = payload?.summary ? `\n\`\`\`${truncate(payload.summary, 500)}\`\`\`` : "";
-  return `CI Failed — fixing 🟡 \`task_id=${job.task_id}\` (attempt ${attempt})${summary}`;
-}
-
 export function fmtCiFailed(job: JobDoc, payload: any): string {
+  const attempt = payload?.attempt ?? "?";
   const summary = payload?.summary ? `\n\`\`\`${truncate(payload.summary, 500)}\`\`\`` : "";
-  return `CI Failed ❌ \`task_id=${job.task_id}\`${summary}`;
+  return `CI Failed ❌ \`task_id=${job.task_id}\` (attempt ${attempt})${summary}`;
 }
 
 export function fmtCiGreen(job: JobDoc, payload: any): string {
@@ -52,13 +47,13 @@ export function fmtEvent(job: JobDoc, type: string, payload: any): string {
   switch (type) {
     case "PR_CREATED":
       return fmtPrCreated(job, payload?.url || "");
-    case "CI_FIXING":
-      return fmtCiFixing(job, payload);
     case "CI_FAILED":
       return fmtCiFailed(job, payload);
     case "CI_STATUS":
       if (payload?.conclusion === "success") return fmtCiGreen(job, payload);
-      return "";
+      return `CI Status \`task_id=${job.task_id}\`: ${payload?.status || "unknown"}${
+        payload?.conclusion ? ` (${payload.conclusion})` : ""
+      }`;
     case "DONE":
       return fmtDone(job);
     case "FAILED":
