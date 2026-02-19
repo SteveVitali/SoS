@@ -454,6 +454,7 @@ function JobsList({
                   <th style={css.th}>Status</th>
                   <th style={css.th}>User</th>
                   <th style={css.th}>Created</th>
+                  <th style={css.th}>Updated</th>
                   <th style={css.th}>Repo</th>
                   <th style={css.th}>Worktree</th>
                   <th style={css.th}>PR</th>
@@ -478,6 +479,29 @@ function JobsList({
                     </td>
                     <td style={css.td} title={new Date(job.created_at).toLocaleString()}>
                       {relativeTime(job.created_at)}
+                    </td>
+                    <td
+                      style={css.td}
+                      title={
+                        job.events?.length
+                          ? `${job.events[job.events.length - 1].type} at ${new Date(job.events[job.events.length - 1].at).toLocaleString()}`
+                          : new Date(job.updated_at).toLocaleString()
+                      }
+                    >
+                      {job.events?.length ? (
+                        <>
+                          <span style={{ fontSize: 11, fontWeight: 600, color: "var(--fg2)" }}>
+                            {job.events[job.events.length - 1].type}
+                          </span>{" "}
+                          <span style={{ fontSize: 12, color: "var(--fg3)" }}>
+                            {relativeTime(job.events[job.events.length - 1].at)}
+                          </span>
+                        </>
+                      ) : (
+                        <span style={{ fontSize: 12, color: "var(--fg3)" }}>
+                          {relativeTime(job.updated_at)}
+                        </span>
+                      )}
                     </td>
                     <td style={{ ...css.td, fontSize: 13 }}>
                       {job.repos_resolved?.join(", ") || job.repo_hint || "—"}
