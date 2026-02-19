@@ -1,6 +1,8 @@
 import { useState } from "react";
 import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { CreateJobForm } from "./components/CreateJobForm.js";
+import { ChatDetail } from "./components/chat/ChatDetail.js";
+import { ChatsList } from "./components/chat/ChatsList.js";
 import { JobDetail } from "./components/jobs/JobDetail.js";
 import { JobsList } from "./components/jobs/JobsList.js";
 import { PrsList } from "./components/prs/PrsList.js";
@@ -13,6 +15,8 @@ import { css } from "./styles/theme.js";
 function AppShell() {
   const location = useLocation();
   const path = location.pathname;
+  const isChatsTab = path === "/chats" || path.startsWith("/chats/");
+  const showChatsList = path === "/chats";
   const showJobsList = path === "/";
   const showPrsList = path === "/prs";
   const isJobsTab = path === "/" || path.startsWith("/jobs");
@@ -27,6 +31,7 @@ function AppShell() {
             <span style={css.title}>Son of Steve</span>
           </Link>
           <div style={{ display: "flex", gap: 0, marginLeft: 16 }}>
+            <NavTab to="/chats" label="Chats" active={isChatsTab} />
             <NavTab to="/" label="Jobs" active={isJobsTab} />
             <NavTab to="/prs" label="PRs" active={isPrsTab} />
             <NavTab to="/repos" label="Repos" active={isReposTab} />
@@ -47,6 +52,9 @@ function AppShell() {
       </div>
 
       {/* Always-mounted list views — hidden when not active to preserve state */}
+      <div style={{ display: showChatsList ? "block" : "none" }}>
+        <ChatsList />
+      </div>
       <div style={{ display: showJobsList ? "block" : "none" }}>
         <JobsList />
       </div>
@@ -56,6 +64,7 @@ function AppShell() {
 
       {/* Sub-pages rendered via Routes */}
       <Routes>
+        <Route path="/chats/:id" element={<ChatDetail />} />
         <Route path="/repos" element={<RepoRegistryEditor />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />
         <Route path="/jobs/:taskId" element={<JobDetail />} />

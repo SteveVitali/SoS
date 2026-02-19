@@ -158,10 +158,13 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
     const ctx = {
       userId: event.user,
       ownerId: config.slackJobOwner,
-      channelId: event.channel,
-      threadTs,
-      messageTs: event.ts,
+      source: "slack" as const,
       eventId,
+      slack: {
+        channelId: event.channel,
+        threadTs,
+        messageTs: event.ts,
+      },
     };
 
     // Fetch thread context if this is a reply in an existing thread

@@ -252,3 +252,63 @@ export async function getWorktreeStatus(): Promise<Record<string, WorktreeSlotSt
   );
   return res.worktrees;
 }
+
+// --- Chat ---
+
+export interface ConversationMessage {
+  id: string;
+  role: "user" | "assistant" | "system";
+  text: string;
+  at: string;
+  action?: { command: string; task_id?: string };
+}
+
+export interface Conversation {
+  conversation_id: string;
+  owner: string;
+  title?: string;
+  created_at: string;
+  updated_at: string;
+  messages: ConversationMessage[];
+  linked_task_ids: string[];
+}
+
+export async function listConversations(params?: {
+  limit?: number;
+  offset?: number;
+}): Promise<{ conversations: Conversation[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.offset) qs.set("offset", String(params.offset));
+  return request("GET", `/chats?${qs.toString()}`);
+}
+
+export async function createConversation(): Promise<{ conversation: Conversation }> {
+  return request("POST", "/chats");
+}
+
+export async function getConversation(id: string): Promise<{ conversation: Conversation }> {
+  return request("GET", `/chats/${id}`);
+}
+
+export async function sendMessage(
+  conversationId: string,
+  text: string,
+): Promise<{
+  userMessage: ConversationMessage;
+  assistantMessage: ConversationMessage;
+  action: { command: string; taskId?: string };
+}> {
+  return request("POST", `/chats/${conversationId}/messages`, { text });
+}
+
+export async function pollConversationUpdates(
+  conversationId: string,
+  since: string,
+): Promise<{ messages: ConversationMessage[]; linked_task_ids: string[] }> {
+  return request("GET", `/chats/${conversationId}/updates?since=${encodeURIComponent(since)}`);
+}
+
+export async function deleteConversation(id: string): Promise<{ ok: boolean }> {
+  return request("DELETE", `/chats/${id}`);
+}

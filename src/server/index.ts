@@ -4,6 +4,7 @@ import { fileURLToPath } from "node:url";
 import express from "express";
 import { createLogger } from "../shared/logger.js";
 import { createRouter } from "./api/router.js";
+import { initChatTitleGenerator } from "./chat/titleGen.js";
 import { loadServerConfig } from "./config.js";
 import { setSlackPoster } from "./jobs/jobService.js";
 import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
@@ -48,6 +49,7 @@ async function main() {
       });
       initMessageRouter(llmProvider, config.llmModel);
       initTitleGenerator(llmProvider, config.llmModel);
+      initChatTitleGenerator(llmProvider, config.llmModel);
     } catch (err: any) {
       log.warn(
         "Failed to initialize LLM provider — message routing will treat all mentions as jobs",

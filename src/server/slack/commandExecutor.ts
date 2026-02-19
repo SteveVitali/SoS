@@ -3,6 +3,7 @@ import type { JobAttachment } from "../../shared/types.js";
 import {
   cancel,
   createJobFromSlack,
+  createJobFromWeb,
   createRespondToCommentsJob,
   findJobByTaskId,
   promotePr,
@@ -16,16 +17,17 @@ const log = createLogger("server:slack:commands");
 export interface CommandResult {
   reply: string;
   actionTaken: string;
+  taskId?: string;
 }
 
-interface SlackContext {
+export interface CommandContext {
   userId: string;
   ownerId: string;
-  channelId: string;
-  threadTs: string;
-  messageTs: string;
+  source: "slack" | "web";
   eventId: string;
   attachments?: JobAttachment[];
+  slack?: { channelId: string; threadTs: string; messageTs: string };
+  web?: { conversationId: string };
 }
 
 async function resolveTaskId(partial: string): Promise<string | null> {
@@ -41,29 +43,41 @@ async function resolveTaskId(partial: string): Promise<string | null> {
 
 export async function executeCommand(
   action: RoutedAction,
-  ctx: SlackContext,
+  ctx: CommandContext,
 ): Promise<CommandResult> {
   const { command, args, reply } = action;
 
   switch (command) {
     case "create_job": {
       try {
-        const { job } = await createJobFromSlack({
-          event_id: ctx.eventId,
-          requested_by: ctx.userId,
-          slack_requester: ctx.userId,
-          task_text: args.task_text || "(no task description)",
-          channel_id: ctx.channelId,
-          thread_ts: ctx.threadTs,
-          message_ts: ctx.messageTs,
-          repo_hint: args.repo_hint,
-          test_level: args.test_level,
-          reviewers: args.reviewers,
-          attachments: ctx.attachments,
-        });
+        const job =
+          ctx.source === "slack" && ctx.slack
+            ? (
+                await createJobFromSlack({
+                  event_id: ctx.eventId,
+                  requested_by: ctx.userId,
+                  slack_requester: ctx.userId,
+                  task_text: args.task_text || "(no task description)",
+                  channel_id: ctx.slack.channelId,
+                  thread_ts: ctx.slack.threadTs,
+                  message_ts: ctx.slack.messageTs,
+                  repo_hint: args.repo_hint,
+                  test_level: args.test_level,
+                  reviewers: args.reviewers,
+                  attachments: ctx.attachments,
+                })
+              ).job
+            : await createJobFromWeb({
+                requested_by: ctx.ownerId,
+                task_text: args.task_text || "(no task description)",
+                repo_hint: args.repo_hint,
+                test_level: args.test_level,
+                reviewers: args.reviewers,
+              });
         return {
           reply: `${reply}\n\n📋 Task queued: \`${job.task_id.slice(0, 8)}…\``,
           actionTaken: `created job ${job.task_id}`,
+          taskId: job.task_id,
         };
       } catch (err: any) {
         log.error("Failed to create job", { error: err.message });
@@ -210,14 +224,19 @@ export async function executeCommand(
           };
         }
 
+        const slackThread =
+          ctx.source === "slack" && ctx.slack
+            ? { channel_id: ctx.slack.channelId, thread_ts: ctx.slack.threadTs }
+            : undefined;
         const job = await createRespondToCommentsJob(
-          { requested_by: ctx.userId, pr_url: prUrl, parent_task_id: parentTaskId },
-          "slack",
-          { channel_id: ctx.channelId, thread_ts: ctx.threadTs },
+          { requested_by: ctx.ownerId, pr_url: prUrl, parent_task_id: parentTaskId },
+          ctx.source,
+          slackThread,
         );
         return {
           reply: `${reply}\n\n📋 Respond-to-comments job queued: \`${job.task_id.slice(0, 8)}…\`\nPR: ${prUrl}`,
           actionTaken: `respond_to_pr_comments: ${job.task_id}`,
+          taskId: job.task_id,
         };
       } catch (err: any) {
         log.error("Failed to create respond-to-comments job", { error: err.message });

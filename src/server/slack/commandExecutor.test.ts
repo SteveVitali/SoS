@@ -10,10 +10,13 @@ let mongod: MongoMemoryServer;
 const ctx = {
   userId: "U_USER",
   ownerId: "U_OWNER",
-  channelId: "C123",
-  threadTs: "111.222",
-  messageTs: "111.333",
+  source: "slack" as const,
   eventId: "evt_cmd_test",
+  slack: {
+    channelId: "C123",
+    threadTs: "111.222",
+    messageTs: "111.333",
+  },
 };
 
 beforeAll(async () => {

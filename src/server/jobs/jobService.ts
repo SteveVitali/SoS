@@ -10,6 +10,7 @@ import type {
   WorkerEventType,
 } from "../../shared/types.js";
 import { SLACK_NOTIFY_EVENTS } from "../../shared/types.js";
+import { notifyConversations } from "../chat/conversationNotifier.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 import { checkIdempotent } from "./idempotency.js";
 import type {
@@ -194,10 +195,15 @@ export async function claim(
   leaseSeconds: number,
 ) {
   const job = await claimJob(taskId, requestedBy, nodeId, leaseSeconds);
-  if (job && slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
-    // Only post "Claimed" on first real claim to avoid spamming on requeue cycles
+  if (job) {
+    if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
+      // Only post "Claimed" on first real claim to avoid spamming on requeue cycles
+      if ((job.attempt || 1) <= 1) {
+        await slackPoster.postClaimed(job);
+      }
+    }
     if ((job.attempt || 1) <= 1) {
-      await slackPoster.postClaimed(job);
+      notifyConversations(job, "CLAIMED").catch(() => {});
     }
   }
   return job;
@@ -261,6 +267,11 @@ export async function handleWorkerEvent(
       await slackPoster.postEvent(job, type, payload);
     }
   }
+
+  // Conversation notifications for key events
+  if (["PR_CREATED", "CI_FAILED"].includes(type) && job) {
+    notifyConversations(job, type).catch(() => {});
+  }
 }
 
 // --- Await Approval ---
@@ -283,6 +294,7 @@ export async function awaitApproval(
         message: `Awaiting approval ⏳ \`task_id=${job.task_id}\`${prs}\nReply here to promote, or use the web dashboard.`,
       });
     }
+    notifyConversations(job, "WAITING_FOR_APPROVAL").catch(() => {});
   }
   return job;
 }
@@ -302,6 +314,7 @@ export async function promotePr(taskId: string, reviewers?: string[]) {
         message: `PR promoted to ready-for-review ✅ \`task_id=${job.task_id}\`${prs}`,
       });
     }
+    notifyConversations(job, "PR_PROMOTED").catch(() => {});
   }
   return job;
 }
@@ -323,6 +336,7 @@ export async function complete(
     if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
       await slackPoster.postDone(job);
     }
+    notifyConversations(job, "DONE").catch(() => {});
   }
   return job;
 }
@@ -344,6 +358,7 @@ export async function fail(
     if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
       await slackPoster.postFailed(job);
     }
+    notifyConversations(job, "FAILED").catch(() => {});
   }
   return job;
 }
@@ -376,6 +391,7 @@ export async function cancel(taskId: string) {
     if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
       await slackPoster.postCanceled(job);
     }
+    notifyConversations(job, "CANCELED").catch(() => {});
   }
   return job;
 }

@@ -1,5 +1,6 @@
 import { Router } from "express";
 import { internalAuth, optionalBasicAuth } from "../auth/internalAuth.js";
+import { createChatRoutes } from "../chat/chatRoutes.js";
 import type { ServerConfig } from "../config.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 import { createWebRoutes } from "./webRoutes.js";
@@ -17,6 +18,7 @@ export function createRouter(config: ServerConfig, slackPoster?: SlackPoster): R
     : internalAuth(config.internalApiToken);
 
   router.use("/api/web", webAuth, createWebRoutes(config));
+  router.use("/api/web/chats", webAuth, createChatRoutes(config));
 
   return router;
 }
