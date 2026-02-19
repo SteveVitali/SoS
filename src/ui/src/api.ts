@@ -154,3 +154,50 @@ export async function resolveSlackUsers(userIds: string[]): Promise<Record<strin
   });
   return res.users;
 }
+
+export interface PrCommentStats {
+  total_comments: number;
+  total_threads: number;
+  unresolved_threads: number;
+  unaddressed_threads: number;
+}
+
+export interface GitHubPr {
+  url: string;
+  number: number;
+  title: string;
+  state: string;
+  headRefName: string;
+  updatedAt: string;
+  createdAt: string;
+  author: string;
+  repo: string;
+  repoFullName: string;
+  isDraft: boolean;
+  additions: number;
+  deletions: number;
+  comments: PrCommentStats | null;
+  linkedJobTaskId?: string;
+}
+
+export async function listPrs(params: {
+  state?: string;
+  limit?: number;
+  include_comments?: boolean;
+  repo?: string;
+}): Promise<{ prs: GitHubPr[] }> {
+  const qs = new URLSearchParams();
+  if (params.state) qs.set("state", params.state);
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.include_comments === false) qs.set("include_comments", "false");
+  if (params.repo) qs.set("repo", params.repo);
+  return request("GET", `/prs?${qs.toString()}`);
+}
+
+export async function fetchPrStats(urls: string[]): Promise<Record<string, PrCommentStats>> {
+  if (urls.length === 0) return {};
+  const res = await request<{ stats: Record<string, PrCommentStats> }>("POST", "/prs/stats", {
+    urls,
+  });
+  return res.stats;
+}

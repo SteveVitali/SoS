@@ -1,8 +1,10 @@
 import { type Request, type Response, Router } from "express";
 import { createLogger } from "../../shared/logger.js";
+import type { ServerConfig } from "../config.js";
 import { CreateJobFromWebSchema, CreateRespondToCommentsFromWebSchema } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
 import { resolveSlackUser } from "../slack/userResolver.js";
+import { fetchBatchPrStats, listPrs } from "./ghPrs.js";
 
 const log = createLogger("server:api:web");
 
@@ -13,7 +15,7 @@ function pstr(v: unknown): string {
   return typeof v === "string" ? v : String(v ?? "");
 }
 
-export function createWebRoutes(): Router {
+export function createWebRoutes(config: ServerConfig): Router {
   const router = Router();
 
   // GET /api/web/jobs
@@ -189,6 +191,73 @@ export function createWebRoutes(): Router {
       res.json({ job });
     } catch (err: any) {
       log.error("Delete job error", { error: err.message, task_id: pstr(req.params.task_id) });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // GET /api/web/prs — list PRs across registered repos with comment stats
+  router.get("/prs", async (req: Request, res: Response) => {
+    try {
+      if (!config.repoRegistryPath) {
+        res.status(501).json({ error: "SOS_REPO_REGISTRY not configured on server" });
+        return;
+      }
+      const state = (qstr(req.query.state) || "open") as "open" | "closed" | "merged" | "all";
+      const limit = parseInt(qstr(req.query.limit), 10) || 20;
+      const includeComments = qstr(req.query.include_comments) !== "false";
+      const repoFilter = qstr(req.query.repo) || undefined;
+
+      const prs = listPrs({
+        registryPath: config.repoRegistryPath,
+        state,
+        limit,
+        includeComments,
+        botLogins: config.ghBotLogins,
+        repoFilter,
+      });
+
+      // Cross-link with jobs: find jobs whose pr_urls match any of these PRs
+      const prUrls = prs.map((p) => p.url);
+      if (prUrls.length > 0) {
+        try {
+          const { jobs } = await jobService.queryJobs({ limit: 200, offset: 0 });
+          const urlToTaskId = new Map<string, string>();
+          for (const job of jobs) {
+            for (const url of job.pr_urls || []) {
+              if (!urlToTaskId.has(url)) {
+                urlToTaskId.set(url, job.task_id);
+              }
+            }
+          }
+          for (const pr of prs) {
+            pr.linkedJobTaskId = urlToTaskId.get(pr.url);
+          }
+        } catch (linkErr: any) {
+          log.warn("Failed to cross-link PRs with jobs", { error: linkErr.message });
+        }
+      }
+
+      res.json({ prs });
+    } catch (err: any) {
+      log.error("List PRs error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/web/prs/stats — batch fetch comment stats for specific PR URLs
+  router.post("/prs/stats", async (req: Request, res: Response) => {
+    try {
+      const urls: string[] = req.body?.urls || [];
+      if (urls.length === 0) {
+        res.json({ stats: {} });
+        return;
+      }
+      // Cap at 20 to avoid abuse
+      const capped = urls.slice(0, 20);
+      const stats = fetchBatchPrStats(capped, config.ghBotLogins);
+      res.json({ stats });
+    } catch (err: any) {
+      log.error("Batch PR stats error", { error: err.message });
       res.status(500).json({ error: "Internal error" });
     }
   });

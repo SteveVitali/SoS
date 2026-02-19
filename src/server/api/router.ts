@@ -16,7 +16,7 @@ export function createRouter(config: ServerConfig, slackPoster?: SlackPoster): R
     ? optionalBasicAuth(config.webBasicAuthUser, config.webBasicAuthPass)
     : internalAuth(config.internalApiToken);
 
-  router.use("/api/web", webAuth, createWebRoutes());
+  router.use("/api/web", webAuth, createWebRoutes(config));
 
   return router;
 }

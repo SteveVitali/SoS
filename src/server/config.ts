@@ -45,6 +45,12 @@ export function loadServerConfig() {
     llmBaseUrl: process.env.SOS_LLM_BASE_URL || "",
     maxThreadMessages: optionalInt("SOS_MAX_THREAD_MESSAGES", 20),
     maxAttachmentSizeMb: optionalInt("SOS_MAX_ATTACHMENT_SIZE_MB", 10),
+    workspaceRoot: process.env.SOS_WORKSPACE_ROOT || "",
+    repoRegistryPath: process.env.SOS_REPO_REGISTRY || "",
+    ghBotLogins: (process.env.SOS_GH_BOT_LOGINS || "son-of-steve,son-of-steve[bot]")
+      .split(",")
+      .map((s) => s.trim())
+      .filter(Boolean),
   };
 }
 

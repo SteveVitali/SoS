@@ -1,15 +1,19 @@
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
-import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
+import { Link, Route, Routes, useLocation, useNavigate, useParams } from "react-router-dom";
 import {
   cancelJob,
   createJob,
   createRespondToCommentsJob,
   deleteJob,
+  fetchPrStats,
+  type GitHubPr,
   getJob,
   getUsers,
   type Job,
   listJobs,
+  listPrs,
+  type PrCommentStats,
   promotePr,
   resolveSlackUsers,
   respondToComments,
@@ -496,6 +500,16 @@ function JobsList() {
     return () => clearInterval(timer);
   }, [load]);
 
+  // Fetch PR comment stats for jobs with PR URLs
+  const [prStats, setPrStats] = useState<Record<string, PrCommentStats>>({});
+  useEffect(() => {
+    const urls = [...new Set(jobs.flatMap((j) => j.pr_urls || []))];
+    if (urls.length === 0) return;
+    fetchPrStats(urls)
+      .then(setPrStats)
+      .catch(() => {});
+  }, [jobs]);
+
   // Resolve Slack display names for all visible user IDs
   const allUserIds = [...new Set([...users, ...jobs.map((j) => j.requested_by)])];
   useSlackNames(allUserIds);
@@ -766,18 +780,54 @@ function JobsList() {
                     {job.pr_urls?.length ? (
                       <>
                         <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
-                        {job.pr_urls.map((url, i) => (
-                          <a
-                            key={i}
-                            href={url}
-                            target="_blank"
-                            rel="noopener"
-                            style={{ ...css.mono, marginRight: 8 }}
-                            onClick={(e) => e.stopPropagation()}
-                          >
-                            {formatPrUrl(url)}
-                          </a>
-                        ))}
+                        {job.pr_urls.map((url, i) => {
+                          const stats = prStats[url];
+                          return (
+                            <span
+                              key={i}
+                              style={{
+                                display: "inline-flex",
+                                alignItems: "center",
+                                gap: 4,
+                                marginRight: 8,
+                              }}
+                            >
+                              <a
+                                href={url}
+                                target="_blank"
+                                rel="noopener"
+                                style={css.mono}
+                                onClick={(e) => e.stopPropagation()}
+                              >
+                                {formatPrUrl(url)}
+                              </a>
+                              {stats && stats.unresolved_threads > 0 && (
+                                <span
+                                  style={{
+                                    ...css.badge("#f59e0b"),
+                                    fontSize: 10,
+                                    padding: "1px 5px",
+                                  }}
+                                  title={`${stats.unresolved_threads} unresolved review threads`}
+                                >
+                                  {stats.unresolved_threads}
+                                </span>
+                              )}
+                              {stats && stats.unaddressed_threads > 0 && (
+                                <span
+                                  style={{
+                                    ...css.badge("#ef4444"),
+                                    fontSize: 10,
+                                    padding: "1px 5px",
+                                  }}
+                                  title={`${stats.unaddressed_threads} threads need reply`}
+                                >
+                                  {stats.unaddressed_threads}!
+                                </span>
+                              )}
+                            </span>
+                          );
+                        })}
                       </>
                     ) : null}
                   </div>
@@ -1336,6 +1386,264 @@ function JobDetail() {
   );
 }
 
+// --- PRs List ---
+function PrsList() {
+  const navigate = useNavigate();
+  const [prs, setPrs] = useState<GitHubPr[]>([]);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [state, setState] = useState<"open" | "closed" | "merged" | "all">("open");
+  const [limit, setLimit] = useState(20);
+  const [responding, setResponding] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await listPrs({ state, limit });
+      setPrs(res.prs);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, [state, limit]);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  useEffect(() => {
+    const timer = setInterval(load, 30_000);
+    return () => clearInterval(timer);
+  }, [load]);
+
+  const handleRespondToComments = async (pr: GitHubPr) => {
+    setResponding(pr.url);
+    try {
+      const requestedBy = localStorage.getItem("sos_last_user") || "";
+      if (!requestedBy) {
+        setError("Set your user ID first (create a job to save it)");
+        return;
+      }
+      const res = await createRespondToCommentsJob({
+        requested_by: requestedBy,
+        pr_url: pr.url,
+      });
+      navigate(`/jobs/${res.job.task_id}`);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setResponding(null);
+    }
+  };
+
+  const fetchMore = () => {
+    setLimit((l) => l + 20);
+  };
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        <h2 style={{ fontSize: 18, fontWeight: 600 }}>Pull Requests ({prs.length})</h2>
+        <button style={css.btn} onClick={load}>
+          ↻ Refresh
+        </button>
+      </div>
+      <div style={css.filters}>
+        <select
+          style={css.select}
+          value={state}
+          onChange={(e) => {
+            setState(e.target.value as any);
+            setLimit(20);
+          }}
+        >
+          <option value="open">Open</option>
+          <option value="closed">Closed</option>
+          <option value="merged">Merged</option>
+          <option value="all">All</option>
+        </select>
+      </div>
+      {error && <div style={css.error}>{error}</div>}
+      {loading && prs.length === 0 ? (
+        <div style={{ color: "var(--fg2)", padding: 20 }}>Loading PRs...</div>
+      ) : prs.length === 0 ? (
+        <div style={{ color: "var(--fg2)", padding: 20 }}>No pull requests found.</div>
+      ) : (
+        <>
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {prs.map((pr) => {
+              const hasUnaddressed = pr.comments && pr.comments.unaddressed_threads > 0;
+              const hasUnresolved = pr.comments && pr.comments.unresolved_threads > 0;
+              return (
+                <div
+                  key={pr.url}
+                  style={{
+                    padding: "12px 14px",
+                    borderBottom: "1px solid var(--border)",
+                    borderRadius: 6,
+                    transition: "background 0.1s",
+                  }}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = "var(--bg2)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                  }}
+                >
+                  {/* Line 1: state badge + title + actions */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <span
+                      style={css.badge(
+                        pr.state === "OPEN"
+                          ? pr.isDraft
+                            ? "#6b7280"
+                            : "#22c55e"
+                          : pr.state === "MERGED"
+                            ? "#a855f7"
+                            : "#ef4444",
+                      )}
+                    >
+                      {pr.isDraft ? "DRAFT" : pr.state}
+                    </span>
+                    <a
+                      href={pr.url}
+                      target="_blank"
+                      rel="noopener"
+                      style={{
+                        ...css.link,
+                        fontWeight: 500,
+                        flex: 1,
+                        minWidth: 0,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      onClick={(e) => e.stopPropagation()}
+                    >
+                      {pr.title}
+                    </a>
+                    <div style={{ display: "flex", alignItems: "center", gap: 8, flexShrink: 0 }}>
+                      {/* Comment stats badges */}
+                      {pr.comments && (
+                        <div style={{ display: "flex", gap: 6, fontSize: 11 }}>
+                          {pr.comments.total_threads > 0 && (
+                            <span
+                              style={{
+                                ...css.badge("#6b7280"),
+                                fontSize: 11,
+                              }}
+                              title={`${pr.comments.total_threads} review threads, ${pr.comments.total_comments} comments total`}
+                            >
+                              {pr.comments.total_threads} threads
+                            </span>
+                          )}
+                          {hasUnresolved && (
+                            <span
+                              style={{
+                                ...css.badge("#f59e0b"),
+                                fontSize: 11,
+                              }}
+                              title={`${pr.comments.unresolved_threads} unresolved review threads`}
+                            >
+                              {pr.comments.unresolved_threads} unresolved
+                            </span>
+                          )}
+                          {hasUnaddressed && (
+                            <span
+                              style={{
+                                ...css.badge("#ef4444"),
+                                fontSize: 11,
+                              }}
+                              title={`${pr.comments.unaddressed_threads} threads awaiting response (last comment not from bot)`}
+                            >
+                              {pr.comments.unaddressed_threads} needs reply
+                            </span>
+                          )}
+                        </div>
+                      )}
+                      {/* Respond button */}
+                      {hasUnaddressed && (
+                        <button
+                          style={css.btnSmall}
+                          disabled={responding === pr.url}
+                          onClick={(e) => {
+                            e.stopPropagation();
+                            handleRespondToComments(pr);
+                          }}
+                        >
+                          {responding === pr.url ? "..." : "Respond"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+
+                  {/* Line 2: metadata chips */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "4px 0",
+                      marginTop: 6,
+                      fontSize: 12,
+                      color: "var(--fg3)",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span style={css.mono}>
+                      {pr.repoFullName}#{pr.number}
+                    </span>
+                    <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                    <span>{pr.author}</span>
+                    <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                    <span style={css.mono}>{pr.headRefName}</span>
+                    <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                    <span
+                      style={{ color: "var(--fg3)" }}
+                      title={new Date(pr.updatedAt).toLocaleString()}
+                    >
+                      {relativeTime(pr.updatedAt)}
+                    </span>
+                    <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                    <span style={{ color: "#22c55e" }}>+{pr.additions}</span>
+                    <span style={{ margin: "0 4px" }}>/</span>
+                    <span style={{ color: "#ef4444" }}>-{pr.deletions}</span>
+                    {pr.linkedJobTaskId && (
+                      <>
+                        <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                        <Link
+                          to={`/jobs/${pr.linkedJobTaskId}`}
+                          style={{ ...css.link, ...css.mono, fontSize: 11 }}
+                          onClick={(e) => e.stopPropagation()}
+                        >
+                          job {pr.linkedJobTaskId.slice(0, 8)}
+                        </Link>
+                      </>
+                    )}
+                  </div>
+                </div>
+              );
+            })}
+          </div>
+          <div style={{ display: "flex", justifyContent: "center", marginTop: 16 }}>
+            <button style={css.btn} onClick={fetchMore} disabled={loading}>
+              {loading ? "Loading..." : "Fetch more"}
+            </button>
+          </div>
+        </>
+      )}
+    </div>
+  );
+}
+
 // --- Create Job Form ---
 function CreateJobForm() {
   const navigate = useNavigate();
@@ -1531,13 +1839,37 @@ function CreateJobForm() {
   );
 }
 
+// --- Nav Tab ---
+function NavTab({ to, label, active }: { to: string; label: string; active: boolean }) {
+  return (
+    <Link
+      to={to}
+      style={{
+        padding: "8px 16px",
+        borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+        color: active ? "var(--fg)" : "var(--fg3)",
+        fontWeight: active ? 600 : 400,
+        fontSize: 14,
+        textDecoration: "none",
+        transition: "color 0.1s, border-color 0.1s",
+      }}
+    >
+      {label}
+    </Link>
+  );
+}
+
 // --- App Shell ---
 export function App() {
   const [authed, setAuthed] = useState(() => !!localStorage.getItem("sos_token"));
+  const location = useLocation();
 
   if (!authed) {
     return <TokenSetup onSet={() => setAuthed(true)} />;
   }
+
+  const isJobsTab = location.pathname === "/" || location.pathname.startsWith("/jobs");
+  const isPrsTab = location.pathname === "/prs";
 
   return (
     <div style={css.container}>
@@ -1546,6 +1878,10 @@ export function App() {
           <Link to="/" style={{ textDecoration: "none" }}>
             <span style={css.title}>Son of Steve</span>
           </Link>
+          <div style={{ display: "flex", gap: 0, marginLeft: 16 }}>
+            <NavTab to="/" label="Jobs" active={isJobsTab} />
+            <NavTab to="/prs" label="PRs" active={isPrsTab} />
+          </div>
         </div>
         <div style={css.nav}>
           <button
@@ -1562,6 +1898,7 @@ export function App() {
 
       <Routes>
         <Route path="/" element={<JobsList />} />
+        <Route path="/prs" element={<PrsList />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />
         <Route path="/jobs/:taskId" element={<JobDetail />} />
       </Routes>
