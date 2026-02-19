@@ -76,6 +76,15 @@ export interface Job {
   };
   events?: Array<{ at: string; node_id?: string; type: string; payload?: any }>;
   parent_task_id?: string;
+  needs_plan?: boolean;
+  plan?: {
+    summary: string;
+    generated_at?: string;
+    model?: string;
+    input_tokens?: number;
+    output_tokens?: number;
+    cost_usd?: number;
+  };
 }
 
 export async function listJobs(params: {
@@ -127,6 +136,12 @@ export async function promotePr(taskId: string, reviewers?: string[]): Promise<{
 
 export async function respondToComments(taskId: string): Promise<{ job: Job }> {
   return request("POST", `/jobs/${taskId}/respond-to-comments`);
+}
+
+export async function confirmPlan(taskId: string, revisedTaskText?: string): Promise<{ job: Job }> {
+  return request("POST", `/jobs/${taskId}/confirm-plan`, {
+    ...(revisedTaskText ? { revised_task_text: revisedTaskText } : {}),
+  });
 }
 
 export async function createRespondToCommentsJob(data: {

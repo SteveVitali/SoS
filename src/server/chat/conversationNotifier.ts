@@ -30,8 +30,10 @@ function formatStatusMessage(job: JobDoc, eventType: string): string {
       return `Job \`${tid}…\` awaiting approval${prs}`;
     }
     case "PENDING_CONFIRMATION": {
-      const planText = job.plan?.summary ? `\n${job.plan.summary.slice(0, 500)}` : "";
-      return `📝 Plan ready for job \`${tid}…\`${planText}\n\n_Reply "go" to confirm, or ask questions._`;
+      const planPreview = job.plan?.summary
+        ? ` ${job.plan.summary.replace(/\n/g, " ").slice(0, 200)}…`
+        : "";
+      return `📝 Plan ready for job \`${tid}…\`${planPreview}\n\n_Reply "go" to confirm, or ask questions._`;
     }
     case "PLAN_CONFIRMED":
       return `✅ Plan confirmed for job \`${tid}…\` — executing`;

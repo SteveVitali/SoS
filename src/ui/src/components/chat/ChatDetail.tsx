@@ -1,4 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
+import Markdown from "react-markdown";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   type Conversation,
@@ -17,6 +18,42 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
   const isSystem = msg.role === "system";
 
   if (isSystem) {
+    const isPlanMessage = msg.action?.command === "pending_confirmation";
+
+    if (isPlanMessage) {
+      return (
+        <div style={{ margin: "10px 0" }}>
+          <div
+            style={{
+              background: "var(--bg2)",
+              border: "1px solid var(--border)",
+              borderRadius: 10,
+              padding: "12px 16px",
+              fontSize: 13,
+              color: "var(--fg2)",
+              lineHeight: 1.6,
+            }}
+          >
+            {msg.action?.task_id && (
+              <Link
+                to={`/jobs/${msg.action.task_id}`}
+                style={{ color: "var(--accent2)", textDecoration: "none", marginRight: 6 }}
+              >
+                {shortId(msg.action.task_id)}…
+              </Link>
+            )}
+            <div className="plan-markdown" style={{ marginTop: 6 }}>
+              <Markdown>{msg.text}</Markdown>
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 3, paddingLeft: 4 }}>
+            Steve ·{" "}
+            {new Date(msg.at).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" })}
+          </div>
+        </div>
+      );
+    }
+
     return (
       <div
         style={{

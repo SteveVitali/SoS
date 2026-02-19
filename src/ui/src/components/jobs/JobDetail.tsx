@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
+import Markdown from "react-markdown";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
   cancelJob,
+  confirmPlan,
   deleteJob,
   getJob,
   type Job,
@@ -47,7 +49,7 @@ export function JobDetail() {
   }, [load]);
 
   const handleAction = async (
-    action: "cancel" | "retry" | "delete" | "promote" | "respond_comments",
+    action: "cancel" | "retry" | "delete" | "promote" | "respond_comments" | "confirm_plan",
   ) => {
     if (!taskId) return;
     setActionError("");
@@ -72,6 +74,10 @@ export function JobDetail() {
         const res = await respondToComments(taskId);
         refreshJobs();
         navigate(`/jobs/${res.job.task_id}`);
+      } else if (action === "confirm_plan") {
+        await confirmPlan(taskId);
+        load();
+        refreshJobs();
       }
     } catch (err: unknown) {
       setActionError(err instanceof Error ? err.message : String(err));
@@ -128,9 +134,20 @@ export function JobDetail() {
             <button style={css.btn} onClick={load}>
               ↻
             </button>
-            {["QUEUED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(job.status) && (
+            {[
+              "QUEUED",
+              "RUNNING",
+              "FIXING_CI",
+              "WAITING_FOR_APPROVAL",
+              "PENDING_CONFIRMATION",
+            ].includes(job.status) && (
               <button style={css.btnDanger} onClick={() => handleAction("cancel")}>
                 Cancel
+              </button>
+            )}
+            {job.status === "PENDING_CONFIRMATION" && (
+              <button style={css.btnPrimary} onClick={() => handleAction("confirm_plan")}>
+                ✅ Confirm Plan
               </button>
             )}
             {job.status === "WAITING_FOR_APPROVAL" && (
@@ -211,6 +228,60 @@ export function JobDetail() {
               </>
             )}
           </div>
+        </div>
+      )}
+
+      {/* Plan */}
+      {job.plan?.summary && (
+        <div style={css.card}>
+          <div style={{ display: "flex", justifyContent: "space-between", alignItems: "center" }}>
+            <div style={css.sectionTitle}>📋 Plan</div>
+            {job.plan.generated_at && (
+              <span style={{ fontSize: 12, color: "var(--fg3)" }}>
+                Generated {relativeTime(job.plan.generated_at)}
+              </span>
+            )}
+          </div>
+          <div
+            className="plan-markdown"
+            style={{
+              background: "var(--bg)",
+              padding: 16,
+              borderRadius: "var(--radius)",
+              border: "1px solid var(--border)",
+              fontSize: 13,
+              lineHeight: 1.6,
+              color: "var(--fg)",
+              overflow: "auto",
+              maxHeight: 600,
+            }}
+          >
+            <Markdown>{job.plan.summary}</Markdown>
+          </div>
+          {job.status === "PENDING_CONFIRMATION" && (
+            <div
+              style={{
+                marginTop: 12,
+                padding: "10px 14px",
+                background: "#3b82f611",
+                border: "1px solid #3b82f633",
+                borderRadius: "var(--radius)",
+                fontSize: 13,
+                color: "var(--fg2)",
+                display: "flex",
+                alignItems: "center",
+                justifyContent: "space-between",
+              }}
+            >
+              <span>Review the plan above, then confirm to start execution.</span>
+              <button
+                style={{ ...css.btnPrimary, padding: "6px 14px", fontSize: 13 }}
+                onClick={() => handleAction("confirm_plan")}
+              >
+                ✅ Confirm & Execute
+              </button>
+            </div>
+          )}
         </div>
       )}
 

@@ -2,6 +2,8 @@ import type React from "react";
 
 export const STATUS_COLORS: Record<string, string> = {
   QUEUED: "#3b82f6",
+  PLANNING: "#818cf8",
+  PENDING_CONFIRMATION: "#a855f7",
   RUNNING: "#eab308",
   FIXING_CI: "#f97316",
   WAITING_FOR_APPROVAL: "#a855f7",
@@ -15,6 +17,9 @@ export const EVENT_LABELS: Record<string, string> = {
   COMMENTS_FETCHED: "Comments Fetched",
   COMMENT_ADDRESSED: "Comment Addressed",
   COMMENTS_PUSHED: "Comments Pushed",
+  PLAN_STARTED: "Plan Started",
+  PLAN_GENERATED: "Plan Generated",
+  PLAN_CONFIRMED: "Plan Confirmed",
 };
 
 export const TERMINAL_EVENT_TYPES = new Set(["DONE", "FAILED", "CANCELED", "QUEUED", "REAPED"]);

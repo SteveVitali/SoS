@@ -26,10 +26,19 @@ export function EventsTimeline({ job }: { job: Job }) {
                 )}
               </div>
               {ev.payload && (
-                <div style={{ ...css.pre, marginTop: 4, fontSize: 11, maxHeight: 120 }}>
-                  {typeof ev.payload === "string"
-                    ? ev.payload
-                    : JSON.stringify(ev.payload, null, 2)}
+                <div
+                  style={{
+                    ...css.pre,
+                    marginTop: 4,
+                    fontSize: 11,
+                    maxHeight: ev.type === "PLAN_GENERATED" ? 300 : 120,
+                  }}
+                >
+                  {ev.type === "PLAN_GENERATED" && ev.payload.summary
+                    ? ev.payload.summary
+                    : typeof ev.payload === "string"
+                      ? ev.payload
+                      : JSON.stringify(ev.payload, null, 2)}
                 </div>
               )}
             </div>
