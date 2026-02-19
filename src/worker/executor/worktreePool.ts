@@ -60,6 +60,11 @@ function removeLockfile(worktreePath: string): void {
 
 const log = createLogger("worker:worktreePool");
 
+/** Canonical local branch name for a worktree slot at rest. Never pushed to remote. */
+function baseBranchName(slotName: string): string {
+  return `worktree/${slotName}-base`;
+}
+
 export interface WorktreeSlot {
   slotName: string; // e.g. "son-of-steve-n-1"
   slotIndex: number; // 1-based
@@ -69,8 +74,14 @@ export interface WorktreeSlot {
 
 interface SlotState {
   slot: WorktreeSlot;
-  inUse: boolean; // true when a job is actively using it
-  taskId?: string; // which task_id currently holds the slot
+  inUse: boolean;
+  taskId?: string;
+  /** Repo entry — set on acquire, used by release for cleanup. */
+  repo?: RepoEntry;
+  /** Path to the bare clone — set on acquire, used by release for fetch. */
+  clonePath?: string;
+  /** The feature branch checked out during the job — deleted on release. */
+  currentBranch?: string;
 }
 
 /**
@@ -107,6 +118,9 @@ class WorktreePoolImpl {
           taskId,
         });
         this.resetWorktree(state.slot, repo, clonePath, branch);
+        state.repo = repo;
+        state.clonePath = clonePath;
+        state.currentBranch = branch;
         writeLockfile(state.slot.worktreePath, taskId);
         return state.slot;
       }
@@ -117,7 +131,14 @@ class WorktreePoolImpl {
       const slotIndex = states.length + 1;
       const slot = this.createSlot(repo, clonePath, slotIndex, branch);
       writeLockfile(slot.worktreePath, taskId);
-      const state: SlotState = { slot, inUse: true, taskId };
+      const state: SlotState = {
+        slot,
+        inUse: true,
+        taskId,
+        repo,
+        clonePath,
+        currentBranch: branch,
+      };
       states.push(state);
       log.info("Created new worktree slot", {
         slot: slot.slotName,
@@ -162,6 +183,9 @@ class WorktreePoolImpl {
           branch: remoteBranch,
         });
         this.resetWorktreeToRemoteBranch(state.slot, repo, clonePath, remoteBranch);
+        state.repo = repo;
+        state.clonePath = clonePath;
+        state.currentBranch = remoteBranch;
         writeLockfile(state.slot.worktreePath, taskId);
         return state.slot;
       }
@@ -172,7 +196,14 @@ class WorktreePoolImpl {
       const slotIndex = states.length + 1;
       const slot = this.createSlotForExistingBranch(repo, clonePath, slotIndex, remoteBranch);
       writeLockfile(slot.worktreePath, taskId);
-      const state: SlotState = { slot, inUse: true, taskId };
+      const state: SlotState = {
+        slot,
+        inUse: true,
+        taskId,
+        repo,
+        clonePath,
+        currentBranch: remoteBranch,
+      };
       states.push(state);
       log.info("Created new worktree slot for existing branch", {
         slot: slot.slotName,
@@ -193,20 +224,36 @@ class WorktreePoolImpl {
 
   /**
    * Release a worktree slot back to the pool.
+   * Parks the worktree on its base branch with latest main so the feature
+   * branch is freed for checkout from other repos.
    */
   release(repoId: string, slotName: string): void {
     const states = this.slots.get(repoId);
     if (!states) return;
     const state = states.find((s) => s.slot.slotName === slotName);
-    if (state) {
-      log.info("Released worktree slot", {
-        slot: slotName,
-        taskId: state.taskId,
-      });
-      removeLockfile(state.slot.worktreePath);
-      state.inUse = false;
-      state.taskId = undefined;
+    if (!state) return;
+
+    log.info("Releasing worktree slot", {
+      slot: slotName,
+      taskId: state.taskId,
+    });
+    removeLockfile(state.slot.worktreePath);
+
+    // Best-effort: park the worktree on its base branch with latest main
+    if (state.repo && state.clonePath) {
+      try {
+        this.parkOnBaseBranch(state.slot, state.repo, state.clonePath, state.currentBranch);
+      } catch (err: any) {
+        log.warn("Failed to park worktree on base branch during release", {
+          slot: slotName,
+          error: err.message,
+        });
+      }
     }
+
+    state.inUse = false;
+    state.taskId = undefined;
+    state.currentBranch = undefined;
   }
 
   /**
@@ -307,17 +354,21 @@ class WorktreePoolImpl {
   ): WorktreeSlot {
     const slotName = `${repo.id}-n-${slotIndex}`;
     const worktreePath = path.join(this.workspaceRoot, "worktrees", slotName);
+    const base = baseBranchName(slotName);
 
     mkdirSync(path.dirname(worktreePath), { recursive: true });
 
     // Prune stale worktree references before adding
     this.gitExec("git worktree prune", clonePath);
 
-    log.info("Creating worktree slot", { slotName, worktreePath, branch });
+    log.info("Creating worktree slot", { slotName, worktreePath, branch, baseBranch: base });
     this.gitExec(
-      `git worktree add ${worktreePath} -b ${branch} origin/${repo.default_branch}`,
+      `git worktree add ${worktreePath} -b ${base} origin/${repo.default_branch}`,
       clonePath,
     );
+
+    // Create the feature branch from the base
+    this.gitExec(`git checkout -b ${branch}`, worktreePath);
 
     return { slotName, slotIndex, worktreePath, repoId: repo.id };
   }
@@ -330,6 +381,7 @@ class WorktreePoolImpl {
   ): WorktreeSlot {
     const slotName = `${repo.id}-n-${slotIndex}`;
     const worktreePath = path.join(this.workspaceRoot, "worktrees", slotName);
+    const base = baseBranchName(slotName);
 
     mkdirSync(path.dirname(worktreePath), { recursive: true });
     if (existsSync(worktreePath)) {
@@ -338,15 +390,20 @@ class WorktreePoolImpl {
     }
     this.gitExec("git worktree prune", clonePath);
 
-    // Fetch the remote branch and create worktree tracking it
+    // Fetch the remote branch
     this.gitExec(`git fetch origin ${remoteBranch}`, clonePath);
     log.info("Creating worktree slot for existing branch", {
       slotName,
       worktreePath,
       remoteBranch,
+      baseBranch: base,
     });
-    this.gitExec(`git worktree add ${worktreePath} origin/${remoteBranch}`, clonePath);
-    // Checkout as a local branch tracking remote
+
+    // Create worktree on base branch, then checkout the remote branch
+    this.gitExec(
+      `git worktree add ${worktreePath} -b ${base} origin/${repo.default_branch}`,
+      clonePath,
+    );
     this.gitExec(`git checkout -B ${remoteBranch} origin/${remoteBranch}`, worktreePath);
 
     return { slotName, slotIndex, worktreePath, repoId: repo.id };
@@ -359,15 +416,19 @@ class WorktreePoolImpl {
     remoteBranch: string,
   ): void {
     const { worktreePath } = slot;
+    const base = baseBranchName(slot.slotName);
 
-    // Fetch latest
-    this.gitExec(`git fetch origin ${remoteBranch}`, clonePath);
+    // Fetch the remote branch and default branch
+    this.gitExec(`git fetch origin ${remoteBranch} ${repo.default_branch}`, clonePath);
 
     if (!existsSync(worktreePath)) {
       log.info("Worktree dir missing, recreating for existing branch", { slot: slot.slotName });
       this.gitExec("git worktree prune", clonePath);
       mkdirSync(path.dirname(worktreePath), { recursive: true });
-      this.gitExec(`git worktree add ${worktreePath} origin/${remoteBranch}`, clonePath);
+      this.gitExec(
+        `git worktree add ${worktreePath} -b ${base} origin/${repo.default_branch}`,
+        clonePath,
+      );
       this.gitExec(`git checkout -B ${remoteBranch} origin/${remoteBranch}`, worktreePath);
       return;
     }
@@ -378,7 +439,9 @@ class WorktreePoolImpl {
     });
 
     this.gitExec("git reset --hard HEAD", worktreePath);
-    this.gitExec(`git checkout origin/${repo.default_branch} --detach`, worktreePath);
+
+    // Ensure base branch exists and is up to date
+    this.gitExec(`git checkout -B ${base} origin/${repo.default_branch}`, worktreePath);
 
     if (repo.clean_mode === "full") {
       this.gitExec("git clean -fdx", worktreePath);
@@ -402,16 +465,20 @@ class WorktreePoolImpl {
     branch: string,
   ): void {
     const { worktreePath } = slot;
+    const base = baseBranchName(slot.slotName);
+
+    // Fetch latest default branch
+    this.gitExec(`git fetch origin ${repo.default_branch}`, clonePath);
 
     if (!existsSync(worktreePath)) {
-      // Worktree dir was removed — recreate it
       log.info("Worktree dir missing, recreating", { slot: slot.slotName });
       this.gitExec("git worktree prune", clonePath);
       mkdirSync(path.dirname(worktreePath), { recursive: true });
       this.gitExec(
-        `git worktree add ${worktreePath} -b ${branch} origin/${repo.default_branch}`,
+        `git worktree add ${worktreePath} -b ${base} origin/${repo.default_branch}`,
         clonePath,
       );
+      this.gitExec(`git checkout -b ${branch}`, worktreePath);
       return;
     }
 
@@ -420,19 +487,17 @@ class WorktreePoolImpl {
     // Reset first to clear modified tracked files (e.g. package-lock.json from npm install)
     this.gitExec("git reset --hard HEAD", worktreePath);
 
-    // Detach HEAD and reset to remote default branch (clone was already fetched by ensureClone)
-    this.gitExec(`git checkout origin/${repo.default_branch} --detach`, worktreePath);
+    // Ensure base branch exists and is up to date with latest main
+    this.gitExec(`git checkout -B ${base} origin/${repo.default_branch}`, worktreePath);
 
     // Clean working tree
     if (repo.clean_mode === "full") {
-      // Remove everything including .gitignore'd files (build caches etc.)
       this.gitExec("git clean -fdx", worktreePath);
     } else {
-      // Light: only remove untracked files, keep .gitignore'd (build artifacts)
       this.gitExec("git clean -fd", worktreePath);
     }
 
-    // Delete old local branch if it exists, then create fresh one
+    // Delete old local branch if it exists, then create fresh feature branch
     try {
       this.gitExec(`git branch -D ${branch}`, worktreePath);
     } catch {
@@ -440,6 +505,51 @@ class WorktreePoolImpl {
     }
 
     this.gitExec(`git checkout -b ${branch}`, worktreePath);
+  }
+
+  /**
+   * Park the worktree on its base branch with latest main.
+   * Deletes the feature branch so it can be checked out from other repos.
+   */
+  private parkOnBaseBranch(
+    slot: WorktreeSlot,
+    repo: RepoEntry,
+    clonePath: string,
+    featureBranch?: string,
+  ): void {
+    const { worktreePath } = slot;
+    if (!existsSync(worktreePath)) return;
+
+    const base = baseBranchName(slot.slotName);
+
+    // Fetch latest default branch
+    this.gitExec(`git fetch origin ${repo.default_branch}`, clonePath);
+
+    // Clean working tree
+    this.gitExec("git reset --hard HEAD", worktreePath);
+    if (repo.clean_mode === "full") {
+      this.gitExec("git clean -fdx", worktreePath);
+    } else {
+      this.gitExec("git clean -fd", worktreePath);
+    }
+
+    // Checkout base branch (create if needed), reset to latest main
+    this.gitExec(`git checkout -B ${base} origin/${repo.default_branch}`, worktreePath);
+
+    // Delete the feature branch so it can be checked out from the main repo
+    if (featureBranch) {
+      try {
+        this.gitExec(`git branch -D ${featureBranch}`, worktreePath);
+      } catch {
+        /* branch may not exist locally */
+      }
+    }
+
+    log.info("Parked worktree on base branch", {
+      slot: slot.slotName,
+      baseBranch: base,
+      deletedBranch: featureBranch,
+    });
   }
 
   private gitExec(cmd: string, cwd: string): string {

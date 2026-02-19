@@ -11,6 +11,7 @@ vi.mock("node:fs", () => ({
   mkdirSync: vi.fn(),
   readdirSync: vi.fn(() => []),
   readFileSync: vi.fn(() => ""),
+  rmSync: vi.fn(),
   writeFileSync: vi.fn(),
   unlinkSync: vi.fn(),
 }));
@@ -18,6 +19,7 @@ vi.mock("node:fs", () => ({
 // Import after mocks are set up
 const { worktreePool } = await import("./worktreePool.js");
 const { existsSync, readFileSync, readdirSync } = await import("node:fs");
+const { execSync } = await import("node:child_process");
 
 function makeRepo(overrides: Partial<RepoEntry> = {}): RepoEntry {
   return {
@@ -40,6 +42,7 @@ describe("WorktreePool", () => {
     // Default: existsSync returns true (worktree dir exists), readdirSync returns empty
     vi.mocked(existsSync).mockReturnValue(true);
     vi.mocked(readdirSync).mockReturnValue([]);
+    vi.mocked(execSync).mockImplementation(() => "");
   });
 
   afterEach(() => {
@@ -102,6 +105,40 @@ describe("WorktreePool", () => {
     it("is a no-op for unknown repo", () => {
       // Should not throw
       worktreePool.release("nonexistent", "fake-slot");
+    });
+
+    it("parks worktree on base branch and deletes feature branch", () => {
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      expect(slot).not.toBeNull();
+
+      vi.mocked(execSync).mockClear();
+      worktreePool.release("my-repo", slot!.slotName);
+
+      const calls = vi.mocked(execSync).mock.calls.map((c) => c[0]);
+      // Should fetch origin main
+      expect(calls.some((c) => (c as string).includes("git fetch origin main"))).toBe(true);
+      // Should checkout base branch
+      expect(
+        calls.some((c) => (c as string).includes("checkout -B worktree/my-repo-n-1-base")),
+      ).toBe(true);
+      // Should delete the feature branch
+      expect(calls.some((c) => (c as string).includes("branch -D sos/branch-1"))).toBe(true);
+    });
+
+    it("does not throw if park fails", () => {
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      expect(slot).not.toBeNull();
+
+      // Make git commands fail during release
+      vi.mocked(execSync).mockImplementation(() => {
+        throw new Error("git failed");
+      });
+
+      // Should not throw — park is best-effort
+      expect(() => worktreePool.release("my-repo", slot!.slotName)).not.toThrow();
+      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(false);
     });
   });
 
