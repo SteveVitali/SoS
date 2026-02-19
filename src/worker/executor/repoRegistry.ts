@@ -31,6 +31,30 @@ export interface RepoRegistry {
   repos: Map<string, RepoEntry>;
 }
 
+/** Match a GitHub owner/repo (e.g. "foursquare/fsq-graph") against a clone URL. */
+function cloneUrlMatches(cloneUrl: string, owner: string, repo: string): boolean {
+  // SSH: git@github.com:foursquare/fsq-graph.git
+  // HTTPS: https://github.com/foursquare/fsq-graph.git
+  const normalized = cloneUrl.replace(/\.git$/, "").toLowerCase();
+  const needle = `${owner}/${repo}`.toLowerCase();
+  return normalized.endsWith(needle);
+}
+
+/** Find a repo registry entry matching a GitHub PR URL's owner/repo. */
+export function findRepoByGitHubUrl(
+  registry: RepoRegistry,
+  owner: string,
+  repo: string,
+): RepoEntry | null {
+  for (const entry of registry.repos.values()) {
+    if (cloneUrlMatches(entry.clone, owner, repo)) return entry;
+  }
+  // Fallback: try matching by repo ID (e.g. "fsq-graph")
+  const byId = registry.repos.get(repo);
+  if (byId) return byId;
+  return null;
+}
+
 export function loadRegistry(path: string): RepoRegistry {
   try {
     const raw = readFileSync(path, "utf-8");

@@ -12,6 +12,7 @@ export interface RoutedAction {
     | "cancel_job"
     | "retry_job"
     | "promote_pr"
+    | "respond_to_pr_comments"
     | "list_jobs"
     | "chat"
     | "no_op";
@@ -34,6 +35,7 @@ You will receive the full conversation history from the Slack thread. Messages a
 - **cancel_job**: The user wants to cancel a running job. Extract the task_id.
 - **retry_job**: The user wants to retry a failed job. Extract the task_id.
 - **promote_pr**: The user wants to promote a draft PR to ready-for-review. This applies when a job is in WAITING_FOR_APPROVAL status. Extract the task_id and optional reviewer GitHub usernames.
+- **respond_to_pr_comments**: The user wants the agent to respond to PR review comments. They may provide a task_id (to look up the PR from an existing job) or a direct PR URL (for any GitHub PR, not just ones created by Son of Steve). Extract either task_id or pr_url.
 - **list_jobs**: The user wants to see recent jobs. Optionally extract a limit.
 - **chat**: The user is just talking, asking a question about you, saying hi, or their message doesn't map to any action. Just respond conversationally as Steve.
 - **no_op**: The latest message in the thread is NOT directed at you and doesn't require your response. Use this when people are having a side conversation in the thread, or when someone replies to someone else and it's clear the bot shouldn't chime in. When in doubt between chat and no_op, prefer no_op — don't be annoying.
@@ -123,6 +125,26 @@ const TOOLS: ToolDefinition[] = [
         },
       },
       required: ["task_id"],
+    },
+  },
+  {
+    name: "respond_to_pr_comments",
+    description:
+      "Respond to unresolved PR review comments. The agent will check out the PR branch, address each comment thread with code changes or explanations, and reply on GitHub.",
+    parameters: {
+      type: "object",
+      properties: {
+        task_id: {
+          type: "string",
+          description: "Full or partial task_id of an existing job (to look up its PR URL)",
+        },
+        pr_url: {
+          type: "string",
+          description:
+            "Direct GitHub PR URL (e.g. https://github.com/org/repo/pull/123). Use this when the PR wasn't created by Son of Steve.",
+        },
+      },
+      required: [],
     },
   },
   {

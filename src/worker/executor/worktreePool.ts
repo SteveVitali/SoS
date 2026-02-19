@@ -138,6 +138,59 @@ class WorktreePoolImpl {
   }
 
   /**
+   * Acquire a slot and check out an existing remote branch (e.g. for respond_to_pr_comments).
+   * Unlike acquire(), this does NOT create a new branch — it checks out an existing one.
+   */
+  acquireExistingBranch(
+    repo: RepoEntry,
+    clonePath: string,
+    taskId: string,
+    remoteBranch: string,
+  ): WorktreeSlot | null {
+    const states = this.getOrCreateStates(repo, clonePath);
+    this.reconcileLocks(states);
+
+    // Find a free slot
+    for (const state of states) {
+      if (!state.inUse) {
+        state.inUse = true;
+        state.taskId = taskId;
+        log.info("Acquired existing worktree slot for existing branch", {
+          slot: state.slot.slotName,
+          taskId,
+          branch: remoteBranch,
+        });
+        this.resetWorktreeToRemoteBranch(state.slot, repo, clonePath, remoteBranch);
+        writeLockfile(state.slot.worktreePath, taskId);
+        return state.slot;
+      }
+    }
+
+    // Create new slot if room
+    if (states.length < repo.max_worktrees) {
+      const slotIndex = states.length + 1;
+      const slot = this.createSlotForExistingBranch(repo, clonePath, slotIndex, remoteBranch);
+      writeLockfile(slot.worktreePath, taskId);
+      const state: SlotState = { slot, inUse: true, taskId };
+      states.push(state);
+      log.info("Created new worktree slot for existing branch", {
+        slot: slot.slotName,
+        taskId,
+        branch: remoteBranch,
+      });
+      return slot;
+    }
+
+    log.info("No worktree slots available", {
+      repoId: repo.id,
+      inUse: states.filter((s) => s.inUse).length,
+      max: repo.max_worktrees,
+      taskId,
+    });
+    return null;
+  }
+
+  /**
    * Release a worktree slot back to the pool.
    */
   release(repoId: string, slotName: string): void {
@@ -266,6 +319,75 @@ class WorktreePoolImpl {
     );
 
     return { slotName, slotIndex, worktreePath, repoId: repo.id };
+  }
+
+  private createSlotForExistingBranch(
+    repo: RepoEntry,
+    clonePath: string,
+    slotIndex: number,
+    remoteBranch: string,
+  ): WorktreeSlot {
+    const slotName = `${repo.id}-n-${slotIndex}`;
+    const worktreePath = path.join(this.workspaceRoot, "worktrees", slotName);
+
+    mkdirSync(path.dirname(worktreePath), { recursive: true });
+    this.gitExec("git worktree prune", clonePath);
+
+    // Fetch the remote branch and create worktree tracking it
+    this.gitExec(`git fetch origin ${remoteBranch}`, clonePath);
+    log.info("Creating worktree slot for existing branch", {
+      slotName,
+      worktreePath,
+      remoteBranch,
+    });
+    this.gitExec(`git worktree add ${worktreePath} origin/${remoteBranch}`, clonePath);
+    // Checkout as a local branch tracking remote
+    this.gitExec(`git checkout -B ${remoteBranch} origin/${remoteBranch}`, worktreePath);
+
+    return { slotName, slotIndex, worktreePath, repoId: repo.id };
+  }
+
+  private resetWorktreeToRemoteBranch(
+    slot: WorktreeSlot,
+    repo: RepoEntry,
+    clonePath: string,
+    remoteBranch: string,
+  ): void {
+    const { worktreePath } = slot;
+
+    // Fetch latest
+    this.gitExec(`git fetch origin ${remoteBranch}`, clonePath);
+
+    if (!existsSync(worktreePath)) {
+      log.info("Worktree dir missing, recreating for existing branch", { slot: slot.slotName });
+      this.gitExec("git worktree prune", clonePath);
+      mkdirSync(path.dirname(worktreePath), { recursive: true });
+      this.gitExec(`git worktree add ${worktreePath} origin/${remoteBranch}`, clonePath);
+      this.gitExec(`git checkout -B ${remoteBranch} origin/${remoteBranch}`, worktreePath);
+      return;
+    }
+
+    log.info("Resetting worktree to existing remote branch", {
+      slot: slot.slotName,
+      branch: remoteBranch,
+    });
+
+    this.gitExec("git reset --hard HEAD", worktreePath);
+    this.gitExec(`git checkout origin/${repo.default_branch} --detach`, worktreePath);
+
+    if (repo.clean_mode === "full") {
+      this.gitExec("git clean -fdx", worktreePath);
+    } else {
+      this.gitExec("git clean -fd", worktreePath);
+    }
+
+    // Check out the existing remote branch
+    try {
+      this.gitExec(`git branch -D ${remoteBranch}`, worktreePath);
+    } catch {
+      /* branch may not exist locally */
+    }
+    this.gitExec(`git checkout -b ${remoteBranch} origin/${remoteBranch}`, worktreePath);
   }
 
   private resetWorktree(

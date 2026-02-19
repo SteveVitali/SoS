@@ -77,8 +77,10 @@ export const JobEvent = z.object({
 export type JobEvent = z.infer<typeof JobEvent>;
 
 // --- Metrics ---
+export type JobType = "create" | "respond_to_pr_comments";
+
 export interface ClaudeSession {
-  phase: "code" | "review" | "fix";
+  phase: "code" | "review" | "fix" | "respond_comments";
   model?: string;
   input_tokens?: number;
   output_tokens?: number;
@@ -123,6 +125,7 @@ export interface JobAttachment {
 export interface JobDoc {
   _id?: any;
   task_id: string;
+  job_type?: JobType;
   source: JobSource;
   requested_by: string;
   slack_requester?: string;
@@ -133,6 +136,7 @@ export interface JobDoc {
   title?: string;
   task_text: string;
   repo_hint?: string;
+  pr_url?: string;
   test_level?: TestLevel;
   ci_fix_enabled?: boolean;
   reviewers?: string[];
@@ -188,6 +192,9 @@ export type WorkerEventType =
   | "CI_FIX_FINISHED"
   | "PR_READY_FOR_APPROVAL"
   | "PR_PROMOTED"
+  | "COMMENTS_FETCHED"
+  | "COMMENT_ADDRESSED"
+  | "COMMENTS_PUSHED"
   | "DONE"
   | "FAILED"
   | "CANCELED";
@@ -241,6 +248,12 @@ export interface WebCreateJobRequest {
   test_level?: TestLevel;
   ci_fix_enabled?: boolean;
   reviewers?: string[];
+}
+
+export interface WebRespondToCommentsRequest {
+  requested_by: string;
+  pr_url: string;
+  parent_task_id?: string;
 }
 
 export interface WebJobsQuery {

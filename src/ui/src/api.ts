@@ -24,6 +24,7 @@ async function request<T>(method: string, path: string, body?: any): Promise<T> 
 export interface Job {
   _id?: string;
   task_id: string;
+  job_type?: string;
   source: { type: string; event_id?: string };
   requested_by: string;
   status: string;
@@ -33,6 +34,7 @@ export interface Job {
   title?: string;
   task_text: string;
   repo_hint?: string;
+  pr_url?: string;
   test_level?: string;
   ci_fix_enabled?: boolean;
   reviewers?: string[];
@@ -121,6 +123,17 @@ export async function deleteJob(taskId: string): Promise<{ job: Job }> {
 
 export async function promotePr(taskId: string, reviewers?: string[]): Promise<{ job: Job }> {
   return request("POST", `/jobs/${taskId}/promote-pr`, { reviewers });
+}
+
+export async function respondToComments(taskId: string): Promise<{ job: Job }> {
+  return request("POST", `/jobs/${taskId}/respond-to-comments`);
+}
+
+export async function createRespondToCommentsJob(data: {
+  requested_by: string;
+  pr_url: string;
+}): Promise<{ job: Job }> {
+  return request("POST", "/jobs/respond-to-comments", data);
 }
 
 export async function getUsers(): Promise<{ users: string[] }> {

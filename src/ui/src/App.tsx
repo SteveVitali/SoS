@@ -4,6 +4,7 @@ import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
   cancelJob,
   createJob,
+  createRespondToCommentsJob,
   deleteJob,
   getJob,
   getUsers,
@@ -11,6 +12,7 @@ import {
   listJobs,
   promotePr,
   resolveSlackUsers,
+  respondToComments,
   retryJob,
   type SlackUser,
 } from "./api.js";
@@ -408,30 +410,6 @@ function sortJobs(jobs: Job[], key: SortKey, dir: SortDir): Job[] {
   return dir === "desc" ? sorted.reverse() : sorted;
 }
 
-function SortableHeader({
-  label,
-  sortKey,
-  currentKey,
-  currentDir,
-  onSort,
-}: {
-  label: string;
-  sortKey: SortKey;
-  currentKey: SortKey | null;
-  currentDir: SortDir;
-  onSort: (key: SortKey) => void;
-}) {
-  const active = currentKey === sortKey;
-  return (
-    <th
-      style={{ ...css.th, cursor: "pointer", userSelect: "none" }}
-      onClick={() => onSort(sortKey)}
-    >
-      {label} {active ? (currentDir === "asc" ? "▲" : "▼") : ""}
-    </th>
-  );
-}
-
 // --- Jobs List ---
 function JobsList() {
   const navigate = useNavigate();
@@ -601,203 +579,105 @@ function JobsList() {
         <div style={{ color: "var(--fg2)", padding: 20 }}>No jobs found.</div>
       ) : (
         <>
-          <div style={{ overflowX: "auto" }}>
-            <table style={css.table}>
-              <colgroup>
-                <col style={{ width: "17%" }} />
-                <col style={{ width: "8%" }} />
-                <col style={{ width: "8%" }} />
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "12%" }} />
-                <col style={{ width: "9%" }} />
-                <col style={{ width: "8%" }} />
-                <col style={{ width: "11%" }} />
-                <col style={{ width: "6%" }} />
-                <col style={{ width: "5%" }} />
-                <col style={{ width: "10%" }} />
-              </colgroup>
-              <thead>
-                <tr>
-                  <SortableHeader
-                    label="Task"
-                    sortKey="task_id"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableHeader
-                    label="Status"
-                    sortKey="status"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableHeader
-                    label="User"
-                    sortKey="requested_by"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableHeader
-                    label="Created"
-                    sortKey="created_at"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableHeader
-                    label="Updated"
-                    sortKey="updated"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableHeader
-                    label="Repo"
-                    sortKey="repo"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableHeader
-                    label="Worktree"
-                    sortKey="worktree_slot"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <SortableHeader
-                    label="PR"
-                    sortKey="pr"
-                    currentKey={sortKey}
-                    currentDir={sortDir}
-                    onSort={handleSort}
-                  />
-                  <th style={{ ...css.th, textAlign: "right" }}>Duration</th>
-                  <th style={{ ...css.th, textAlign: "right" }}>Cost</th>
-                  <th style={css.th}>Actions</th>
-                </tr>
-              </thead>
-              <tbody>
-                {sortedJobs.map((job) => (
-                  <tr
-                    key={job.task_id}
-                    style={{ cursor: "pointer" }}
-                    onClick={() => navigate(`/jobs/${job.task_id}`)}
-                  >
-                    <td style={{ ...css.td, whiteSpace: "normal", overflow: "hidden" }}>
-                      <div
+          {/* Sort pills */}
+          <div
+            style={{
+              display: "flex",
+              gap: 6,
+              marginBottom: 12,
+              flexWrap: "wrap",
+              alignItems: "center",
+            }}
+          >
+            <span style={{ fontSize: 12, color: "var(--fg3)", marginRight: 4 }}>Sort by:</span>
+            {(
+              [
+                ["updated", "Updated"],
+                ["created_at", "Created"],
+                ["status", "Status"],
+                ["requested_by", "User"],
+                ["repo", "Repo"],
+                ["task_id", "Task"],
+                ["pr", "PR"],
+              ] as [SortKey, string][]
+            ).map(([key, label]) => (
+              <button
+                key={key}
+                style={{
+                  ...css.btnSmall,
+                  background: sortKey === key ? "var(--accent)" : "var(--bg3)",
+                  color: sortKey === key ? "#fff" : "var(--fg2)",
+                  border: sortKey === key ? "1px solid var(--accent)" : "1px solid var(--border)",
+                }}
+                onClick={() => handleSort(key)}
+              >
+                {label} {sortKey === key ? (sortDir === "asc" ? "\u25B2" : "\u25BC") : ""}
+              </button>
+            ))}
+          </div>
+
+          {/* Job rows */}
+          <div style={{ display: "flex", flexDirection: "column", gap: 2 }}>
+            {sortedJobs.map((job) => {
+              const ev = lastSubstantiveEvent(job.events);
+              return (
+                <div
+                  key={job.task_id}
+                  style={{
+                    padding: "12px 14px",
+                    borderBottom: "1px solid var(--border)",
+                    cursor: "pointer",
+                    borderRadius: 6,
+                    transition: "background 0.1s",
+                  }}
+                  onClick={() => navigate(`/jobs/${job.task_id}`)}
+                  onMouseEnter={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = "var(--bg2)";
+                  }}
+                  onMouseLeave={(e) => {
+                    (e.currentTarget as HTMLDivElement).style.background = "transparent";
+                  }}
+                >
+                  {/* Line 1: status + title + stats + actions */}
+                  <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+                    <StatusBadge status={job.status} />
+                    <span style={{ ...css.link, fontWeight: 500, flex: 1, minWidth: 0 }}>
+                      {job.title || job.task_text.slice(0, 120)}
+                    </span>
+                    <div style={{ display: "flex", alignItems: "center", gap: 12, flexShrink: 0 }}>
+                      <span style={{ fontSize: 12, color: "var(--fg2)", whiteSpace: "nowrap" }}>
+                        {job.metrics?.durations?.total_ms
+                          ? formatDuration(job.metrics.durations.total_ms)
+                          : ""}
+                      </span>
+                      <span
                         style={{
-                          overflow: "hidden",
-                          textOverflow: "ellipsis",
-                          display: "-webkit-box",
-                          WebkitLineClamp: 2,
-                          WebkitBoxOrient: "vertical",
+                          fontSize: 12,
+                          color: "var(--fg2)",
+                          whiteSpace: "nowrap",
+                          minWidth: 48,
+                          textAlign: "right",
                         }}
                       >
-                        <span style={css.link}>{job.title || job.task_text.slice(0, 60)}</span>
-                      </div>
-                      <div style={{ ...css.mono, fontSize: 11, color: "var(--fg3)", marginTop: 2 }}>
-                        {shortId(job.task_id)}
-                      </div>
-                    </td>
-                    <td style={css.td}>
-                      <StatusBadge status={job.status} />
-                    </td>
-                    <td style={{ ...css.td, fontSize: 12 }} title={formatUser(job.requested_by)}>
-                      {formatUserShort(job.requested_by)}
-                    </td>
-                    <td style={css.td} title={new Date(job.created_at).toLocaleString()}>
-                      {relativeTime(job.created_at)}
-                    </td>
-                    {(() => {
-                      const ev = lastSubstantiveEvent(job.events);
-                      return (
-                        <td
-                          style={css.td}
-                          title={
-                            ev
-                              ? `${ev.type} at ${new Date(ev.at).toLocaleString()}`
-                              : new Date(job.updated_at).toLocaleString()
-                          }
-                        >
-                          {ev ? (
-                            <span style={{ fontSize: 11 }}>
-                              <span style={{ fontWeight: 600, color: "var(--fg2)" }}>
-                                {ev.type}
-                              </span>{" "}
-                              <span style={{ color: "var(--fg3)" }}>{relativeTime(ev.at)}</span>
-                            </span>
-                          ) : (
-                            <span style={{ fontSize: 12, color: "var(--fg3)" }}>
-                              {relativeTime(job.updated_at)}
-                            </span>
-                          )}
-                        </td>
-                      );
-                    })()}
-                    <td
-                      style={{ ...css.td, fontSize: 13 }}
-                      title={job.repos_resolved?.join(", ") || job.repo_hint || ""}
-                    >
-                      {job.repos_resolved?.join(", ") || job.repo_hint || "—"}
-                    </td>
-                    <td
-                      style={{ ...css.td, ...css.mono, fontSize: 12 }}
-                      title={job.worktree_slot || ""}
-                    >
-                      {job.worktree_slot || "—"}
-                    </td>
-                    <td
-                      style={{ ...css.td, ...css.mono, fontSize: 12 }}
-                      title={job.pr_urls?.join(", ") || ""}
-                    >
-                      {job.pr_urls?.map((url, i) => (
-                        <a
-                          key={i}
-                          href={url}
-                          target="_blank"
-                          rel="noopener"
-                          onClick={(e) => e.stopPropagation()}
-                        >
-                          {formatPrUrl(url)}
-                        </a>
-                      )) || "—"}
-                    </td>
-                    <td
-                      style={{ ...css.td, textAlign: "right", fontSize: 12, whiteSpace: "nowrap" }}
-                    >
-                      {job.metrics?.durations?.total_ms
-                        ? formatDuration(job.metrics.durations.total_ms)
-                        : "—"}
-                    </td>
-                    <td
-                      style={{ ...css.td, textAlign: "right", fontSize: 12, whiteSpace: "nowrap" }}
-                    >
-                      {job.metrics?.claude?.total_cost_usd != null ? (
-                        <span
-                          title={
-                            job.metrics.claude.cost_source === "computed" ? "Estimated" : "Provider"
-                          }
-                        >
-                          {job.metrics.claude.cost_source === "computed" ? "~" : ""}$
-                          {job.metrics.claude.total_cost_usd.toFixed(3)}
-                        </span>
-                      ) : (
-                        "—"
-                      )}
-                    </td>
-                    <td
-                      style={{
-                        ...css.td,
-                        overflow: "visible",
-                        whiteSpace: "nowrap",
-                        padding: "10px 4px",
-                      }}
-                      onClick={(e) => e.stopPropagation()}
-                    >
-                      <div style={{ display: "flex", gap: 2 }}>
+                        {job.metrics?.claude?.total_cost_usd != null ? (
+                          <span
+                            title={
+                              job.metrics.claude.cost_source === "computed"
+                                ? "Estimated"
+                                : "Provider"
+                            }
+                          >
+                            {job.metrics.claude.cost_source === "computed" ? "~" : ""}$
+                            {job.metrics.claude.total_cost_usd.toFixed(3)}
+                          </span>
+                        ) : (
+                          ""
+                        )}
+                      </span>
+                      <div
+                        style={{ display: "flex", gap: 2, flexShrink: 0 }}
+                        onClick={(e) => e.stopPropagation()}
+                      >
                         {["QUEUED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(
                           job.status,
                         ) && (
@@ -825,11 +705,68 @@ function JobsList() {
                           </button>
                         )}
                       </div>
-                    </td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
+                    </div>
+                  </div>
+
+                  {/* Line 2: metadata chips */}
+                  <div
+                    style={{
+                      display: "flex",
+                      flexWrap: "wrap",
+                      gap: "4px 0",
+                      marginTop: 6,
+                      fontSize: 12,
+                      color: "var(--fg3)",
+                      alignItems: "center",
+                    }}
+                  >
+                    <span style={{ ...css.mono, fontSize: 11 }}>{shortId(job.task_id)}</span>
+                    <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                    <span title={formatUser(job.requested_by)}>
+                      {formatUserShort(job.requested_by)}
+                    </span>
+                    <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                    <span>{job.repos_resolved?.join(", ") || job.repo_hint || "\u2014"}</span>
+                    {job.worktree_slot && (
+                      <>
+                        <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                        <span style={css.mono}>{job.worktree_slot}</span>
+                      </>
+                    )}
+                    <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                    <span title={new Date(job.created_at).toLocaleString()}>
+                      {relativeTime(job.created_at)}
+                    </span>
+                    {ev && (
+                      <>
+                        <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                        <span title={`${ev.type} at ${new Date(ev.at).toLocaleString()}`}>
+                          <span style={{ fontWeight: 600, color: "var(--fg2)" }}>{ev.type}</span>{" "}
+                          {relativeTime(ev.at)}
+                        </span>
+                      </>
+                    )}
+                    {job.pr_urls?.length ? (
+                      <>
+                        <span style={{ margin: "0 8px", opacity: 0.4 }}>{"\u00B7"}</span>
+                        {job.pr_urls.map((url, i) => (
+                          <a
+                            key={i}
+                            href={url}
+                            target="_blank"
+                            rel="noopener"
+                            style={{ ...css.mono, marginRight: 8 }}
+                            onClick={(e) => e.stopPropagation()}
+                          >
+                            {formatPrUrl(url)}
+                          </a>
+                        ))}
+                      </>
+                    ) : null}
+                  </div>
+                </div>
+              );
+            })}
           </div>
           <div
             style={{
@@ -893,7 +830,9 @@ function JobDetail() {
     load();
   }, [load]);
 
-  const handleAction = async (action: "cancel" | "retry" | "delete" | "promote") => {
+  const handleAction = async (
+    action: "cancel" | "retry" | "delete" | "promote" | "respond_comments",
+  ) => {
     if (!taskId) return;
     setActionError("");
     try {
@@ -909,6 +848,9 @@ function JobDetail() {
       } else if (action === "promote") {
         await promotePr(taskId);
         load();
+      } else if (action === "respond_comments") {
+        const res = await respondToComments(taskId);
+        navigate(`/jobs/${res.job.task_id}`);
       }
     } catch (err: any) {
       setActionError(err.message);
@@ -973,6 +915,11 @@ function JobDetail() {
             {["FAILED", "CANCELED"].includes(job.status) && (
               <button style={css.btnPrimary} onClick={() => handleAction("retry")}>
                 Retry
+              </button>
+            )}
+            {job.pr_urls?.length && ["DONE", "WAITING_FOR_APPROVAL"].includes(job.status) && (
+              <button style={css.btnPrimary} onClick={() => handleAction("respond_comments")}>
+                Respond to Comments
               </button>
             )}
             {!["RUNNING", "FIXING_CI"].includes(job.status) && (
@@ -1341,39 +1288,56 @@ function JobDetail() {
 // --- Create Job Form ---
 function CreateJobForm() {
   const navigate = useNavigate();
+  const [mode, setMode] = useState<"create" | "respond">("create");
   const [requestedBy, setRequestedBy] = useState(localStorage.getItem("sos_last_user") || "");
   const [taskText, setTaskText] = useState("");
   const [repoHint, setRepoHint] = useState("");
   const [testLevel, setTestLevel] = useState("fast");
   const [ciFixEnabled, setCiFixEnabled] = useState(true);
   const [reviewers, setReviewers] = useState("");
+  const [prUrl, setPrUrl] = useState("");
   const [error, setError] = useState("");
   const [submitting, setSubmitting] = useState(false);
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
-    if (!requestedBy || !taskText) {
-      setError("requested_by and task_text are required");
-      return;
-    }
     setSubmitting(true);
     setError("");
     try {
       localStorage.setItem("sos_last_user", requestedBy);
-      const res = await createJob({
-        requested_by: requestedBy,
-        task_text: taskText,
-        repo_hint: repoHint || undefined,
-        test_level: testLevel as any,
-        ci_fix_enabled: ciFixEnabled,
-        reviewers: reviewers
-          ? reviewers
-              .split(",")
-              .map((r) => r.trim())
-              .filter(Boolean)
-          : undefined,
-      });
-      navigate(`/jobs/${res.job.task_id}`);
+
+      if (mode === "respond") {
+        if (!requestedBy || !prUrl) {
+          setError("requested_by and PR URL are required");
+          setSubmitting(false);
+          return;
+        }
+        const res = await createRespondToCommentsJob({
+          requested_by: requestedBy,
+          pr_url: prUrl,
+        });
+        navigate(`/jobs/${res.job.task_id}`);
+      } else {
+        if (!requestedBy || !taskText) {
+          setError("requested_by and task_text are required");
+          setSubmitting(false);
+          return;
+        }
+        const res = await createJob({
+          requested_by: requestedBy,
+          task_text: taskText,
+          repo_hint: repoHint || undefined,
+          test_level: testLevel as any,
+          ci_fix_enabled: ciFixEnabled,
+          reviewers: reviewers
+            ? reviewers
+                .split(",")
+                .map((r) => r.trim())
+                .filter(Boolean)
+            : undefined,
+        });
+        navigate(`/jobs/${res.job.task_id}`);
+      }
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1381,13 +1345,38 @@ function CreateJobForm() {
     }
   };
 
+  const tabStyle = (active: boolean): React.CSSProperties => ({
+    padding: "8px 16px",
+    border: "none",
+    borderBottom: active ? "2px solid var(--accent)" : "2px solid transparent",
+    background: "none",
+    color: active ? "var(--fg1)" : "var(--fg3)",
+    fontWeight: active ? 600 : 400,
+    cursor: "pointer",
+    fontSize: 14,
+  });
+
   return (
     <div>
       <Link to="/" style={{ textDecoration: "none" }}>
         <button style={{ ...css.btn, marginBottom: 16 }}>← Back</button>
       </Link>
       <div style={css.card}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Create Job</h2>
+        <div
+          style={{
+            display: "flex",
+            gap: 0,
+            borderBottom: "1px solid var(--border)",
+            marginBottom: 16,
+          }}
+        >
+          <button style={tabStyle(mode === "create")} onClick={() => setMode("create")}>
+            Create Job
+          </button>
+          <button style={tabStyle(mode === "respond")} onClick={() => setMode("respond")}>
+            Respond to PR
+          </button>
+        </div>
         <form onSubmit={handleSubmit}>
           <div style={css.field}>
             <label style={css.label}>Requested By (Slack User ID) *</label>
@@ -1398,64 +1387,88 @@ function CreateJobForm() {
               placeholder="U..."
             />
           </div>
-          <div style={css.field}>
-            <label style={css.label}>Task Text *</label>
-            <textarea
-              style={css.textarea}
-              value={taskText}
-              onChange={(e) => setTaskText(e.target.value)}
-              placeholder="Describe the coding task..."
-            />
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+
+          {mode === "respond" ? (
             <div style={css.field}>
-              <label style={css.label}>Repo Hint (optional)</label>
+              <label style={css.label}>GitHub PR URL *</label>
               <input
                 style={css.input}
-                value={repoHint}
-                onChange={(e) => setRepoHint(e.target.value)}
-                placeholder="e.g. my-app"
+                value={prUrl}
+                onChange={(e) => setPrUrl(e.target.value)}
+                placeholder="https://github.com/org/repo/pull/123"
               />
             </div>
-            <div style={css.field}>
-              <label style={css.label}>Test Level</label>
-              <select
-                style={{ ...css.select, width: "100%" }}
-                value={testLevel}
-                onChange={(e) => setTestLevel(e.target.value)}
-              >
-                <option value="fast">fast</option>
-                <option value="full">full</option>
-                <option value="none">none</option>
-              </select>
-            </div>
-          </div>
-          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
-            <div style={css.field}>
-              <label style={css.label}>CI Fix</label>
-              <label style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}>
-                <input
-                  type="checkbox"
-                  checked={ciFixEnabled}
-                  onChange={(e) => setCiFixEnabled(e.target.checked)}
+          ) : (
+            <>
+              <div style={css.field}>
+                <label style={css.label}>Task Text *</label>
+                <textarea
+                  style={css.textarea}
+                  value={taskText}
+                  onChange={(e) => setTaskText(e.target.value)}
+                  placeholder="Describe the coding task..."
                 />
-                <span style={{ fontSize: 14, color: "var(--fg2)" }}>Enable CI fix attempts</span>
-              </label>
-            </div>
-            <div style={css.field}>
-              <label style={css.label}>Reviewers (comma-separated)</label>
-              <input
-                style={css.input}
-                value={reviewers}
-                onChange={(e) => setReviewers(e.target.value)}
-                placeholder="alice, bob"
-              />
-            </div>
-          </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div style={css.field}>
+                  <label style={css.label}>Repo Hint (optional)</label>
+                  <input
+                    style={css.input}
+                    value={repoHint}
+                    onChange={(e) => setRepoHint(e.target.value)}
+                    placeholder="e.g. my-app"
+                  />
+                </div>
+                <div style={css.field}>
+                  <label style={css.label}>Test Level</label>
+                  <select
+                    style={{ ...css.select, width: "100%" }}
+                    value={testLevel}
+                    onChange={(e) => setTestLevel(e.target.value)}
+                  >
+                    <option value="fast">fast</option>
+                    <option value="full">full</option>
+                    <option value="none">none</option>
+                  </select>
+                </div>
+              </div>
+              <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 16 }}>
+                <div style={css.field}>
+                  <label style={css.label}>CI Fix</label>
+                  <label
+                    style={{ display: "flex", alignItems: "center", gap: 8, cursor: "pointer" }}
+                  >
+                    <input
+                      type="checkbox"
+                      checked={ciFixEnabled}
+                      onChange={(e) => setCiFixEnabled(e.target.checked)}
+                    />
+                    <span style={{ fontSize: 14, color: "var(--fg2)" }}>
+                      Enable CI fix attempts
+                    </span>
+                  </label>
+                </div>
+                <div style={css.field}>
+                  <label style={css.label}>Reviewers (comma-separated)</label>
+                  <input
+                    style={css.input}
+                    value={reviewers}
+                    onChange={(e) => setReviewers(e.target.value)}
+                    placeholder="alice, bob"
+                  />
+                </div>
+              </div>
+            </>
+          )}
+
           {error && <div style={css.error}>{error}</div>}
           <div style={{ display: "flex", gap: 8, marginTop: 8 }}>
             <button type="submit" style={css.btnPrimary} disabled={submitting}>
-              {submitting ? "Creating..." : "Create Job"}
+              {submitting
+                ? "Creating..."
+                : mode === "respond"
+                  ? "Respond to Comments"
+                  : "Create Job"}
             </button>
             <button type="button" style={css.btn} onClick={() => navigate("/")}>
               Cancel

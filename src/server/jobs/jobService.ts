@@ -12,7 +12,11 @@ import type {
 import { SLACK_NOTIFY_EVENTS } from "../../shared/types.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 import { checkIdempotent } from "./idempotency.js";
-import type { CreateJobFromSlack, CreateJobFromWeb } from "./jobModel.js";
+import type {
+  CreateJobFromSlack,
+  CreateJobFromWeb,
+  CreateRespondToCommentsFromWeb,
+} from "./jobModel.js";
 import {
   appendEvent,
   findJobByTaskId,
@@ -131,6 +135,48 @@ export async function createJobFromWeb(input: CreateJobFromWeb): Promise<JobDoc>
 
   // Fire-and-forget title generation
   generateTitle(taskId, input.task_text).catch(() => {});
+
+  return job;
+}
+
+// --- Create Respond-to-Comments Job ---
+export async function createRespondToCommentsJob(
+  input: CreateRespondToCommentsFromWeb,
+  source: "web" | "slack" = "web",
+  slack?: { channel_id: string; thread_ts: string },
+): Promise<JobDoc> {
+  const now = nowDate();
+  const taskId = uuidv4();
+
+  // Extract short PR identifier for title
+  const prMatch = input.pr_url.match(/\/pull\/(\d+)/);
+  const prNum = prMatch ? `#${prMatch[1]}` : "";
+  const repoMatch = input.pr_url.match(/github\.com\/[^/]+\/([^/]+)/);
+  const repoName = repoMatch ? repoMatch[1] : "";
+  const title = `Respond to PR comments — ${repoName}${prNum}`;
+
+  const doc: JobDoc = {
+    task_id: taskId,
+    job_type: "respond_to_pr_comments",
+    source: { type: source === "slack" ? "slack_app_mention" : "web_create" },
+    requested_by: input.requested_by,
+    status: "QUEUED",
+    created_at: now,
+    updated_at: now,
+    title,
+    task_text: `Respond to unresolved PR review comments on ${input.pr_url}`,
+    pr_url: input.pr_url,
+    parent_task_id: input.parent_task_id,
+    ...(slack ? { slack: { channel_id: slack.channel_id, thread_ts: slack.thread_ts } } : {}),
+    events: [{ at: now, type: "QUEUED", payload: { source } }],
+  };
+
+  const job = await insertJob(doc);
+  log.info("Respond-to-comments job created", { task_id: taskId, pr_url: input.pr_url });
+
+  if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
+    await slackPoster.postQueued(job);
+  }
 
   return job;
 }

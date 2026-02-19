@@ -261,6 +261,82 @@ export async function runClaudeReview(
   );
 }
 
+export interface RespondToCommentOptions {
+  worktreePath: string;
+  repo: RepoEntry;
+  threadIndex: number;
+  path: string;
+  line: number | null;
+  comments: Array<{ author: string; body: string; diffHunk: string }>;
+  branch: string;
+}
+
+export async function runClaudeRespondToComment(
+  opts: RespondToCommentOptions,
+): Promise<ClaudeResult> {
+  const { worktreePath, repo, threadIndex, path: filePath, line, comments, branch } = opts;
+  const sosDir = path.join(worktreePath, ".sonofsteve");
+  if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
+  ensureSosGitignore(sosDir);
+
+  const promptPath = path.join(sosDir, `respond-prompt-${threadIndex}.md`);
+  const logPath = path.join(sosDir, `claude-respond-${threadIndex}.log`);
+
+  const commentBlocks = comments.map((c) => {
+    const lines = [`**${c.author}** said:`, `> ${c.body.replace(/\n/g, "\n> ")}`];
+    if (c.diffHunk) {
+      lines.push("", "Diff context:", "```diff", c.diffHunk, "```");
+    }
+    return lines.join("\n");
+  });
+
+  const locationStr = line != null ? `${filePath}:${line}` : filePath;
+
+  const prompt = [
+    "# Address Review Comment",
+    "",
+    `Branch: \`${branch}\``,
+    `Repo: \`${repo.id}\``,
+    "",
+    `## Review Thread — \`${locationStr}\``,
+    "",
+    ...commentBlocks,
+    "",
+    "## Instructions",
+    "- Address the reviewer's comment with minimal, focused changes.",
+    "- If the comment is a question, observation, or stylistic preference that",
+    "  doesn't warrant a code change, just explain your reasoning in your summary",
+    "  and make NO file changes.",
+    "- If you make changes, ensure the result builds and lints cleanly.",
+    ...(repo.commands?.lint ? [`- Lint: \`${repo.commands.lint.join(" ")}\``] : []),
+    ...(repo.commands?.test_fast ? [`- Test: \`${repo.commands.test_fast.join(" ")}\``] : []),
+    "- Keep your summary concise — it will be posted as a reply to the reviewer.",
+  ].join("\n");
+
+  writeFileSync(promptPath, prompt, "utf-8");
+
+  log.info("Running Claude Code CLI for review comment", {
+    worktree: worktreePath,
+    thread: threadIndex,
+    file: locationStr,
+  });
+
+  return runClaudeProcess(
+    [
+      "claude",
+      "-p",
+      promptPath,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+    ],
+    worktreePath,
+    logPath,
+    5 * 60 * 1000,
+  );
+}
+
 function ensureSosGitignore(sosDir: string) {
   const gi = path.join(sosDir, ".gitignore");
   if (!existsSync(gi)) writeFileSync(gi, "*\n", "utf-8");

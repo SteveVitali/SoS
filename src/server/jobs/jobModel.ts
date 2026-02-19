@@ -37,6 +37,13 @@ export const CreateJobFromWebSchema = z.object({
 });
 export type CreateJobFromWeb = z.infer<typeof CreateJobFromWebSchema>;
 
+export const CreateRespondToCommentsFromWebSchema = z.object({
+  requested_by: z.string().min(1, "requested_by is required"),
+  pr_url: z.string().url("pr_url must be a valid URL"),
+  parent_task_id: z.string().optional(),
+});
+export type CreateRespondToCommentsFromWeb = z.infer<typeof CreateRespondToCommentsFromWebSchema>;
+
 export const ClaimJobSchema = z.object({
   requested_by: z.string(),
   node_id: z.string(),

@@ -3,6 +3,7 @@ import type { JobAttachment } from "../../shared/types.js";
 import {
   cancel,
   createJobFromSlack,
+  createRespondToCommentsJob,
   findJobByTaskId,
   promotePr,
   queryJobs,
@@ -173,6 +174,56 @@ export async function executeCommand(
         return {
           reply: `${reply}\n\n⚠️ Failed to promote PR: ${err.message}`,
           actionTaken: "promote_pr failed",
+        };
+      }
+    }
+
+    case "respond_to_pr_comments": {
+      try {
+        let prUrl: string | undefined = args.pr_url;
+        let parentTaskId: string | undefined;
+
+        // If task_id provided, resolve PR URL from the parent job
+        if (args.task_id && !prUrl) {
+          const taskId = await resolveTaskId(args.task_id);
+          if (!taskId) {
+            return {
+              reply: `${reply}\n\n❓ Couldn't find a job matching \`${args.task_id}\`.`,
+              actionTaken: "respond_to_pr_comments: not found",
+            };
+          }
+          const parentJob = await findJobByTaskId(taskId);
+          if (!parentJob?.pr_urls?.length) {
+            return {
+              reply: `${reply}\n\n⚠️ No PR URL on \`${taskId.slice(0, 8)}…\`.`,
+              actionTaken: "respond_to_pr_comments: no pr",
+            };
+          }
+          prUrl = parentJob.pr_urls[0];
+          parentTaskId = taskId;
+        }
+
+        if (!prUrl) {
+          return {
+            reply: `${reply}\n\n⚠️ I need either a task_id or a PR URL to respond to comments.`,
+            actionTaken: "respond_to_pr_comments: missing input",
+          };
+        }
+
+        const job = await createRespondToCommentsJob(
+          { requested_by: ctx.userId, pr_url: prUrl, parent_task_id: parentTaskId },
+          "slack",
+          { channel_id: ctx.channelId, thread_ts: ctx.threadTs },
+        );
+        return {
+          reply: `${reply}\n\n📋 Respond-to-comments job queued: \`${job.task_id.slice(0, 8)}…\`\nPR: ${prUrl}`,
+          actionTaken: `respond_to_pr_comments: ${job.task_id}`,
+        };
+      } catch (err: any) {
+        log.error("Failed to create respond-to-comments job", { error: err.message });
+        return {
+          reply: `${reply}\n\n⚠️ Failed: ${err.message}`,
+          actionTaken: "respond_to_pr_comments failed",
         };
       }
     }

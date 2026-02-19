@@ -1,6 +1,6 @@
 import { type Request, type Response, Router } from "express";
 import { createLogger } from "../../shared/logger.js";
-import { CreateJobFromWebSchema } from "../jobs/jobModel.js";
+import { CreateJobFromWebSchema, CreateRespondToCommentsFromWebSchema } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
 import { resolveSlackUser } from "../slack/userResolver.js";
 
@@ -62,6 +62,50 @@ export function createWebRoutes(): Router {
       res.status(201).json({ job });
     } catch (err: any) {
       log.error("Create job error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/web/jobs/respond-to-comments
+  router.post("/jobs/respond-to-comments", async (req: Request, res: Response) => {
+    try {
+      const parsed = CreateRespondToCommentsFromWebSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+        return;
+      }
+      const job = await jobService.createRespondToCommentsJob(parsed.data);
+      res.status(201).json({ job });
+    } catch (err: any) {
+      log.error("Create respond-to-comments job error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/web/jobs/:task_id/respond-to-comments (from existing job)
+  router.post("/jobs/:task_id/respond-to-comments", async (req: Request, res: Response) => {
+    try {
+      const taskId = pstr(req.params.task_id);
+      const existing = await jobService.findJobByTaskId(taskId);
+      if (!existing) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
+      if (!existing.pr_urls?.length) {
+        res.status(400).json({ error: "No PR URL found on job" });
+        return;
+      }
+      const job = await jobService.createRespondToCommentsJob({
+        requested_by: existing.requested_by,
+        pr_url: existing.pr_urls[0],
+        parent_task_id: taskId,
+      });
+      res.status(201).json({ job });
+    } catch (err: any) {
+      log.error("Create respond-to-comments from job error", {
+        error: err.message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });

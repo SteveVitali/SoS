@@ -1,7 +1,9 @@
 import { createLogger } from "../shared/logger.js";
+import type { JobDoc } from "../shared/types.js";
 import type { WorkerApiClient } from "./apiClient.js";
 import type { WorkerConfig } from "./config.js";
 import { runJob } from "./executor/runJob.js";
+import { runRespondToComments } from "./executor/runRespondToComments.js";
 import { HeartbeatManager } from "./heartbeat.js";
 
 const log = createLogger("worker:poller");
@@ -58,7 +60,7 @@ export async function startWorkerLoop(
       heartbeatManager.start(claimed.task_id);
 
       try {
-        await runJob(claimed, workerId, config, api);
+        await dispatchJob(claimed, workerId, config, api);
       } catch (jobErr: any) {
         // Last-resort: runJob's own catch block already tried api.fail(),
         // but if that also threw, try one final time from here.
@@ -87,6 +89,18 @@ export async function startWorkerLoop(
 
   heartbeatManager.stopAll();
   log.info("Worker loop stopped", { workerId });
+}
+
+function dispatchJob(
+  job: JobDoc,
+  workerId: string,
+  config: WorkerConfig,
+  api: WorkerApiClient,
+): Promise<void> {
+  if (job.job_type === "respond_to_pr_comments") {
+    return runRespondToComments(job, workerId, config, api);
+  }
+  return runJob(job, workerId, config, api);
 }
 
 function sleep(ms: number, signal?: AbortSignal): Promise<void> {
