@@ -233,3 +233,18 @@ export async function getRegistry(): Promise<{ registry: RegistryData; path: str
 export async function saveRegistry(registry: RegistryData): Promise<{ ok: boolean }> {
   return request("PUT", "/registry", { registry });
 }
+
+export interface WorktreeSlotStatus {
+  slotName: string;
+  inUse: boolean;
+  taskId?: string;
+  acquiredAt?: string;
+}
+
+export async function getWorktreeStatus(): Promise<Record<string, WorktreeSlotStatus[]>> {
+  const res = await request<{ worktrees: Record<string, WorktreeSlotStatus[]> }>(
+    "GET",
+    "/worktrees",
+  );
+  return res.worktrees;
+}

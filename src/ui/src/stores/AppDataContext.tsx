@@ -5,11 +5,13 @@ import {
   type GitHubPr,
   getRegistry,
   getUsers,
+  getWorktreeStatus,
   type Job,
   listJobs,
   listPrs,
   type PrCommentStats,
   type RegistryData,
+  type WorktreeSlotStatus,
 } from "../api.js";
 
 // --- Types ---
@@ -53,9 +55,11 @@ interface AppDataContextValue {
   jobs: JobsState;
   prs: PrsState;
   registry: RegistryState;
+  worktrees: Record<string, WorktreeSlotStatus[]>;
   refreshJobs: (filter?: JobsFilter) => Promise<void>;
   refreshPrs: (filter?: PrsFilter) => Promise<void>;
   refreshRegistry: () => Promise<void>;
+  refreshWorktrees: () => Promise<void>;
   setRegistryLocal: (data: RegistryData) => void;
 }
 
@@ -173,6 +177,18 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     setRegistryState((prev) => ({ ...prev, registry: data }));
   }, []);
 
+  // --- Worktrees ---
+  const [worktrees, setWorktrees] = useState<Record<string, WorktreeSlotStatus[]>>({});
+
+  const refreshWorktrees = useCallback(async () => {
+    try {
+      const res = await getWorktreeStatus();
+      setWorktrees(res);
+    } catch {
+      // non-critical
+    }
+  }, []);
+
   // --- Initial parallel fetch (once) ---
   const initialized = useRef(false);
   useEffect(() => {
@@ -181,25 +197,30 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refreshJobs();
     refreshPrs();
     refreshRegistry();
-  }, [refreshJobs, refreshPrs, refreshRegistry]);
+    refreshWorktrees();
+  }, [refreshJobs, refreshPrs, refreshRegistry, refreshWorktrees]);
 
-  // --- Polling: refresh jobs every 3s, PRs every 120s ---
+  // --- Polling: refresh jobs every 3s, worktrees every 5s, PRs every 120s ---
   useEffect(() => {
     const jobsTimer = setInterval(() => refreshJobs(), 3_000);
+    const worktreeTimer = setInterval(() => refreshWorktrees(), 5_000);
     const prsTimer = setInterval(() => refreshPrs(), 120_000);
     return () => {
       clearInterval(jobsTimer);
+      clearInterval(worktreeTimer);
       clearInterval(prsTimer);
     };
-  }, [refreshJobs, refreshPrs]);
+  }, [refreshJobs, refreshPrs, refreshWorktrees]);
 
   const value: AppDataContextValue = {
     jobs: jobsState,
     prs: prsState,
     registry: registryState,
+    worktrees,
     refreshJobs,
     refreshPrs,
     refreshRegistry,
+    refreshWorktrees,
     setRegistryLocal,
   };
 

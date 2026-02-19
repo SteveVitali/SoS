@@ -1,11 +1,14 @@
 import { useState } from "react";
-import type { RepoConfig } from "../../api.js";
+import { Link } from "react-router-dom";
+import type { RepoConfig, WorktreeSlotStatus } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { relativeTime } from "../../utils/format.js";
 import { CommandEditor } from "./CommandEditor.js";
 
 interface RepoCardProps {
   id: string;
   repo: RepoConfig;
+  slots: WorktreeSlotStatus[];
   expanded: boolean;
   onToggle: () => void;
   onChange: (r: RepoConfig) => void;
@@ -24,6 +27,7 @@ const SECTION_HEADING: React.CSSProperties = {
 export function RepoCard({
   id,
   repo,
+  slots,
   expanded,
   onToggle,
   onChange,
@@ -57,14 +61,16 @@ export function RepoCard({
         </span>
         <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{id}</span>
         <span style={{ ...css.mono, fontSize: 12, color: "var(--fg3)" }}>{cloneDisplay}</span>
-        <span
-          style={{
-            ...css.badge(repo.max_worktrees && repo.max_worktrees > 1 ? "#3b82f6" : "#6b7280"),
-            fontSize: 10,
-          }}
-        >
-          {repo.max_worktrees || 1} worktree{(repo.max_worktrees || 1) > 1 ? "s" : ""}
-        </span>
+        {(() => {
+          const max = repo.max_worktrees || 1;
+          const active = slots.filter((s) => s.inUse).length;
+          const color = active > 0 ? "#f59e0b" : "#6b7280";
+          return (
+            <span style={{ ...css.badge(color), fontSize: 10 }}>
+              {active}/{max} worktree{max > 1 ? "s" : ""} busy
+            </span>
+          );
+        })()}
         <span style={{ ...css.badge("#6b7280"), fontSize: 10 }}>{repo.clean_mode || "light"}</span>
         {repo.ci?.provider && (
           <span style={{ ...css.badge("#8b5cf6"), fontSize: 10 }}>{repo.ci.provider}</span>
@@ -256,6 +262,76 @@ export function RepoCard({
               </select>
             </div>
           </div>
+
+          {/* Worktree Slots */}
+          {slots.length > 0 && (
+            <>
+              <div style={SECTION_HEADING}>Worktree Slots</div>
+              <div style={{ display: "flex", flexWrap: "wrap", gap: 8 }}>
+                {slots.map((slot) => (
+                  <div
+                    key={slot.slotName}
+                    style={{
+                      padding: "6px 10px",
+                      borderRadius: "var(--radius)",
+                      background: slot.inUse ? "#f59e0b18" : "var(--bg2)",
+                      border: `1px solid ${slot.inUse ? "#f59e0b44" : "var(--border)"}`,
+                      fontSize: 12,
+                      display: "flex",
+                      alignItems: "center",
+                      gap: 8,
+                    }}
+                  >
+                    <span
+                      style={{
+                        width: 8,
+                        height: 8,
+                        borderRadius: "50%",
+                        background: slot.inUse ? "#f59e0b" : "#22c55e",
+                        flexShrink: 0,
+                      }}
+                    />
+                    <span style={{ ...css.mono, fontWeight: 500 }}>{slot.slotName}</span>
+                    {slot.inUse ? (
+                      <span style={{ color: "var(--fg3)", fontSize: 11 }}>
+                        {slot.taskId ? (
+                          <Link
+                            to={`/jobs/${slot.taskId}`}
+                            style={{ color: "var(--accent)", textDecoration: "none" }}
+                          >
+                            {slot.taskId.slice(0, 8)}…
+                          </Link>
+                        ) : (
+                          "busy"
+                        )}
+                        {slot.acquiredAt && (
+                          <span style={{ marginLeft: 4 }}>({relativeTime(slot.acquiredAt)})</span>
+                        )}
+                      </span>
+                    ) : (
+                      <span style={{ color: "#22c55e", fontSize: 11 }}>free</span>
+                    )}
+                  </div>
+                ))}
+              </div>
+              {slots.length < (repo.max_worktrees || 1) && (
+                <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
+                  {(repo.max_worktrees || 1) - slots.length} additional slot
+                  {(repo.max_worktrees || 1) - slots.length > 1 ? "s" : ""} available (created on
+                  demand)
+                </div>
+              )}
+            </>
+          )}
+          {slots.length === 0 && (
+            <>
+              <div style={SECTION_HEADING}>Worktree Slots</div>
+              <div style={{ fontSize: 12, color: "var(--fg3)" }}>
+                No worktrees created yet — {repo.max_worktrees || 1} slot
+                {(repo.max_worktrees || 1) > 1 ? "s" : ""} available (created on demand)
+              </div>
+            </>
+          )}
 
           {/* Delete */}
           <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>

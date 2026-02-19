@@ -20,7 +20,7 @@ function emptyRepo(): RepoConfig {
 }
 
 export function RepoRegistryEditor() {
-  const { registry: registryState, refreshRegistry, setRegistryLocal } = useAppData();
+  const { registry: registryState, worktrees, refreshRegistry, setRegistryLocal } = useAppData();
   const { registry, path: registryPath, loading, error: loadError } = registryState;
 
   const [saving, setSaving] = useState(false);
@@ -160,6 +160,7 @@ export function RepoRegistryEditor() {
             key={id}
             id={id}
             repo={registry!.repos[id]}
+            slots={worktrees[id] || []}
             expanded={expandedId === id}
             onToggle={() => setExpandedId(expandedId === id ? null : id)}
             onChange={(r) => updateRepo(id, r)}

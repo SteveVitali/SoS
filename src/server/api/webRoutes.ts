@@ -1,4 +1,5 @@
-import { readFileSync, writeFileSync } from "node:fs";
+import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
+import path from "node:path";
 import { type Request, type Response, Router } from "express";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { createLogger } from "../../shared/logger.js";
@@ -341,6 +342,80 @@ export function createWebRoutes(config: ServerConfig): Router {
     } catch (err: any) {
       log.error("Write registry error", { error: err.message });
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/web/worktrees — scan worktree directories and lockfiles for status
+  router.get("/worktrees", async (_req: Request, res: Response) => {
+    try {
+      if (!config.workspaceRoot) {
+        res.json({ worktrees: {} });
+        return;
+      }
+      const worktreeDir = path.join(config.workspaceRoot, "worktrees");
+      if (!existsSync(worktreeDir)) {
+        res.json({ worktrees: {} });
+        return;
+      }
+
+      const entries = readdirSync(worktreeDir, { withFileTypes: true }).filter((d) =>
+        d.isDirectory(),
+      );
+
+      // Group by repo: { repoId -> [ { slotName, inUse, taskId, acquiredAt } ] }
+      const worktrees: Record<
+        string,
+        Array<{ slotName: string; inUse: boolean; taskId?: string; acquiredAt?: string }>
+      > = {};
+
+      for (const entry of entries) {
+        // Slot names follow pattern: {repoId}-n-{N}
+        const match = entry.name.match(/^(.+)-n-(\d+)$/);
+        if (!match) continue;
+
+        const repoId = match[1];
+        const slotName = entry.name;
+
+        let inUse = false;
+        let taskId: string | undefined;
+        let acquiredAt: string | undefined;
+
+        const lockPath = path.join(worktreeDir, entry.name, ".sos-lock");
+        if (existsSync(lockPath)) {
+          try {
+            const lock = JSON.parse(readFileSync(lockPath, "utf-8"));
+            // Check if the PID is still alive
+            try {
+              process.kill(lock.pid, 0);
+              inUse = true;
+              taskId = lock.taskId;
+              acquiredAt = lock.acquiredAt;
+            } catch (pidErr: any) {
+              if (pidErr.code === "EPERM") {
+                inUse = true;
+                taskId = lock.taskId;
+                acquiredAt = lock.acquiredAt;
+              }
+              // ESRCH = process dead, stale lock
+            }
+          } catch {
+            /* corrupt lockfile */
+          }
+        }
+
+        if (!worktrees[repoId]) worktrees[repoId] = [];
+        worktrees[repoId].push({ slotName, inUse, taskId, acquiredAt });
+      }
+
+      // Sort slots within each repo
+      for (const slots of Object.values(worktrees)) {
+        slots.sort((a, b) => a.slotName.localeCompare(b.slotName));
+      }
+
+      res.json({ worktrees });
+    } catch (err: any) {
+      log.error("Get worktrees error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
     }
   });
 
