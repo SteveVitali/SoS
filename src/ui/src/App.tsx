@@ -1,5 +1,6 @@
 import type React from "react";
 import { useCallback, useEffect, useState } from "react";
+import { Link, Route, Routes, useNavigate, useParams } from "react-router-dom";
 import {
   cancelJob,
   createJob,
@@ -386,13 +387,8 @@ function SortableHeader({
 }
 
 // --- Jobs List ---
-function JobsList({
-  onSelect,
-  onCreateClick,
-}: {
-  onSelect: (id: string) => void;
-  onCreateClick: () => void;
-}) {
+function JobsList() {
+  const navigate = useNavigate();
   const [jobs, setJobs] = useState<Job[]>([]);
   const [total, setTotal] = useState(0);
   const [loading, setLoading] = useState(true);
@@ -475,7 +471,7 @@ function JobsList({
           <button style={css.btn} onClick={load}>
             ↻ Refresh
           </button>
-          <button style={css.btnPrimary} onClick={onCreateClick}>
+          <button style={css.btnPrimary} onClick={() => navigate("/jobs/new")}>
             + Create Job
           </button>
         </div>
@@ -589,7 +585,7 @@ function JobsList({
                   <tr
                     key={job.task_id}
                     style={{ cursor: "pointer" }}
-                    onClick={() => onSelect(job.task_id)}
+                    onClick={() => navigate(`/jobs/${job.task_id}`)}
                   >
                     <td style={{ ...css.td, maxWidth: 260 }}>
                       <span style={css.link}>{job.title || job.task_text.slice(0, 60)}</span>
@@ -694,15 +690,9 @@ function JobsList({
 }
 
 // --- Job Detail ---
-function JobDetail({
-  taskId,
-  onBack,
-  onNavigate,
-}: {
-  taskId: string;
-  onBack: () => void;
-  onNavigate: (id: string) => void;
-}) {
+function JobDetail() {
+  const { taskId } = useParams<{ taskId: string }>();
+  const navigate = useNavigate();
   const [job, setJob] = useState<Job | null>(null);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
@@ -711,6 +701,7 @@ function JobDetail({
   useSlackNames(job ? [job.requested_by] : []);
 
   const load = useCallback(async () => {
+    if (!taskId) return;
     setLoading(true);
     try {
       const res = await getJob(taskId);
@@ -727,6 +718,7 @@ function JobDetail({
   }, [load]);
 
   const handleAction = async (action: "cancel" | "retry" | "delete") => {
+    if (!taskId) return;
     setActionError("");
     try {
       if (action === "cancel") {
@@ -734,25 +726,26 @@ function JobDetail({
         load();
       } else if (action === "retry") {
         const res = await retryJob(taskId);
-        onNavigate(res.job.task_id);
+        navigate(`/jobs/${res.job.task_id}`);
       } else if (action === "delete") {
         await deleteJob(taskId);
-        onBack();
+        navigate("/");
       }
     } catch (err: any) {
       setActionError(err.message);
     }
   };
 
+  if (!taskId) return <div style={css.error}>No task ID provided</div>;
   if (loading) return <div style={{ color: "var(--fg2)", padding: 20 }}>Loading...</div>;
   if (error) return <div style={css.error}>{error}</div>;
   if (!job) return <div style={css.error}>Job not found</div>;
 
   return (
     <div>
-      <button style={{ ...css.btn, marginBottom: 16 }} onClick={onBack}>
-        ← Back to Jobs
-      </button>
+      <Link to="/" style={{ textDecoration: "none" }}>
+        <button style={{ ...css.btn, marginBottom: 16 }}>← Back to Jobs</button>
+      </Link>
       <div style={css.card}>
         <div
           style={{
@@ -777,12 +770,9 @@ function JobDetail({
               {job.parent_task_id && (
                 <span style={{ fontSize: 13 }}>
                   Retry of{" "}
-                  <span
-                    style={{ ...css.link, ...css.mono }}
-                    onClick={() => onNavigate(job.parent_task_id!)}
-                  >
+                  <Link to={`/jobs/${job.parent_task_id}`} style={{ ...css.link, ...css.mono }}>
                     {shortId(job.parent_task_id)}
-                  </span>
+                  </Link>
                 </span>
               )}
             </div>
@@ -1011,13 +1001,8 @@ function JobDetail({
 }
 
 // --- Create Job Form ---
-function CreateJobForm({
-  onCreated,
-  onCancel,
-}: {
-  onCreated: (taskId: string) => void;
-  onCancel: () => void;
-}) {
+function CreateJobForm() {
+  const navigate = useNavigate();
   const [requestedBy, setRequestedBy] = useState(localStorage.getItem("sos_last_user") || "");
   const [taskText, setTaskText] = useState("");
   const [repoHint, setRepoHint] = useState("");
@@ -1050,7 +1035,7 @@ function CreateJobForm({
               .filter(Boolean)
           : undefined,
       });
-      onCreated(res.job.task_id);
+      navigate(`/jobs/${res.job.task_id}`);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -1060,9 +1045,9 @@ function CreateJobForm({
 
   return (
     <div>
-      <button style={{ ...css.btn, marginBottom: 16 }} onClick={onCancel}>
-        ← Back
-      </button>
+      <Link to="/" style={{ textDecoration: "none" }}>
+        <button style={{ ...css.btn, marginBottom: 16 }}>← Back</button>
+      </Link>
       <div style={css.card}>
         <h2 style={{ fontSize: 18, fontWeight: 600, marginBottom: 16 }}>Create Job</h2>
         <form onSubmit={handleSubmit}>
@@ -1134,7 +1119,7 @@ function CreateJobForm({
             <button type="submit" style={css.btnPrimary} disabled={submitting}>
               {submitting ? "Creating..." : "Create Job"}
             </button>
-            <button type="button" style={css.btn} onClick={onCancel}>
+            <button type="button" style={css.btn} onClick={() => navigate("/")}>
               Cancel
             </button>
           </div>
@@ -1145,11 +1130,8 @@ function CreateJobForm({
 }
 
 // --- App Shell ---
-type View = { type: "list" } | { type: "detail"; taskId: string } | { type: "create" };
-
 export function App() {
   const [authed, setAuthed] = useState(() => !!localStorage.getItem("sos_token"));
-  const [view, setView] = useState<View>({ type: "list" });
 
   if (!authed) {
     return <TokenSetup onSet={() => setAuthed(true)} />;
@@ -1159,9 +1141,9 @@ export function App() {
     <div style={css.container}>
       <div style={css.header}>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <span style={css.title} onClick={() => setView({ type: "list" })}>
-            🤖 Son of Steve
-          </span>
+          <Link to="/" style={{ textDecoration: "none" }}>
+            <span style={css.title}>Son of Steve</span>
+          </Link>
         </div>
         <div style={css.nav}>
           <button
@@ -1176,25 +1158,11 @@ export function App() {
         </div>
       </div>
 
-      {view.type === "list" && (
-        <JobsList
-          onSelect={(id) => setView({ type: "detail", taskId: id })}
-          onCreateClick={() => setView({ type: "create" })}
-        />
-      )}
-      {view.type === "detail" && (
-        <JobDetail
-          taskId={view.taskId}
-          onBack={() => setView({ type: "list" })}
-          onNavigate={(id) => setView({ type: "detail", taskId: id })}
-        />
-      )}
-      {view.type === "create" && (
-        <CreateJobForm
-          onCreated={(id) => setView({ type: "detail", taskId: id })}
-          onCancel={() => setView({ type: "list" })}
-        />
-      )}
+      <Routes>
+        <Route path="/" element={<JobsList />} />
+        <Route path="/jobs/new" element={<CreateJobForm />} />
+        <Route path="/jobs/:taskId" element={<JobDetail />} />
+      </Routes>
     </div>
   );
 }
