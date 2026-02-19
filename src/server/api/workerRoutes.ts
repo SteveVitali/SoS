@@ -9,6 +9,7 @@ import {
 } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
 import type { SlackPoster } from "../slack/slackClient.js";
+import { deregisterWorker, registerWorker, updateWorkerStatus } from "../workers/workerRegistry.js";
 
 const log = createLogger("server:api:worker");
 
@@ -21,6 +22,64 @@ function pstr(v: unknown): string {
 
 export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
   const router = Router();
+
+  // POST /api/worker/register
+  router.post("/register", (req: Request, res: Response) => {
+    try {
+      const { worker_id, hostname, pid, concurrency, version } = req.body;
+      if (!worker_id || !hostname || !pid) {
+        res.status(400).json({ error: "worker_id, hostname, pid required" });
+        return;
+      }
+      const info = registerWorker({
+        worker_id,
+        hostname,
+        pid,
+        concurrency: concurrency || 1,
+        version,
+      });
+      res.json({ worker: info });
+    } catch (err: any) {
+      log.error("Register error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/worker/status
+  router.post("/status", (req: Request, res: Response) => {
+    try {
+      const { worker_id, loops } = req.body;
+      if (!worker_id || !loops) {
+        res.status(400).json({ error: "worker_id and loops required" });
+        return;
+      }
+      const ok = updateWorkerStatus(worker_id, loops);
+      if (!ok) {
+        res.status(404).json({ error: "Worker not registered" });
+        return;
+      }
+      res.json({ ok: true });
+    } catch (err: any) {
+      log.error("Status update error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/worker/deregister
+  router.post("/deregister", (req: Request, res: Response) => {
+    try {
+      const { worker_id } = req.body;
+      if (!worker_id) {
+        res.status(400).json({ error: "worker_id required" });
+        return;
+      }
+      deregisterWorker(worker_id);
+      res.json({ ok: true });
+    } catch (err: any) {
+      log.error("Deregister error", { error: err.message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
 
   // GET /api/worker/jobs/poll?requested_by=...&limit=10
   router.get("/jobs/poll", async (req: Request, res: Response) => {

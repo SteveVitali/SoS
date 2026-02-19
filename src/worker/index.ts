@@ -1,10 +1,12 @@
 import "dotenv/config";
 import { setMaxListeners } from "node:events";
+import os from "node:os";
 import { createLogger } from "../shared/logger.js";
 import { WorkerApiClient } from "./apiClient.js";
 import { loadWorkerConfig } from "./config.js";
 import { worktreePool } from "./executor/worktreePool.js";
 import { startWorkerLoop } from "./poller.js";
+import { closeWorkerWs, connectWorkerWs, setShutdownHandler } from "./workerWs.js";
 
 const log = createLogger("worker");
 
@@ -15,11 +17,30 @@ async function main() {
   // Initialize the shared worktree pool
   worktreePool.init(config.workspaceRoot);
 
+  // Generate a unique process-level worker ID
+  const processWorkerId = `${config.nodeId}-pid${process.pid}`;
+
   log.info("Starting worker pool", {
     nodeId: config.nodeId,
+    processWorkerId,
     workers: config.workers,
     requestedBy: config.requestedBy,
   });
+
+  // Register with the server
+  try {
+    await api.registerWorker({
+      worker_id: processWorkerId,
+      hostname: os.hostname(),
+      pid: process.pid,
+      concurrency: config.workers,
+    });
+  } catch (err: unknown) {
+    log.warn("Failed to register with server (non-fatal)", { error: (err as Error).message });
+  }
+
+  // Connect WebSocket for log streaming
+  connectWorkerWs(config.apiBaseUrl, config.apiToken, processWorkerId);
 
   const controllers: AbortController[] = [];
   const promises: Promise<void>[] = [];
@@ -29,7 +50,7 @@ async function main() {
     const controller = new AbortController();
     setMaxListeners(0, controller.signal);
     controllers.push(controller);
-    promises.push(startWorkerLoop(workerId, config, api, controller.signal));
+    promises.push(startWorkerLoop(workerId, i, config, api, controller.signal, processWorkerId));
   }
 
   // Graceful shutdown
@@ -40,7 +61,19 @@ async function main() {
   process.on("SIGINT", shutdown);
   process.on("SIGTERM", shutdown);
 
+  // Allow server to trigger shutdown via WebSocket command
+  setShutdownHandler(shutdown);
+
   await Promise.allSettled(promises);
+
+  // Deregister from server
+  try {
+    await api.deregisterWorker(processWorkerId);
+  } catch {
+    // Best effort
+  }
+  closeWorkerWs();
+
   log.info("All workers stopped");
 }
 

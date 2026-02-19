@@ -3,9 +3,17 @@ import { createWriteStream, existsSync, mkdirSync, writeFileSync } from "node:fs
 import path from "node:path";
 import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
+import { sendLogLine } from "../workerWs.js";
 import type { RepoEntry } from "./repoRegistry.js";
 
 const log = createLogger("worker:claude");
+
+// Context set by the poller before each job so log lines are tagged correctly
+let _logContext: { loopIndex: number; taskId?: string } = { loopIndex: 0 };
+
+export function setClaudeLogContext(loopIndex: number, taskId?: string): void {
+  _logContext = { loopIndex, taskId };
+}
 
 export interface ClaudeResult {
   success: boolean;
@@ -400,6 +408,10 @@ function runClaudeProcess(
     function processLine(line: string) {
       if (!line.trim()) return;
       logStream.write(`${line}\n`);
+
+      // Stream to server via WebSocket
+      sendLogLine(_logContext.loopIndex, line, _logContext.taskId);
+
       try {
         const obj = JSON.parse(line);
 

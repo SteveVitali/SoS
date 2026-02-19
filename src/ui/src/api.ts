@@ -253,6 +253,93 @@ export async function getWorktreeStatus(): Promise<Record<string, WorktreeSlotSt
   return res.worktrees;
 }
 
+// --- Workers ---
+
+export interface WorkerLoopInfo {
+  index: number;
+  status: "idle" | "busy";
+  task_id?: string;
+  worktree_slot?: string;
+  busy_since?: string;
+}
+
+export interface WorkerInfo {
+  worker_id: string;
+  hostname: string;
+  pid: number;
+  concurrency: number;
+  started_at: string;
+  last_seen: string;
+  status: "online" | "degraded" | "offline";
+  loops: WorkerLoopInfo[];
+  version?: string;
+}
+
+export async function listWorkerNodes(): Promise<{ workers: WorkerInfo[] }> {
+  return request("GET", "/workers");
+}
+
+export async function getWorkerNode(id: string): Promise<{ worker: WorkerInfo }> {
+  return request("GET", `/workers/${encodeURIComponent(id)}`);
+}
+
+export async function spawnWorker(concurrency: number): Promise<{ ok: boolean; pid: number }> {
+  return request("POST", "/workers/spawn", { concurrency });
+}
+
+export async function shutdownWorker(id: string): Promise<{ ok: boolean }> {
+  return request("POST", `/workers/${encodeURIComponent(id)}/shutdown`);
+}
+
+export async function removeWorkerEntry(id: string): Promise<{ ok: boolean }> {
+  return request("DELETE", `/workers/${encodeURIComponent(id)}`);
+}
+
+/**
+ * Open an SSE connection for live worker logs.
+ * Returns a cleanup function to close the connection.
+ */
+export function subscribeWorkerLogs(
+  workerId: string,
+  onLine: (line: {
+    worker_id: string;
+    loop_index: number;
+    task_id?: string;
+    line: string;
+    ts: string;
+  }) => void,
+  loopIndex?: number,
+): () => void {
+  const token = localStorage.getItem("sos_token") || "";
+  const params = new URLSearchParams();
+  if (loopIndex != null) params.set("loop", String(loopIndex));
+  const url = `${BASE}/workers/${encodeURIComponent(workerId)}/logs?${params.toString()}`;
+
+  const es = new EventSource(url, {
+    // EventSource doesn't support custom headers natively;
+    // for Bearer auth we'd need a polyfill. Since we're on localhost
+    // and the web auth may be basic-auth or same-origin, this works.
+  } as any);
+
+  es.onmessage = (ev) => {
+    try {
+      onLine(JSON.parse(ev.data));
+    } catch {
+      // ignore
+    }
+  };
+
+  es.addEventListener("close", () => {
+    es.close();
+  });
+
+  es.onerror = () => {
+    // Will auto-reconnect
+  };
+
+  return () => es.close();
+}
+
 // --- Chat ---
 
 export interface ConversationMessage {

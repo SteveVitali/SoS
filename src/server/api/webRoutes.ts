@@ -1,5 +1,7 @@
+import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
+import { fileURLToPath } from "node:url";
 import { type Request, type Response, Router } from "express";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { createLogger } from "../../shared/logger.js";
@@ -7,6 +9,14 @@ import type { ServerConfig } from "../config.js";
 import { CreateJobFromWebSchema, CreateRespondToCommentsFromWebSchema } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
 import { resolveSlackUser } from "../slack/userResolver.js";
+import {
+  getLogHistory,
+  getWorker,
+  listWorkers,
+  removeWorker,
+  sendWorkerCommand,
+  subscribeToLogs,
+} from "../workers/workerRegistry.js";
 import { fetchBatchPrStats, listPrs } from "./ghPrs.js";
 
 const log = createLogger("server:api:web");
@@ -422,6 +432,129 @@ export function createWebRoutes(config: ServerConfig): Router {
       log.error("Get worktrees error", { error: err.message });
       res.status(500).json({ error: "Internal error" });
     }
+  });
+
+  // --- Worker Management ---
+
+  // GET /api/web/workers
+  router.get("/workers", (_req: Request, res: Response) => {
+    res.json({ workers: listWorkers() });
+  });
+
+  // GET /api/web/workers/:id
+  router.get("/workers/:id", (req: Request, res: Response) => {
+    const worker = getWorker(pstr(req.params.id));
+    if (!worker) {
+      res.status(404).json({ error: "Worker not found" });
+      return;
+    }
+    res.json({ worker });
+  });
+
+  // POST /api/web/workers/spawn
+  router.post("/workers/spawn", (req: Request, res: Response) => {
+    try {
+      const concurrency = req.body?.concurrency || 1;
+
+      // Resolve path to worker entry point relative to this file
+      const __filename = fileURLToPath(import.meta.url);
+      const __dirname = path.dirname(__filename);
+      const workerEntry = path.resolve(__dirname, "../../worker/index.js");
+
+      // Build env: inherit current process env + override concurrency
+      const env = { ...process.env, SOS_WORKERS: String(concurrency) };
+
+      const child = spawn("node", [workerEntry], {
+        detached: true,
+        stdio: "ignore",
+        env,
+      });
+      child.unref();
+
+      log.info("Spawned worker process", { pid: child.pid, concurrency });
+      res.json({ ok: true, pid: child.pid });
+    } catch (err: any) {
+      log.error("Failed to spawn worker", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/web/workers/:id/shutdown
+  router.post("/workers/:id/shutdown", (req: Request, res: Response) => {
+    const workerId = pstr(req.params.id);
+    const worker = getWorker(workerId);
+    if (!worker) {
+      res.status(404).json({ error: "Worker not found" });
+      return;
+    }
+
+    // Try graceful WS command first
+    const sent = sendWorkerCommand(workerId, { command: "shutdown" });
+    if (sent) {
+      res.json({ ok: true, method: "ws_command" });
+      return;
+    }
+
+    // Fallback: SIGTERM via PID (local machine)
+    try {
+      process.kill(worker.pid, "SIGTERM");
+      log.info("Sent SIGTERM to worker", { worker_id: workerId, pid: worker.pid });
+      res.json({ ok: true, method: "sigterm" });
+    } catch (err: any) {
+      log.warn("Failed to kill worker process", {
+        worker_id: workerId,
+        pid: worker.pid,
+        error: err.message,
+      });
+      res.status(500).json({ error: `Failed to signal PID ${worker.pid}: ${err.message}` });
+    }
+  });
+
+  // DELETE /api/web/workers/:id — remove stale worker entry
+  router.delete("/workers/:id", (req: Request, res: Response) => {
+    removeWorker(pstr(req.params.id));
+    res.json({ ok: true });
+  });
+
+  // GET /api/web/workers/:id/logs — SSE stream of log lines
+  router.get("/workers/:id/logs", (req: Request, res: Response) => {
+    const workerId = pstr(req.params.id);
+    const worker = getWorker(workerId);
+    if (!worker) {
+      res.status(404).json({ error: "Worker not found" });
+      return;
+    }
+
+    const loopParam = qstr(req.query.loop);
+    const loopIndex = loopParam ? parseInt(loopParam, 10) : undefined;
+
+    // Set up SSE
+    res.setHeader("Content-Type", "text/event-stream");
+    res.setHeader("Cache-Control", "no-cache");
+    res.setHeader("Connection", "keep-alive");
+    res.flushHeaders();
+
+    // Send history first
+    const history = getLogHistory(workerId, loopIndex);
+    for (const line of history) {
+      res.write(`data: ${JSON.stringify(line)}\n\n`);
+    }
+
+    // Subscribe to live updates
+    const unsubscribe = subscribeToLogs(workerId, (line) => {
+      if (!line.ts) {
+        // Sentinel — worker deregistered
+        res.write("event: close\ndata: {}\n\n");
+        res.end();
+        return;
+      }
+      if (loopIndex != null && line.loop_index !== loopIndex) return;
+      res.write(`data: ${JSON.stringify(line)}\n\n`);
+    });
+
+    req.on("close", () => {
+      unsubscribe();
+    });
   });
 
   return router;

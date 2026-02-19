@@ -9,6 +9,8 @@ import { PrsList } from "./components/prs/PrsList.js";
 import { RepoRegistryEditor } from "./components/registry/RepoRegistryEditor.js";
 import { NavTab } from "./components/shared/NavTab.js";
 import { TokenSetup } from "./components/TokenSetup.js";
+import { WorkerDetail } from "./components/workers/WorkerDetail.js";
+import { WorkersList } from "./components/workers/WorkersList.js";
 import { AppDataProvider } from "./stores/AppDataContext.js";
 import { css } from "./styles/theme.js";
 
@@ -19,6 +21,8 @@ function AppShell() {
   const showChatsList = path === "/chats";
   const showJobsList = path === "/";
   const showPrsList = path === "/prs";
+  const isWorkersTab = path === "/workers" || path.startsWith("/workers/");
+  const showWorkersList = path === "/workers";
   const isJobsTab = path === "/" || path.startsWith("/jobs");
   const isPrsTab = path === "/prs";
   const isReposTab = path === "/repos";
@@ -34,6 +38,7 @@ function AppShell() {
             <NavTab to="/chats" label="Chats" active={isChatsTab} />
             <NavTab to="/" label="Jobs" active={isJobsTab} />
             <NavTab to="/prs" label="PRs" active={isPrsTab} />
+            <NavTab to="/workers" label="Workers" active={isWorkersTab} />
             <NavTab to="/repos" label="Repos" active={isReposTab} />
           </div>
         </div>
@@ -61,9 +66,13 @@ function AppShell() {
       <div style={{ display: showPrsList ? "block" : "none" }}>
         <PrsList />
       </div>
+      <div style={{ display: showWorkersList ? "block" : "none" }}>
+        <WorkersList />
+      </div>
 
       {/* Sub-pages rendered via Routes */}
       <Routes>
+        <Route path="/workers/:id" element={<WorkerDetail />} />
         <Route path="/chats/:id" element={<ChatDetail />} />
         <Route path="/repos" element={<RepoRegistryEditor />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />

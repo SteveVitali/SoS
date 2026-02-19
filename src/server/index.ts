@@ -83,9 +83,13 @@ async function main() {
     });
   });
 
-  app.listen(config.port, () => {
+  const httpServer = app.listen(config.port, () => {
     log.info(`Server listening on port ${config.port}`);
   });
+
+  // Attach WebSocket server for worker log streaming
+  const { attachWorkerWs } = await import("./workers/workerWs.js");
+  attachWorkerWs(httpServer, config.internalApiToken);
 
   // Start lease reaper (transitions stale RUNNING jobs to FAILED)
   startLeaseReaper(slackPoster);

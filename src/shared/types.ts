@@ -256,6 +256,54 @@ export interface WebRespondToCommentsRequest {
   parent_task_id?: string;
 }
 
+// --- Worker Registry Types ---
+
+export interface WorkerLoopInfo {
+  index: number;
+  status: "idle" | "busy";
+  task_id?: string;
+  worktree_slot?: string;
+  busy_since?: string;
+}
+
+export interface WorkerInfo {
+  worker_id: string;
+  hostname: string;
+  pid: number;
+  concurrency: number;
+  started_at: string;
+  last_seen: string;
+  status: "online" | "degraded" | "offline";
+  loops: WorkerLoopInfo[];
+  version?: string;
+}
+
+export interface WorkerRegisterRequest {
+  worker_id: string;
+  hostname: string;
+  pid: number;
+  concurrency: number;
+  version?: string;
+}
+
+export interface WorkerStatusReport {
+  worker_id: string;
+  loops: WorkerLoopInfo[];
+}
+
+export interface WorkerCommand {
+  command: "shutdown" | "set_concurrency";
+  n?: number;
+}
+
+export interface WorkerLogLine {
+  worker_id: string;
+  loop_index: number;
+  task_id?: string;
+  line: string;
+  ts: string;
+}
+
 export interface WebJobsQuery {
   status?: string;
   requested_by?: string;

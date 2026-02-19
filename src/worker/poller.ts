@@ -2,6 +2,7 @@ import { createLogger } from "../shared/logger.js";
 import type { JobDoc } from "../shared/types.js";
 import type { WorkerApiClient } from "./apiClient.js";
 import type { WorkerConfig } from "./config.js";
+import { setClaudeLogContext } from "./executor/claude.js";
 import { runJob } from "./executor/runJob.js";
 import { runRespondToComments } from "./executor/runRespondToComments.js";
 import { HeartbeatManager } from "./heartbeat.js";
@@ -10,9 +11,11 @@ const log = createLogger("worker:poller");
 
 export async function startWorkerLoop(
   workerId: string,
+  loopIndex: number,
   config: WorkerConfig,
   api: WorkerApiClient,
   signal: AbortSignal,
+  processWorkerId?: string,
 ): Promise<void> {
   const heartbeatManager = new HeartbeatManager(
     api,
@@ -21,11 +24,35 @@ export async function startWorkerLoop(
     15_000, // heartbeat every 15s
   );
 
-  log.info("Worker loop started", { workerId, requestedBy: config.requestedBy });
+  log.info("Worker loop started", { workerId, loopIndex, requestedBy: config.requestedBy });
+
+  // Track current state for status reporting
+  let currentTaskId: string | undefined;
+  let currentWorktreeSlot: string | undefined;
+  let busySince: string | undefined;
+
+  // Report loop status to server periodically (piggyback on poll cycle)
+  async function reportStatus(status: "idle" | "busy") {
+    if (!processWorkerId) return;
+    try {
+      await api.reportStatus(processWorkerId, [
+        {
+          index: loopIndex,
+          status,
+          task_id: currentTaskId,
+          worktree_slot: currentWorktreeSlot,
+          busy_since: busySince,
+        },
+      ]);
+    } catch {
+      // Non-critical
+    }
+  }
 
   while (!signal.aborted) {
     try {
       // Poll for jobs
+      await reportStatus("idle");
       const jobs = await api.poll(config.requestedBy, 5);
 
       if (jobs.length === 0) {
@@ -56,6 +83,14 @@ export async function startWorkerLoop(
         attempt: claimed.attempt,
       });
 
+      currentTaskId = claimed.task_id;
+      currentWorktreeSlot = claimed.worktree_slot;
+      busySince = new Date().toISOString();
+      await reportStatus("busy");
+
+      // Set log context so Claude output is tagged with correct loop/task
+      setClaudeLogContext(loopIndex, claimed.task_id);
+
       // Start heartbeat — returns abort signal that fires on lease loss
       const leaseSignal = heartbeatManager.start(claimed.task_id);
 
@@ -78,6 +113,10 @@ export async function startWorkerLoop(
       } finally {
         heartbeatManager.stop(claimed.task_id);
       }
+
+      currentTaskId = undefined;
+      currentWorktreeSlot = undefined;
+      busySince = undefined;
 
       log.info("Job execution finished", { workerId, task_id: claimed.task_id });
     } catch (err: any) {

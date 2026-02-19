@@ -199,6 +199,35 @@ export class WorkerApiClient {
     }
   }
 
+  // --- Worker Registry ---
+
+  async registerWorker(data: {
+    worker_id: string;
+    hostname: string;
+    pid: number;
+    concurrency: number;
+    version?: string;
+  }): Promise<void> {
+    await this.request("POST", "/api/worker/register", data);
+  }
+
+  async deregisterWorker(workerId: string): Promise<void> {
+    await this.request("POST", "/api/worker/deregister", { worker_id: workerId });
+  }
+
+  async reportStatus(
+    workerId: string,
+    loops: Array<{
+      index: number;
+      status: string;
+      task_id?: string;
+      worktree_slot?: string;
+      busy_since?: string;
+    }>,
+  ): Promise<void> {
+    await this.request("POST", "/api/worker/status", { worker_id: workerId, loops });
+  }
+
   async fetchSlackThread(channelId: string, threadTs: string): Promise<any[]> {
     try {
       const data = await this.request<{ messages: any[] }>(
