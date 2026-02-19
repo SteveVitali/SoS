@@ -18,6 +18,7 @@ export function setClaudeLogContext(loopIndex: number, taskId?: string): void {
 export interface ClaudeResult {
   success: boolean;
   summary: string;
+  fullText: string;
   logPath: string;
   model?: string;
   input_tokens?: number;
@@ -521,6 +522,7 @@ function runClaudeProcess(
       resolve({
         success,
         summary,
+        fullText,
         logPath,
         model: resultModel,
         input_tokens: resultInputTokens,

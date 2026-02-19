@@ -39,7 +39,6 @@ async function main() {
   // Connect WebSocket for log streaming
   connectWorkerWs(config.apiBaseUrl, config.apiToken, processWorkerId);
 
-  const workerId = `${config.nodeId}:worker-0`;
   const controller = new AbortController();
 
   // Graceful shutdown
@@ -53,7 +52,7 @@ async function main() {
   // Allow server to trigger shutdown via WebSocket command
   setShutdownHandler(shutdown);
 
-  await startWorkerLoop(workerId, 0, config, api, controller.signal, processWorkerId);
+  await startWorkerLoop(processWorkerId, 0, config, api, controller.signal, processWorkerId);
 
   // Deregister from server
   try {

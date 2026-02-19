@@ -14,6 +14,7 @@ import { useAppData } from "../../stores/AppDataContext.js";
 import { css } from "../../styles/theme.js";
 import { formatPrUrl, formatUser, relativeTime, shortId } from "../../utils/format.js";
 import { JobTypeBadge, StatusBadge } from "../shared/Badge.js";
+import { LogTerminal } from "../workers/LogTerminal.js";
 import { EventsTimeline } from "./EventsTimeline.js";
 import { PerformanceCard } from "./PerformanceCard.js";
 
@@ -226,7 +227,17 @@ export function JobDetail() {
         >
           <div>
             <span style={{ color: "var(--fg2)" }}>Claimed by:</span>{" "}
-            <span style={css.mono}>{job.claimed_by || "\u2014"}</span>
+            {job.claimed_by && ["RUNNING", "FIXING_CI"].includes(job.status) ? (
+              <Link
+                to={`/workers/${encodeURIComponent(job.claimed_by)}`}
+                style={{ ...css.mono, ...css.link, textDecoration: "none", fontSize: 13 }}
+                title="View worker logs"
+              >
+                {job.claimed_by} →
+              </Link>
+            ) : (
+              <span style={css.mono}>{job.claimed_by || "\u2014"}</span>
+            )}
           </div>
           <div>
             <span style={{ color: "var(--fg2)" }}>Attempt:</span> {job.attempt || 0}
@@ -322,6 +333,22 @@ export function JobDetail() {
           </div>
         )}
       </div>
+
+      {/* Live worker logs for in-progress jobs */}
+      {job.claimed_by && ["RUNNING", "FIXING_CI"].includes(job.status) && (
+        <div style={css.card}>
+          <div style={{ ...css.sectionTitle, display: "flex", alignItems: "center", gap: 8 }}>
+            Worker Logs
+            <Link
+              to={`/workers/${encodeURIComponent(job.claimed_by)}`}
+              style={{ ...css.link, fontSize: 12, fontWeight: 400, textDecoration: "none" }}
+            >
+              {job.claimed_by} →
+            </Link>
+          </div>
+          <LogTerminal workerId={job.claimed_by} height={400} />
+        </div>
+      )}
 
       <PerformanceCard job={job} />
       <EventsTimeline job={job} />

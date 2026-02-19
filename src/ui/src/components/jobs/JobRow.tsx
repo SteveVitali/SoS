@@ -1,4 +1,4 @@
-import { useNavigate } from "react-router-dom";
+import { Link, useNavigate } from "react-router-dom";
 import type { Job, PrCommentStats } from "../../api.js";
 import { getSlackNameCache } from "../../hooks/useSlackNames.js";
 import { css, lastSubstantiveEvent } from "../../styles/theme.js";
@@ -107,6 +107,19 @@ export function JobRow({ job, prStats, onAction }: JobRowProps) {
           <>
             <Dot />
             <span style={css.mono}>{job.worktree_slot}</span>
+          </>
+        )}
+        {job.claimed_by && ["RUNNING", "FIXING_CI"].includes(job.status) && (
+          <>
+            <Dot />
+            <Link
+              to={`/workers/${encodeURIComponent(job.claimed_by)}`}
+              style={{ ...css.mono, ...css.link, textDecoration: "none", fontSize: 11 }}
+              title="View worker logs"
+              onClick={(e) => e.stopPropagation()}
+            >
+              ⚙ {job.claimed_by}
+            </Link>
           </>
         )}
         <Dot />

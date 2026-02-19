@@ -229,7 +229,7 @@ export async function runRespondToComments(
         commitCount++;
       }
 
-      const explanation = claudeResult.summary.slice(0, 1000).trim();
+      const explanation = claudeResult.fullText.trim();
       results.push({
         thread,
         commitSha,

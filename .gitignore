@@ -30,4 +30,5 @@ coverage/
 
 # Son of Steve runtime
 .sonofsteve/
+.sos-lock
 repo-registry.yaml
