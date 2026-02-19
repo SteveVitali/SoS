@@ -1196,7 +1196,7 @@ function JobDetail() {
           )}
           {job.metrics.durations &&
             (() => {
-              const d = job.metrics!.durations!;
+              const d = job.metrics?.durations as Record<string, number>;
               const total = d.total_ms || 1;
               const phases: Array<{ label: string; ms: number; color: string }> = [
                 { label: "Claude Code", ms: d.claude_code_ms || 0, color: "#8b5cf6" },
