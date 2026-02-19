@@ -90,6 +90,7 @@ async function main() {
   if (slackEnabled) {
     try {
       await startSlackSocketMode(config, slackPoster);
+      await slackPoster!.setPresenceActive();
     } catch (err: any) {
       log.error("Failed to start Slack Socket Mode", { error: err.message });
       log.warn("Server will continue without Slack integration");
@@ -99,6 +100,9 @@ async function main() {
   // Graceful shutdown
   const shutdown = async () => {
     log.info("Shutting down...");
+    if (slackPoster) {
+      await slackPoster.setPresenceAway();
+    }
     stopLeaseReaper();
     await closeMongo();
     process.exit(0);

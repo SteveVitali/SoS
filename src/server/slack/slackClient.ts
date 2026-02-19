@@ -29,6 +29,8 @@ export interface SlackPoster {
   postEvent(job: JobDoc, type: string, payload?: any): Promise<void>;
   fetchThread(channelId: string, threadTs: string, limit?: number): Promise<SlackThreadMessage[]>;
   downloadFile(urlPrivate: string): Promise<Buffer>;
+  setPresenceActive(): Promise<void>;
+  setPresenceAway(): Promise<void>;
 }
 
 export function createSlackPoster(botToken: string, notifyUserId?: string): SlackPoster {
@@ -121,6 +123,24 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
       }
       const arrayBuffer = await response.arrayBuffer();
       return Buffer.from(arrayBuffer);
+    },
+
+    async setPresenceActive() {
+      try {
+        await client.users.setPresence({ presence: "auto" });
+        log.info("Slack presence set to active");
+      } catch (err: any) {
+        log.error("Failed to set Slack presence to active", { error: err.message });
+      }
+    },
+
+    async setPresenceAway() {
+      try {
+        await client.users.setPresence({ presence: "away" });
+        log.info("Slack presence set to away");
+      } catch (err: any) {
+        log.error("Failed to set Slack presence to away", { error: err.message });
+      }
     },
   };
 }
