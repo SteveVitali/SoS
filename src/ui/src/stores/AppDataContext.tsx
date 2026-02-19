@@ -105,25 +105,16 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         }),
         getUsers(),
       ]);
-      // Fetch PR stats in the background
-      const urls = [...new Set(jobsRes.jobs.flatMap((j: Job) => j.pr_urls || []))];
-      let prStats: Record<string, PrCommentStats> = {};
-      if (urls.length > 0) {
-        try {
-          prStats = await fetchPrStats(urls);
-        } catch {
-          // non-critical
-        }
-      }
-      setJobsState({
+      // Preserve existing prStats — they're refreshed on a slower cadence below
+      setJobsState((prev) => ({
         jobs: jobsRes.jobs,
         total: jobsRes.total,
         users: usersRes.users,
         loading: false,
         error: "",
-        prStats,
+        prStats: prev.prStats,
         lastRefreshedAt: Date.now(),
-      });
+      }));
     } catch (err: unknown) {
       setJobsState((prev) => ({
         ...prev,
@@ -131,6 +122,19 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         error: err instanceof Error ? err.message : String(err),
       }));
     }
+  }, []);
+
+  // Separate PR stats refresh on a slow cadence (avoids GitHub API rate limits)
+  const refreshJobPrStats = useCallback(async () => {
+    setJobsState((prev) => {
+      const urls = [...new Set(prev.jobs.flatMap((j: Job) => j.pr_urls || []))];
+      if (urls.length === 0) return prev;
+      // Fire-and-forget: fetch stats and update when ready
+      fetchPrStats(urls)
+        .then((prStats) => setJobsState((s) => ({ ...s, prStats })))
+        .catch(() => {});
+      return prev;
+    });
   }, []);
 
   // --- PRs ---
@@ -208,22 +212,26 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     refreshPrs();
     refreshRegistry();
     refreshWorktrees();
+    // Fetch PR stats after a short delay so jobs have loaded first
+    setTimeout(() => refreshJobPrStats(), 2_000);
     getIdentity()
       .then((res) => setJobOwner(res.jobOwner))
       .catch(() => {});
-  }, [refreshJobs, refreshPrs, refreshRegistry, refreshWorktrees]);
+  }, [refreshJobs, refreshPrs, refreshRegistry, refreshWorktrees, refreshJobPrStats]);
 
-  // --- Polling: refresh jobs every 3s, worktrees every 5s, PRs every 120s ---
+  // --- Polling: refresh jobs every 3s, worktrees every 5s, PRs + PR stats every 120s ---
   useEffect(() => {
     const jobsTimer = setInterval(() => refreshJobs(), 3_000);
     const worktreeTimer = setInterval(() => refreshWorktrees(), 5_000);
     const prsTimer = setInterval(() => refreshPrs(), 120_000);
+    const prStatsTimer = setInterval(() => refreshJobPrStats(), 120_000);
     return () => {
       clearInterval(jobsTimer);
       clearInterval(worktreeTimer);
       clearInterval(prsTimer);
+      clearInterval(prStatsTimer);
     };
-  }, [refreshJobs, refreshPrs, refreshWorktrees]);
+  }, [refreshJobs, refreshPrs, refreshWorktrees, refreshJobPrStats]);
 
   const value: AppDataContextValue = {
     jobs: jobsState,

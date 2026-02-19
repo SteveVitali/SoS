@@ -89,13 +89,41 @@ async function listPrsForRepo(
   }
 }
 
-/** Fetch comment stats for a single PR via GraphQL. */
+// --- PR Comment Stats Cache (TTL-based) ---
+
+const PR_STATS_TTL_MS = 120_000; // 2 minutes
+
+interface CachedStats {
+  stats: PrCommentStats;
+  fetchedAt: number;
+}
+
+const prStatsCache = new Map<string, CachedStats>();
+
+function getCachedStats(key: string): PrCommentStats | null {
+  const entry = prStatsCache.get(key);
+  if (!entry) return null;
+  if (Date.now() - entry.fetchedAt > PR_STATS_TTL_MS) {
+    prStatsCache.delete(key);
+    return null;
+  }
+  return entry.stats;
+}
+
+function setCachedStats(key: string, stats: PrCommentStats): void {
+  prStatsCache.set(key, { stats, fetchedAt: Date.now() });
+}
+
+/** Fetch comment stats for a single PR via GraphQL (with TTL cache). */
 async function fetchPrCommentStats(
   owner: string,
   repo: string,
   prNumber: number,
   currentUser: string,
 ): Promise<PrCommentStats> {
+  const cacheKey = `${owner}/${repo}#${prNumber}`;
+  const cached = getCachedStats(cacheKey);
+  if (cached) return cached;
   const query = `
     query {
       repository(owner: "${owner}", name: "${repo}") {
@@ -147,12 +175,14 @@ async function fetchPrCommentStats(
       }
     }
 
-    return {
+    const stats: PrCommentStats = {
       total_comments: totalComments,
       total_threads: threads.length,
       unresolved_threads: unresolvedThreads,
       unaddressed_threads: unaddressedThreads,
     };
+    setCachedStats(cacheKey, stats);
+    return stats;
   } catch (err: any) {
     log.warn("Failed to fetch comment stats", { owner, repo, prNumber, error: err.message });
     return { total_comments: 0, total_threads: 0, unresolved_threads: 0, unaddressed_threads: 0 };
