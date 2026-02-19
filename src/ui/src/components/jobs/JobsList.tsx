@@ -5,6 +5,7 @@ import { getSlackNameCache, useSlackNames } from "../../hooks/useSlackNames.js";
 import { useAppData } from "../../stores/AppDataContext.js";
 import { css, lastSubstantiveEvent } from "../../styles/theme.js";
 import { formatUserShort } from "../../utils/format.js";
+import { LastUpdated } from "../shared/LastUpdated.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { Pagination } from "../shared/Pagination.js";
 import { type SortDir, type SortKey, SortPills } from "../shared/SortPills.js";
@@ -53,7 +54,7 @@ function sortJobs(jobs: Job[], key: SortKey, dir: SortDir): Job[] {
 export function JobsList() {
   const navigate = useNavigate();
   const { jobs: jobsState, refreshJobs } = useAppData();
-  const { jobs, total, users, loading, error, prStats } = jobsState;
+  const { jobs, total, users, loading, error, prStats, lastRefreshedAt } = jobsState;
 
   const [status, setStatus] = useState("");
   const [requestedBy, setRequestedBy] = useState("");
@@ -134,6 +135,7 @@ export function JobsList() {
         count={total}
         actions={
           <>
+            <LastUpdated at={lastRefreshedAt} />
             <button type="button" style={css.btn} onClick={() => refreshJobs()}>
               ↻ Refresh
             </button>

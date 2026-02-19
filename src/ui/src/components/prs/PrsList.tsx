@@ -3,6 +3,7 @@ import { useNavigate } from "react-router-dom";
 import { createRespondToCommentsJob, type GitHubPr } from "../../api.js";
 import { useAppData } from "../../stores/AppDataContext.js";
 import { css } from "../../styles/theme.js";
+import { LastUpdated } from "../shared/LastUpdated.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { Spinner } from "../shared/Spinner.js";
 import { PrRow } from "./PrRow.js";
@@ -10,7 +11,7 @@ import { PrRow } from "./PrRow.js";
 export function PrsList() {
   const navigate = useNavigate();
   const { prs: prsState, refreshPrs, refreshJobs } = useAppData();
-  const { prs, loading, error } = prsState;
+  const { prs, loading, error, lastRefreshedAt } = prsState;
 
   const [state, setState] = useState<"open" | "closed" | "merged" | "all">("open");
   const [limit, setLimit] = useState(20);
@@ -50,9 +51,12 @@ export function PrsList() {
         title="Pull Requests"
         count={prs.length}
         actions={
-          <button type="button" style={css.btn} onClick={() => refreshPrs()}>
-            ↻ Refresh
-          </button>
+          <>
+            <LastUpdated at={lastRefreshedAt} />
+            <button type="button" style={css.btn} onClick={() => refreshPrs()}>
+              ↻ Refresh
+            </button>
+          </>
         }
       />
       <div style={css.filters}>

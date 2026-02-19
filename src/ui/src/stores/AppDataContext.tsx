@@ -36,12 +36,14 @@ interface JobsState {
   loading: boolean;
   error: string;
   prStats: Record<string, PrCommentStats>;
+  lastRefreshedAt: number | null;
 }
 
 interface PrsState {
   prs: GitHubPr[];
   loading: boolean;
   error: string;
+  lastRefreshedAt: number | null;
 }
 
 interface RegistryState {
@@ -82,6 +84,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     loading: true,
     error: "",
     prStats: {},
+    lastRefreshedAt: null,
   });
   const lastJobsFilter = useRef<JobsFilter>({ limit: 25, offset: 0 });
 
@@ -117,6 +120,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
         loading: false,
         error: "",
         prStats,
+        lastRefreshedAt: Date.now(),
       });
     } catch (err: unknown) {
       setJobsState((prev) => ({
@@ -132,6 +136,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     prs: [],
     loading: true,
     error: "",
+    lastRefreshedAt: null,
   });
   const lastPrsFilter = useRef<PrsFilter>({ state: "open", limit: 20 });
 
@@ -141,7 +146,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     setPrsState((prev) => ({ ...prev, loading: prev.prs.length === 0, error: "" }));
     try {
       const res = await listPrs({ state: f.state, limit: f.limit });
-      setPrsState({ prs: res.prs, loading: false, error: "" });
+      setPrsState({ prs: res.prs, loading: false, error: "", lastRefreshedAt: Date.now() });
     } catch (err: unknown) {
       setPrsState((prev) => ({
         ...prev,
