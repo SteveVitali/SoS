@@ -38,8 +38,8 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         version,
       });
       res.json({ worker: info });
-    } catch (err: any) {
-      log.error("Register error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Register error", { error: err instanceof Error ? err.message : String(err) });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -58,8 +58,8 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ ok: true });
-    } catch (err: any) {
-      log.error("Status update error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Status update error", { error: err instanceof Error ? err.message : String(err) });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -74,8 +74,8 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
       }
       deregisterWorker(worker_id);
       res.json({ ok: true });
-    } catch (err: any) {
-      log.error("Deregister error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Deregister error", { error: err instanceof Error ? err.message : String(err) });
       res.status(500).json({ error: "Internal error" });
     }
   });

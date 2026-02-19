@@ -2,8 +2,8 @@ import type { NextFunction, Request, Response } from "express";
 import { describe, expect, it, vi } from "vitest";
 import { internalAuth, optionalBasicAuth } from "./internalAuth.js";
 
-function mockReqResNext(headers: Record<string, string> = {}) {
-  const req = { headers, ip: "127.0.0.1" } as unknown as Request;
+function mockReqResNext(headers: Record<string, string> = {}, query: Record<string, string> = {}) {
+  const req = { headers, ip: "127.0.0.1", query } as unknown as Request;
   const res = {
     status: vi.fn().mockReturnThis(),
     json: vi.fn().mockReturnThis(),
@@ -33,18 +33,32 @@ describe("internalAuth (Bearer token)", () => {
     expect(next).not.toHaveBeenCalled();
   });
 
-  it("returns 401 when Authorization header has wrong scheme", () => {
+  it("returns 403 when Authorization header has wrong scheme", () => {
     const { req, res, next } = mockReqResNext({
       authorization: "Basic abc123",
     });
     middleware(req, res, next);
-    expect(res.status).toHaveBeenCalledWith(401);
+    expect(res.status).toHaveBeenCalledWith(403);
   });
 
   it("returns 403 for an invalid token", () => {
     const { req, res, next } = mockReqResNext({
       authorization: "Bearer wrong-token",
     });
+    middleware(req, res, next);
+    expect(res.status).toHaveBeenCalledWith(403);
+    expect(next).not.toHaveBeenCalled();
+  });
+
+  it("accepts ?token= query param as fallback (for SSE/EventSource)", () => {
+    const { req, res, next } = mockReqResNext({}, { token: "secret-token-123" });
+    middleware(req, res, next);
+    expect(next).toHaveBeenCalledOnce();
+    expect(res.status).not.toHaveBeenCalled();
+  });
+
+  it("returns 403 for invalid query param token", () => {
+    const { req, res, next } = mockReqResNext({}, { token: "wrong" });
     middleware(req, res, next);
     expect(res.status).toHaveBeenCalledWith(403);
     expect(next).not.toHaveBeenCalled();

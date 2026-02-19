@@ -1,4 +1,3 @@
-import { spawn } from "node:child_process";
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
 import { fileURLToPath } from "node:url";
@@ -9,11 +8,12 @@ import type { ServerConfig } from "../config.js";
 import { CreateJobFromWebSchema, CreateRespondToCommentsFromWebSchema } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
 import { resolveSlackUser } from "../slack/userResolver.js";
+import { spawnWorkerProcess } from "../workers/spawnWorker.js";
 import {
+  deregisterWorker,
   getLogHistory,
   getWorker,
   listWorkers,
-  removeWorker,
   sendWorkerCommand,
   subscribeToLogs,
 } from "../workers/workerRegistry.js";
@@ -454,25 +454,12 @@ export function createWebRoutes(config: ServerConfig): Router {
   // POST /api/web/workers/spawn
   router.post("/workers/spawn", (_req: Request, res: Response) => {
     try {
-      // Resolve paths relative to this file
-      const __filename = fileURLToPath(import.meta.url);
-      const __dirname = path.dirname(__filename);
-      const projectRoot = path.resolve(__dirname, "../../..");
-      const workerEntry = path.resolve(projectRoot, "src/worker/index.ts");
-      const tsxBin = path.resolve(projectRoot, "node_modules/.bin/tsx");
-
-      const child = spawn(tsxBin, [workerEntry], {
-        detached: true,
-        stdio: "ignore",
-        env: process.env,
-      });
-      child.unref();
-
-      log.info("Spawned worker process", { pid: child.pid });
-      res.json({ ok: true, pid: child.pid });
-    } catch (err: any) {
-      log.error("Failed to spawn worker", { error: err.message });
-      res.status(500).json({ error: err.message });
+      const pid = spawnWorkerProcess();
+      res.json({ ok: true, pid });
+    } catch (err: unknown) {
+      const msg = err instanceof Error ? err.message : String(err);
+      log.error("Failed to spawn worker", { error: msg });
+      res.status(500).json({ error: msg });
     }
   });
 
@@ -509,7 +496,7 @@ export function createWebRoutes(config: ServerConfig): Router {
 
   // DELETE /api/web/workers/:id — remove stale worker entry
   router.delete("/workers/:id", (req: Request, res: Response) => {
-    removeWorker(pstr(req.params.id));
+    deregisterWorker(pstr(req.params.id));
     res.json({ ok: true });
   });
 

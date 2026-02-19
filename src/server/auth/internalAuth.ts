@@ -5,18 +5,21 @@ const log = createLogger("server:auth");
 
 export function internalAuth(token: string) {
   return (req: Request, res: Response, next: NextFunction) => {
+    // Accept Bearer header (normal requests) or ?token= query param (SSE/EventSource)
     const header = req.headers.authorization;
-    if (!header || !header.startsWith("Bearer ")) {
+    if (header?.startsWith("Bearer ")) {
+      const provided = header.slice(7);
+      if (provided === token) return next();
+    }
+    const qToken = typeof req.query.token === "string" ? req.query.token : undefined;
+    if (qToken === token) return next();
+
+    if (!header && !qToken) {
       res.status(401).json({ error: "Missing or invalid Authorization header" });
       return;
     }
-    const provided = header.slice(7);
-    if (provided !== token) {
-      log.warn("Invalid API token attempt", { ip: req.ip });
-      res.status(403).json({ error: "Invalid API token" });
-      return;
-    }
-    next();
+    log.warn("Invalid API token attempt", { ip: req.ip });
+    res.status(403).json({ error: "Invalid API token" });
   };
 }
 

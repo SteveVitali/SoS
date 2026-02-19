@@ -14,7 +14,7 @@ const LOG_RING_SIZE = 1000; // lines per worker
 
 interface WorkerEntry {
   info: WorkerInfo;
-  /** Ring buffer of recent log lines per loop index (-1 = all) */
+  /** Ring buffer of recent log lines (all loops combined) */
   logRing: WorkerLogLine[];
   /** SSE subscribers for live logs */
   logSubscribers: Set<(line: WorkerLogLine) => void>;
@@ -60,10 +60,6 @@ export function deregisterWorker(workerId: string): boolean {
   workers.delete(workerId);
   log.info("Worker deregistered", { worker_id: workerId });
   return true;
-}
-
-export function removeWorker(workerId: string): boolean {
-  return deregisterWorker(workerId);
 }
 
 // --- Status ---

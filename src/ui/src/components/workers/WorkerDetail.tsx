@@ -90,8 +90,6 @@ export function WorkerDetail() {
   if (loading) return <div style={{ padding: 20, color: "var(--fg3)" }}>Loading…</div>;
   if (error && !worker) return <div style={css.error}>{error}</div>;
 
-  const displayLines = lines;
-
   return (
     <div>
       {/* Header */}
@@ -139,10 +137,8 @@ export function WorkerDetail() {
           color: "var(--fg)",
         }}
       >
-        {displayLines.length === 0 && (
-          <span style={{ color: "var(--fg3)" }}>Waiting for log output…</span>
-        )}
-        {displayLines.map((l, idx) => (
+        {lines.length === 0 && <span style={{ color: "var(--fg3)" }}>Waiting for log output…</span>}
+        {lines.map((l, idx) => (
           <div key={`${l.ts}-${idx}`} style={{ display: "flex", gap: 8 }}>
             <span style={{ color: "var(--fg3)", flexShrink: 0, minWidth: 72 }}>
               {new Date(l.ts).toLocaleTimeString()}
@@ -181,7 +177,7 @@ export function WorkerDetail() {
             />
             Auto-scroll
           </label>
-          <span style={{ fontSize: 11, color: "var(--fg3)" }}>{displayLines.length} lines</span>
+          <span style={{ fontSize: 11, color: "var(--fg3)" }}>{lines.length} lines</span>
         </div>
         {worker?.status !== "offline" && (
           <button

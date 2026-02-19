@@ -91,6 +91,17 @@ async function main() {
   const { attachWorkerWs } = await import("./workers/workerWs.js");
   attachWorkerWs(httpServer, config.internalApiToken);
 
+  // Auto-spawn one worker so the system is ready out of the box
+  const { spawnWorkerProcess } = await import("./workers/spawnWorker.js");
+  try {
+    const pid = spawnWorkerProcess();
+    log.info("Auto-spawned default worker", { pid });
+  } catch (err: unknown) {
+    log.warn("Failed to auto-spawn worker (non-fatal)", {
+      error: err instanceof Error ? err.message : String(err),
+    });
+  }
+
   // Start lease reaper (transitions stale RUNNING jobs to FAILED)
   startLeaseReaper(slackPoster);
 
@@ -106,8 +117,10 @@ async function main() {
   }
 
   // Graceful shutdown
+  const { shutdownAllWorkers } = await import("./workers/spawnWorker.js");
   const shutdown = async () => {
     log.info("Shutting down...");
+    await shutdownAllWorkers();
     if (slackPoster) {
       await slackPoster.setPresenceAway();
     }

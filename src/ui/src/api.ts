@@ -307,18 +307,15 @@ export function subscribeWorkerLogs(
     line: string;
     ts: string;
   }) => void,
-  loopIndex?: number,
 ): () => void {
+  // EventSource can't send custom headers, so pass token as query param.
+  // The server's internalAuth middleware accepts ?token= as a fallback.
   const token = localStorage.getItem("sos_token") || "";
   const params = new URLSearchParams();
-  if (loopIndex != null) params.set("loop", String(loopIndex));
+  if (token) params.set("token", token);
   const url = `${BASE}/workers/${encodeURIComponent(workerId)}/logs?${params.toString()}`;
 
-  const es = new EventSource(url, {
-    // EventSource doesn't support custom headers natively;
-    // for Bearer auth we'd need a polyfill. Since we're on localhost
-    // and the web auth may be basic-auth or same-origin, this works.
-  } as any);
+  const es = new EventSource(url);
 
   es.onmessage = (ev) => {
     try {
