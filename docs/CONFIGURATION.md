@@ -1,0 +1,47 @@
+# Configuration Reference
+
+All configuration is via environment variables in a single `.env` file (see `.env.example`).
+
+## Server
+
+| Variable | Required | Description |
+|---|---|---|
+| `SOS_SERVER_PORT` | No (default: 3000) | HTTP port |
+| `SOS_INTERNAL_API_TOKEN` | **Yes** | Shared secret for worker ↔ server auth |
+| `MONGO_URI` | **Yes** | MongoDB connection string |
+| `MONGO_DB` | No (default: `son_of_steve`) | Database name |
+| `SLACK_APP_TOKEN` | **Yes** | Socket Mode app token (`xapp-...`) |
+| `SLACK_BOT_TOKEN` | **Yes** | Bot OAuth token (`xoxb-...`) |
+| `SLACK_BOT_USER_ID` | **Yes** | Bot's Slack user ID (`U...`) |
+| `SOS_LLM_PROVIDER` | No (default: `anthropic`) | LLM provider: `anthropic` or `openai_compatible` ([setup](SLACK_SETUP.md#llm-powered-message-routing-optional)) |
+| `SOS_LLM_MODEL` | No (default: `claude-sonnet-4-20250514`) | Model name/string for the LLM provider |
+| `SOS_LLM_API_KEY` | No | API key for the LLM provider. Falls back to `ANTHROPIC_API_KEY` if not set. |
+| `SOS_LLM_BASE_URL` | Only for `openai_compatible` | Base URL for OpenAI-compatible endpoint (e.g., LiteLLM proxy) |
+| `SOS_SLACK_JOB_OWNER` | No | The `requested_by` value to assign to Slack-created jobs (defaults to `SOS_REQUESTED_BY_SLACK_USER`). Must match the worker's `SOS_REQUESTED_BY_SLACK_USER` so workers claim Slack jobs. The original Slack user is stored separately for attribution. |
+| `SOS_MAX_THREAD_MESSAGES` | No (default: 20) | Max Slack thread messages to fetch for context when @-mentioned in a thread |
+| `SOS_MAX_ATTACHMENT_SIZE_MB` | No (default: 10) | Max total file attachment size (MB) per job. Files collected newest-first; oldest dropped when limit reached. |
+| `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
+| `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
+| `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |
+| `WEB_BASIC_AUTH_USER` | No | Optional basic auth for web UI |
+| `WEB_BASIC_AUTH_PASS` | No | Optional basic auth for web UI |
+
+## Worker
+
+The worker reads from the same `.env` file.
+
+| Variable | Required | Description |
+|---|---|---|
+| `SOS_API_BASE_URL` | **Yes** | Server URL (e.g., `http://localhost:3000`) |
+| `SOS_INTERNAL_API_TOKEN` | **Yes** | Same token as server |
+| `SOS_REQUESTED_BY_SLACK_USER` | **Yes** | Your Slack user ID |
+| `SOS_NODE_ID` | No (default: `local`) | Identifier for this machine |
+| `SOS_WORKERS` | No (default: 4) | Number of concurrent worker loops |
+| `SOS_POLL_INTERVAL_SECONDS` | No (10) | Poll interval |
+| `SOS_LEASE_SECONDS` | No (120) | Lease duration per claim |
+| `SOS_WORKSPACE_ROOT` | **Yes** | Directory for clones/worktrees |
+| `SOS_REPO_REGISTRY` | **Yes** | Path to `repo-registry.yaml` |
+| `SOS_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix attempts |
+| `SOS_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
+| `SOS_REQUIRE_LOCAL_TESTS_BEFORE_PR` | No (true) | Require local tests pass before PR |
+| `SOS_TEST_LEVEL_DEFAULT` | No (`fast`) | Default test level: `fast`/`full`/`none` |

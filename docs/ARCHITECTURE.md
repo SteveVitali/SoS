@@ -142,14 +142,17 @@ This means there is **no single point of failure** for job execution — as long
    c. Server posts "Claimed 🔧" to Slack thread
 5. Worker (executing):
    a. Loads repo-registry.yaml, resolves repo by hint or keywords
-   b. Ensures clone exists, creates git worktree on new branch
+   b. Ensures clone exists, acquires worktree slot from pool, checks out fresh branch
    c. Optionally fetches Slack thread context via server API
-   d. Writes prompt, runs Claude Code CLI
-   e. Runs lint/tests per registry config
-   f. Commits, pushes, creates PR via gh CLI
-   g. Polls CI via gh pr checks
-   h. If CI fails and ci_fix=on, runs bounded fix loop (max N attempts)
-   i. Calls /complete or /fail on server
+   d. Writes attachments to .sonofsteve/attachments/ in worktree
+   e. Writes prompt, runs Claude Code CLI
+   f. Runs lint/tests per registry config
+   g. Runs self-review: feeds diff through Claude as a Staff Engineer reviewer, fixes issues
+   h. Commits, pushes, creates PR via gh CLI
+   i. Polls CI via gh pr checks
+   j. If CI fails and ci_fix=on, runs bounded fix loop (max N attempts)
+   k. Calls /complete or /fail on server
+   l. Releases worktree slot back to pool
 6. Server:
    a. Updates job doc to DONE/FAILED
    b. Posts final summary to Slack thread
@@ -202,16 +205,26 @@ son-of-steve/
 │   │   ├── auth/
 │   │   │   └── internalAuth.ts  # Bearer token + optional Basic Auth middleware
 │   │   ├── jobs/
-│   │   │   ├── jobModel.ts  # Zod validation schemas for API inputs
-│   │   │   ├── jobRepo.ts   # MongoDB queries (CRUD, claim, heartbeat, poll)
-│   │   │   ├── jobService.ts # Business logic orchestrating repo + Slack + events
-│   │   │   ├── lease.ts     # Claim + heartbeat helpers
-│   │   │   └── idempotency.ts # Slack event deduplication
+│   │   │   ├── jobModel.ts      # Zod validation schemas for API inputs
+│   │   │   ├── jobRepo.ts       # MongoDB queries (CRUD, claim, heartbeat, poll)
+│   │   │   ├── jobService.ts    # Business logic orchestrating repo + Slack + events
+│   │   │   ├── lease.ts         # Claim + heartbeat helpers
+│   │   │   ├── leaseReaper.ts   # Periodic check for stale RUNNING jobs
+│   │   │   ├── idempotency.ts   # Slack event deduplication
+│   │   │   └── titleGenerator.ts # LLM-based job title generation
+│   │   ├── llm/
+│   │   │   ├── llmProvider.ts       # LLM provider interface
+│   │   │   ├── anthropicProvider.ts # Anthropic API implementation
+│   │   │   ├── openaiProvider.ts    # OpenAI-compatible implementation
+│   │   │   └── index.ts             # Provider factory
 │   │   ├── slack/
-│   │   │   ├── socketMode.ts    # Slack Bolt app with Socket Mode
-│   │   │   ├── eventHandlers.ts # app_mention → job creation logic
-│   │   │   ├── slackClient.ts   # Slack Web API posting + thread fetching
-│   │   │   └── formatting.ts    # Slack message templates
+│   │   │   ├── socketMode.ts      # Slack Bolt app with Socket Mode
+│   │   │   ├── eventHandlers.ts   # app_mention → job creation logic
+│   │   │   ├── messageRouter.ts   # LLM-powered intent classification
+│   │   │   ├── commandExecutor.ts # Execute routed actions (create, status, cancel, etc.)
+│   │   │   ├── slackClient.ts     # Slack Web API posting + thread fetching
+│   │   │   ├── userResolver.ts    # Resolve Slack user IDs to display names
+│   │   │   └── formatting.ts      # Slack message templates
 │   │   └── api/
 │   │       ├── router.ts        # Mount worker + web routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* endpoints
@@ -228,7 +241,8 @@ son-of-steve/
 │   │       ├── runJob.ts        # Main orchestrator: the full job workflow
 │   │       ├── repoRegistry.ts  # YAML registry loader
 │   │       ├── repoResolver.ts  # Hint/keyword-based repo resolution
-│   │       ├── workspace.ts     # Git clone + worktree management
+│   │       ├── workspace.ts     # Git clone management (ensureClone)
+│   │       ├── worktreePool.ts  # Reusable worktree slot pool (singleton)
 │   │       ├── claude.ts        # Claude Code CLI subprocess integration
 │   │       ├── git.ts           # Git operations (commit, push, diff)
 │   │       ├── pr.ts            # GitHub PR creation via gh CLI
@@ -276,3 +290,11 @@ Job documents are audit trails. Soft-delete (status=DELETED) preserves the histo
 ### Why create new job on retry instead of resetting?
 
 Creating a new job with a `parent_task_id` link preserves the original job's error details and event history for debugging, while giving the retry a clean slate.
+
+### Why a worktree pool?
+
+Creating a fresh git worktree per job is expensive for large repos — especially monorepos with build systems like Bazel that produce significant `.gitignore`'d output trees. The worktree pool maintains a fixed set of reusable worktree slots per repo. On reuse, it detaches HEAD, resets, cleans, and checks out a fresh branch — but in `light` clean mode it preserves `.gitignore`'d files, keeping build caches intact. If all slots are occupied, the job is requeued (not failed) with a backoff, so it retries once a slot frees up.
+
+### Why a self-review pass?
+
+After Claude Code generates changes, the diff is fed back through a second Claude invocation acting as a Staff Engineer code reviewer. This catches dead code, naming issues, missing error handling, test gaps, and security concerns before the PR is even created. The review prompt is opinionated (checks correctness, design, naming, error handling, tests, security, performance) and instructs Claude to fix issues directly rather than just listing them. Post-review local checks are re-run to ensure the fixes don't break anything.

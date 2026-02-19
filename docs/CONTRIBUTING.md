@@ -90,8 +90,15 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 1. Implement the `CIProvider` interface from `src/worker/executor/ci/ciProvider.ts`
 2. Create a new file (e.g., `src/worker/executor/ci/circleci.ts`)
-3. Select it in `runJob.ts` based on `repo.ci.provider` from the registry
+3. Register it in `src/worker/executor/ci/index.ts` so `createCIProvider` returns it by name
 4. Add the provider name as an option in `repo-registry.example.yaml`
+
+### Adding a new LLM provider
+
+1. Implement the `LLMProvider` interface from `src/server/llm/llmProvider.ts`
+2. Create a new file (e.g., `src/server/llm/bedrockProvider.ts`)
+3. Register it in `src/server/llm/index.ts` so `createLLMProvider` returns it by provider name
+4. Document the required env vars in `docs/CONFIGURATION.md` and `docs/SLACK_SETUP.md`
 
 ### Adding a new API endpoint
 
@@ -146,12 +153,13 @@ See [docs/ARCHITECTURE.md](./ARCHITECTURE.md) for detailed design rationale.
 
 ## Future Work
 
-Tracked priorities for contributors:
+Tracked priorities for contributors (see also the [Roadmap](../README.md#roadmap)):
 
-1. **More automated tests** — integration tests for the API, jobRepo claim logic tests
-2. **Cancellation check in worker** — workers should check job status before big steps (push, PR)
-3. **Worktree cleanup** — automated cleanup of worktrees older than N days
-4. **Jenkins CI provider** — currently a stub
-5. **WAITING_FOR_APPROVAL status** — for ambiguous repo resolution, ask user to confirm
-6. **Rate limiting** — on the web API to prevent abuse
-7. **Metrics/observability** — request counts, job durations, error rates
+1. **Jenkins CI provider** — complete the existing stub in `src/worker/executor/ci/jenkins.ts`
+2. **Worker cancellation checks** — check job status before expensive steps (push, PR creation) to honor mid-flight cancellations
+3. **Integration tests for claim logic** — the atomic claim filter is the most critical correctness property; it deserves dedicated tests using `mongodb-memory-server`
+4. **Human-in-the-loop approval** (`WAITING_FOR_APPROVAL`) — pause before PR, show diff in Slack/web, wait for sign-off
+5. **Cost / token tracking** — track Claude API usage per job for budgeting
+6. **Metrics/observability** — request counts, job durations, error rates
+7. **Rate limiting** — on the web API to prevent abuse
+8. **Multi-model executors** — support plugging in Aider, OpenHands, or custom scripts alongside Claude Code
