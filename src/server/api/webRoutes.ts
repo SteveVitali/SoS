@@ -214,7 +214,6 @@ export function createWebRoutes(config: ServerConfig): Router {
         state,
         limit,
         includeComments,
-        botLogins: config.ghBotLogins,
         repoFilter,
       });
 
@@ -256,7 +255,7 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       // Cap at 20 to avoid abuse
       const capped = urls.slice(0, 20);
-      const stats = fetchBatchPrStats(capped, config.ghBotLogins);
+      const stats = fetchBatchPrStats(capped);
       res.json({ stats });
     } catch (err: any) {
       log.error("Batch PR stats error", { error: err.message });

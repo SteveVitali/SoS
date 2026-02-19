@@ -8,6 +8,24 @@ import {
 
 const log = createLogger("server:ghPrs");
 
+// --- Current GitHub User ---
+
+let cachedGhUser: string | null = null;
+
+/** Get the login of the currently authenticated `gh` CLI user (cached). */
+export function getCurrentGitHubUser(): string {
+  if (cachedGhUser) return cachedGhUser;
+  try {
+    const raw = execSync("gh api user --jq .login", { encoding: "utf-8", timeout: 10_000 });
+    cachedGhUser = raw.trim().toLowerCase();
+    log.info("Resolved current GitHub user", { login: cachedGhUser });
+    return cachedGhUser;
+  } catch (err: any) {
+    log.warn("Failed to resolve current GitHub user", { error: err.message });
+    return "";
+  }
+}
+
 // --- Types ---
 
 export interface PrCommentStats {
@@ -72,7 +90,7 @@ function fetchPrCommentStats(
   owner: string,
   repo: string,
   prNumber: number,
-  botLogins: string[],
+  currentUser: string,
 ): PrCommentStats {
   const query = `
     query {
@@ -115,11 +133,11 @@ function fetchPrCommentStats(
 
       if (!t.isResolved) {
         unresolvedThreads++;
-        // "un-addressed" = unresolved AND last comment is not from our bot
+        // "un-addressed" = unresolved AND last comment is not from the current user
         const comments = t.comments?.nodes || [];
         if (comments.length > 0) {
-          const lastAuthor = comments[comments.length - 1]?.author?.login || "";
-          if (!botLogins.includes(lastAuthor.toLowerCase())) {
+          const lastAuthor = (comments[comments.length - 1]?.author?.login || "").toLowerCase();
+          if (currentUser && lastAuthor !== currentUser) {
             unaddressedThreads++;
           }
         }
@@ -149,22 +167,14 @@ function parsePrUrl(prUrl: string): { owner: string; repo: string; number: numbe
  * Fetch comment stats for a batch of PR URLs.
  * Returns a map of URL → stats (only includes URLs that could be parsed and fetched).
  */
-export function fetchBatchPrStats(
-  prUrls: string[],
-  botLogins: string[] = ["son-of-steve", "son-of-steve[bot]"],
-): Record<string, PrCommentStats> {
-  const normalizedBotLogins = botLogins.map((l) => l.toLowerCase());
+export function fetchBatchPrStats(prUrls: string[]): Record<string, PrCommentStats> {
+  const currentUser = getCurrentGitHubUser();
   const results: Record<string, PrCommentStats> = {};
 
   for (const url of prUrls) {
     const parsed = parsePrUrl(url);
     if (!parsed) continue;
-    results[url] = fetchPrCommentStats(
-      parsed.owner,
-      parsed.repo,
-      parsed.number,
-      normalizedBotLogins,
-    );
+    results[url] = fetchPrCommentStats(parsed.owner, parsed.repo, parsed.number, currentUser);
   }
 
   return results;
@@ -177,7 +187,6 @@ export interface ListPrsOptions {
   state?: "open" | "closed" | "merged" | "all";
   limit?: number;
   includeComments?: boolean;
-  botLogins?: string[];
   repoFilter?: string;
 }
 
@@ -186,17 +195,10 @@ export interface ListPrsOptions {
  * Returns PRs sorted by updatedAt descending (most recent first).
  */
 export function listPrs(opts: ListPrsOptions): GitHubPr[] {
-  const {
-    registryPath,
-    state = "open",
-    limit = 20,
-    includeComments = true,
-    botLogins = ["son-of-steve", "son-of-steve[bot]"],
-    repoFilter,
-  } = opts;
+  const { registryPath, state = "open", limit = 20, includeComments = true, repoFilter } = opts;
 
   const registry = loadRegistry(registryPath);
-  const normalizedBotLogins = botLogins.map((l) => l.toLowerCase());
+  const currentUser = getCurrentGitHubUser();
   const allPrs: GitHubPr[] = [];
 
   for (const [repoId, entry] of registry.repos) {
@@ -213,7 +215,7 @@ export function listPrs(opts: ListPrsOptions): GitHubPr[] {
     for (const pr of rawPrs) {
       let comments: PrCommentStats | null = null;
       if (includeComments) {
-        comments = fetchPrCommentStats(parsed.owner, parsed.repo, pr.number, normalizedBotLogins);
+        comments = fetchPrCommentStats(parsed.owner, parsed.repo, pr.number, currentUser);
       }
 
       allPrs.push({
