@@ -201,3 +201,35 @@ export async function fetchPrStats(urls: string[]): Promise<Record<string, PrCom
   });
   return res.stats;
 }
+
+export interface RepoConfig {
+  clone: string;
+  default_branch?: string;
+  max_worktrees?: number;
+  clean_mode?: "light" | "full";
+  detect?: { keywords?: string[] };
+  commands?: {
+    lint?: string[];
+    test_fast?: string[];
+    test_full?: string[];
+  };
+  pr?: {
+    reviewers_default?: string[];
+    draft_by_default?: boolean;
+  };
+  ci?: {
+    provider?: string;
+  };
+}
+
+export interface RegistryData {
+  repos: Record<string, RepoConfig>;
+}
+
+export async function getRegistry(): Promise<{ registry: RegistryData; path: string }> {
+  return request("GET", "/registry");
+}
+
+export async function saveRegistry(registry: RegistryData): Promise<{ ok: boolean }> {
+  return request("PUT", "/registry", { registry });
+}

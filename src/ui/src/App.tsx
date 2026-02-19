@@ -9,16 +9,20 @@ import {
   fetchPrStats,
   type GitHubPr,
   getJob,
+  getRegistry,
   getUsers,
   type Job,
   listJobs,
   listPrs,
   type PrCommentStats,
   promotePr,
+  type RegistryData,
+  type RepoConfig,
   resolveSlackUsers,
   respondToComments,
   retryJob,
   type SlackUser,
+  saveRegistry,
 } from "./api.js";
 
 // --- Utilities ---
@@ -1839,6 +1843,513 @@ function CreateJobForm() {
   );
 }
 
+// --- Repo Registry Editor ---
+
+function emptyRepo(): RepoConfig {
+  return {
+    clone: "",
+    default_branch: "main",
+    max_worktrees: 1,
+    clean_mode: "light",
+    detect: { keywords: [] },
+    commands: {},
+    pr: { reviewers_default: [], draft_by_default: true },
+    ci: { provider: "" },
+  };
+}
+
+function CommandEditor({
+  label,
+  value,
+  onChange,
+}: {
+  label: string;
+  value: string[] | undefined;
+  onChange: (v: string[] | undefined) => void;
+}) {
+  const text = (value || []).join(" ");
+  return (
+    <div style={css.field}>
+      <label style={css.label}>{label}</label>
+      <input
+        style={css.input}
+        value={text}
+        onChange={(e) => {
+          const v = e.target.value.trim();
+          onChange(v ? v.split(/\s+/) : undefined);
+        }}
+        placeholder="e.g. npm run lint"
+      />
+    </div>
+  );
+}
+
+function RepoCard({
+  id,
+  repo,
+  expanded,
+  onToggle,
+  onChange,
+  onChangeId,
+  onDelete,
+}: {
+  id: string;
+  repo: RepoConfig;
+  expanded: boolean;
+  onToggle: () => void;
+  onChange: (r: RepoConfig) => void;
+  onChangeId: (oldId: string, newId: string) => void;
+  onDelete: () => void;
+}) {
+  const [editingId, setEditingId] = useState(false);
+  const [newId, setNewId] = useState(id);
+
+  const update = (partial: Partial<RepoConfig>) => onChange({ ...repo, ...partial });
+
+  const cloneDisplay = repo.clone
+    ? repo.clone.replace(/^git@github\.com:/, "").replace(/\.git$/, "")
+    : "not configured";
+
+  return (
+    <div
+      style={{
+        ...css.card,
+        marginBottom: 12,
+        border: expanded ? "1px solid var(--accent)" : "1px solid var(--border)",
+      }}
+    >
+      {/* Header row */}
+      <div
+        style={{ display: "flex", alignItems: "center", gap: 10, cursor: "pointer" }}
+        onClick={onToggle}
+      >
+        <span style={{ fontSize: 12, color: "var(--fg3)", userSelect: "none", width: 16 }}>
+          {expanded ? "\u25BC" : "\u25B6"}
+        </span>
+        <span style={{ fontWeight: 600, fontSize: 15, flex: 1 }}>{id}</span>
+        <span style={{ ...css.mono, fontSize: 12, color: "var(--fg3)" }}>{cloneDisplay}</span>
+        <span
+          style={{
+            ...css.badge(repo.max_worktrees && repo.max_worktrees > 1 ? "#3b82f6" : "#6b7280"),
+            fontSize: 10,
+          }}
+        >
+          {repo.max_worktrees || 1} worktree{(repo.max_worktrees || 1) > 1 ? "s" : ""}
+        </span>
+        <span style={{ ...css.badge("#6b7280"), fontSize: 10 }}>{repo.clean_mode || "light"}</span>
+        {repo.ci?.provider && (
+          <span style={{ ...css.badge("#8b5cf6"), fontSize: 10 }}>{repo.ci.provider}</span>
+        )}
+      </div>
+
+      {expanded && (
+        <div style={{ marginTop: 16 }}>
+          {/* Identity */}
+          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8, color: "var(--fg2)" }}>
+            Identity
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12 }}>
+            <div style={css.field}>
+              <label style={css.label}>Repo ID</label>
+              {editingId ? (
+                <div style={{ display: "flex", gap: 6 }}>
+                  <input
+                    style={{ ...css.input, flex: 1 }}
+                    value={newId}
+                    onChange={(e) => setNewId(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === "Enter" && newId && newId !== id) {
+                        onChangeId(id, newId);
+                        setEditingId(false);
+                      } else if (e.key === "Escape") {
+                        setNewId(id);
+                        setEditingId(false);
+                      }
+                    }}
+                  />
+                  <button
+                    style={css.btnSmall}
+                    onClick={() => {
+                      if (newId && newId !== id) onChangeId(id, newId);
+                      setEditingId(false);
+                    }}
+                  >
+                    OK
+                  </button>
+                </div>
+              ) : (
+                <div
+                  style={{
+                    ...css.input,
+                    cursor: "pointer",
+                    display: "flex",
+                    alignItems: "center",
+                    justifyContent: "space-between",
+                  }}
+                  onClick={(e) => {
+                    e.stopPropagation();
+                    setEditingId(true);
+                  }}
+                >
+                  <span style={css.mono}>{id}</span>
+                  <span style={{ fontSize: 11, color: "var(--fg3)" }}>click to edit</span>
+                </div>
+              )}
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>Clone URL</label>
+              <input
+                style={css.input}
+                value={repo.clone || ""}
+                onChange={(e) => update({ clone: e.target.value })}
+                placeholder="git@github.com:org/repo.git"
+              />
+            </div>
+          </div>
+
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div style={css.field}>
+              <label style={css.label}>Default Branch</label>
+              <input
+                style={css.input}
+                value={repo.default_branch || "main"}
+                onChange={(e) => update({ default_branch: e.target.value })}
+              />
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>Max Worktrees</label>
+              <input
+                style={css.input}
+                type="number"
+                min={1}
+                max={10}
+                value={repo.max_worktrees ?? 1}
+                onChange={(e) => update({ max_worktrees: parseInt(e.target.value, 10) || 1 })}
+              />
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>Clean Mode</label>
+              <select
+                style={{ ...css.select, width: "100%" }}
+                value={repo.clean_mode || "light"}
+                onChange={(e) => update({ clean_mode: e.target.value as "light" | "full" })}
+              >
+                <option value="light">light (preserve build caches)</option>
+                <option value="full">full (clean everything)</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Detection */}
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              marginBottom: 8,
+              marginTop: 12,
+              color: "var(--fg2)",
+            }}
+          >
+            Detection
+          </div>
+          <div style={css.field}>
+            <label style={css.label}>Keywords (comma-separated)</label>
+            <input
+              style={css.input}
+              value={(repo.detect?.keywords || []).join(", ")}
+              onChange={(e) =>
+                update({
+                  detect: {
+                    keywords: e.target.value
+                      .split(",")
+                      .map((k) => k.trim())
+                      .filter(Boolean),
+                  },
+                })
+              }
+              placeholder="e.g. my-app, frontend, react"
+            />
+          </div>
+
+          {/* Commands */}
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              marginBottom: 8,
+              marginTop: 12,
+              color: "var(--fg2)",
+            }}
+          >
+            Commands
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <CommandEditor
+              label="Lint"
+              value={repo.commands?.lint}
+              onChange={(v) => update({ commands: { ...repo.commands, lint: v } })}
+            />
+            <CommandEditor
+              label="Test (fast)"
+              value={repo.commands?.test_fast}
+              onChange={(v) => update({ commands: { ...repo.commands, test_fast: v } })}
+            />
+            <CommandEditor
+              label="Test (full)"
+              value={repo.commands?.test_full}
+              onChange={(v) => update({ commands: { ...repo.commands, test_full: v } })}
+            />
+          </div>
+
+          {/* PR & CI */}
+          <div
+            style={{
+              fontSize: 13,
+              fontWeight: 600,
+              marginBottom: 8,
+              marginTop: 12,
+              color: "var(--fg2)",
+            }}
+          >
+            Pull Requests & CI
+          </div>
+          <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr 1fr", gap: 12 }}>
+            <div style={css.field}>
+              <label style={css.label}>Default Reviewers (comma-separated)</label>
+              <input
+                style={css.input}
+                value={(repo.pr?.reviewers_default || []).join(", ")}
+                onChange={(e) =>
+                  update({
+                    pr: {
+                      ...repo.pr,
+                      reviewers_default: e.target.value
+                        .split(",")
+                        .map((r) => r.trim())
+                        .filter(Boolean),
+                    },
+                  })
+                }
+                placeholder="alice, bob"
+              />
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>Draft by Default</label>
+              <select
+                style={{ ...css.select, width: "100%" }}
+                value={repo.pr?.draft_by_default !== false ? "true" : "false"}
+                onChange={(e) =>
+                  update({ pr: { ...repo.pr, draft_by_default: e.target.value === "true" } })
+                }
+              >
+                <option value="true">Yes</option>
+                <option value="false">No</option>
+              </select>
+            </div>
+            <div style={css.field}>
+              <label style={css.label}>CI Provider</label>
+              <select
+                style={{ ...css.select, width: "100%" }}
+                value={repo.ci?.provider || ""}
+                onChange={(e) => update({ ci: { provider: e.target.value || undefined } })}
+              >
+                <option value="">None</option>
+                <option value="github_actions">GitHub Actions</option>
+                <option value="jenkins">Jenkins</option>
+              </select>
+            </div>
+          </div>
+
+          {/* Delete */}
+          <div style={{ display: "flex", justifyContent: "flex-end", marginTop: 12 }}>
+            <button
+              style={css.btnDanger}
+              onClick={(e) => {
+                e.stopPropagation();
+                if (confirm(`Delete repo "${id}"?`)) onDelete();
+              }}
+            >
+              Delete Repo
+            </button>
+          </div>
+        </div>
+      )}
+    </div>
+  );
+}
+
+function RepoRegistryEditor() {
+  const [registry, setRegistry] = useState<RegistryData | null>(null);
+  const [registryPath, setRegistryPath] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+  const [saveMsg, setSaveMsg] = useState("");
+  const [dirty, setDirty] = useState(false);
+  const [expandedId, setExpandedId] = useState<string | null>(null);
+
+  const load = useCallback(async () => {
+    setLoading(true);
+    setError("");
+    try {
+      const res = await getRegistry();
+      setRegistry(res.registry);
+      setRegistryPath(res.path);
+      setDirty(false);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setLoading(false);
+    }
+  }, []);
+
+  useEffect(() => {
+    load();
+  }, [load]);
+
+  const handleSave = async () => {
+    if (!registry) return;
+    setSaving(true);
+    setError("");
+    setSaveMsg("");
+    try {
+      await saveRegistry(registry);
+      setSaveMsg("Saved");
+      setDirty(false);
+      setTimeout(() => setSaveMsg(""), 3000);
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setSaving(false);
+    }
+  };
+
+  const updateRepo = (id: string, repo: RepoConfig) => {
+    if (!registry) return;
+    setRegistry({ repos: { ...registry.repos, [id]: repo } });
+    setDirty(true);
+  };
+
+  const renameRepo = (oldId: string, newId: string) => {
+    if (!registry || !newId || newId === oldId) return;
+    if (registry.repos[newId]) {
+      setError(`Repo ID "${newId}" already exists`);
+      return;
+    }
+    const entries = Object.entries(registry.repos);
+    const newRepos: Record<string, RepoConfig> = {};
+    for (const [k, v] of entries) {
+      newRepos[k === oldId ? newId : k] = v;
+    }
+    setRegistry({ repos: newRepos });
+    setDirty(true);
+    if (expandedId === oldId) setExpandedId(newId);
+  };
+
+  const deleteRepo = (id: string) => {
+    if (!registry) return;
+    const { [id]: _, ...rest } = registry.repos;
+    setRegistry({ repos: rest });
+    setDirty(true);
+    if (expandedId === id) setExpandedId(null);
+  };
+
+  const addRepo = () => {
+    if (!registry) return;
+    let newId = "new-repo";
+    let i = 1;
+    while (registry.repos[newId]) {
+      newId = `new-repo-${i++}`;
+    }
+    setRegistry({ repos: { ...registry.repos, [newId]: emptyRepo() } });
+    setDirty(true);
+    setExpandedId(newId);
+  };
+
+  if (loading) return <div style={{ color: "var(--fg2)", padding: 20 }}>Loading registry...</div>;
+
+  const repoIds = registry ? Object.keys(registry.repos) : [];
+
+  return (
+    <div>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 16,
+        }}
+      >
+        <div>
+          <h2 style={{ fontSize: 18, fontWeight: 600 }}>Repo Registry ({repoIds.length})</h2>
+          {registryPath && (
+            <div style={{ ...css.mono, fontSize: 11, color: "var(--fg3)", marginTop: 2 }}>
+              {registryPath}
+            </div>
+          )}
+        </div>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          {saveMsg && (
+            <span style={{ fontSize: 13, color: "var(--green)", fontWeight: 500 }}>{saveMsg}</span>
+          )}
+          <button style={css.btn} onClick={load}>
+            ↻ Reload
+          </button>
+          <button style={css.btnPrimary} onClick={addRepo}>
+            + Add Repo
+          </button>
+          <button
+            style={{
+              ...css.btnPrimary,
+              opacity: dirty ? 1 : 0.5,
+              background: dirty ? "var(--accent)" : "var(--bg3)",
+              color: dirty ? "#fff" : "var(--fg3)",
+            }}
+            disabled={!dirty || saving}
+            onClick={handleSave}
+          >
+            {saving ? "Saving..." : "Save"}
+          </button>
+        </div>
+      </div>
+      {error && <div style={{ ...css.error, marginBottom: 12 }}>{error}</div>}
+      {dirty && (
+        <div
+          style={{
+            padding: "8px 12px",
+            marginBottom: 12,
+            borderRadius: "var(--radius)",
+            background: "#f59e0b22",
+            border: "1px solid #f59e0b44",
+            color: "#f59e0b",
+            fontSize: 13,
+          }}
+        >
+          Unsaved changes — click Save to write to disk.
+        </div>
+      )}
+      {repoIds.length === 0 ? (
+        <div style={{ color: "var(--fg2)", padding: 20 }}>
+          No repos configured. Click "+ Add Repo" to get started.
+        </div>
+      ) : (
+        repoIds.map((id) => (
+          <RepoCard
+            key={id}
+            id={id}
+            repo={registry?.repos[id] as RepoConfig}
+            expanded={expandedId === id}
+            onToggle={() => setExpandedId(expandedId === id ? null : id)}
+            onChange={(r) => updateRepo(id, r)}
+            onChangeId={renameRepo}
+            onDelete={() => deleteRepo(id)}
+          />
+        ))
+      )}
+    </div>
+  );
+}
+
 // --- Nav Tab ---
 function NavTab({ to, label, active }: { to: string; label: string; active: boolean }) {
   return (
@@ -1868,8 +2379,12 @@ export function App() {
     return <TokenSetup onSet={() => setAuthed(true)} />;
   }
 
-  const isJobsTab = location.pathname === "/" || location.pathname.startsWith("/jobs");
-  const isPrsTab = location.pathname === "/prs";
+  const path = location.pathname;
+  const showJobsList = path === "/";
+  const showPrsList = path === "/prs";
+  const isJobsTab = path === "/" || path.startsWith("/jobs");
+  const isPrsTab = path === "/prs";
+  const isReposTab = path === "/repos";
 
   return (
     <div style={css.container}>
@@ -1881,6 +2396,7 @@ export function App() {
           <div style={{ display: "flex", gap: 0, marginLeft: 16 }}>
             <NavTab to="/" label="Jobs" active={isJobsTab} />
             <NavTab to="/prs" label="PRs" active={isPrsTab} />
+            <NavTab to="/repos" label="Repos" active={isReposTab} />
           </div>
         </div>
         <div style={css.nav}>
@@ -1896,11 +2412,20 @@ export function App() {
         </div>
       </div>
 
+      {/* Always-mounted list views — hidden when not active to preserve state */}
+      <div style={{ display: showJobsList ? "block" : "none" }}>
+        <JobsList />
+      </div>
+      <div style={{ display: showPrsList ? "block" : "none" }}>
+        <PrsList />
+      </div>
+
+      {/* Sub-pages rendered via Routes */}
       <Routes>
-        <Route path="/" element={<JobsList />} />
-        <Route path="/prs" element={<PrsList />} />
+        <Route path="/repos" element={<RepoRegistryEditor />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />
         <Route path="/jobs/:taskId" element={<JobDetail />} />
+        <Route path="*" element={null} />
       </Routes>
     </div>
   );

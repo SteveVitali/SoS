@@ -1,4 +1,6 @@
+import { readFileSync, writeFileSync } from "node:fs";
 import { type Request, type Response, Router } from "express";
+import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { createLogger } from "../../shared/logger.js";
 import type { ServerConfig } from "../config.js";
 import { CreateJobFromWebSchema, CreateRespondToCommentsFromWebSchema } from "../jobs/jobModel.js";
@@ -298,6 +300,48 @@ export function createWebRoutes(config: ServerConfig): Router {
     } catch (err: any) {
       log.error("Batch resolve Slack users error", { error: err.message });
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // GET /api/web/registry — read repo-registry.yaml as JSON
+  router.get("/registry", async (_req: Request, res: Response) => {
+    try {
+      if (!config.repoRegistryPath) {
+        res.status(501).json({ error: "SOS_REPO_REGISTRY not configured on server" });
+        return;
+      }
+      const raw = readFileSync(config.repoRegistryPath, "utf-8");
+      const data = parseYaml(raw);
+      res.json({ registry: data, path: config.repoRegistryPath });
+    } catch (err: any) {
+      if (err.code === "ENOENT") {
+        res.json({ registry: { repos: {} }, path: config.repoRegistryPath });
+        return;
+      }
+      log.error("Read registry error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PUT /api/web/registry — write JSON back as repo-registry.yaml
+  router.put("/registry", async (req: Request, res: Response) => {
+    try {
+      if (!config.repoRegistryPath) {
+        res.status(501).json({ error: "SOS_REPO_REGISTRY not configured on server" });
+        return;
+      }
+      const data = req.body?.registry;
+      if (!data || typeof data !== "object") {
+        res.status(400).json({ error: "Missing or invalid registry object in body" });
+        return;
+      }
+      const yaml = stringifyYaml(data, { lineWidth: 120 });
+      writeFileSync(config.repoRegistryPath, yaml, "utf-8");
+      log.info("Registry saved", { path: config.repoRegistryPath });
+      res.json({ ok: true });
+    } catch (err: any) {
+      log.error("Write registry error", { error: err.message });
+      res.status(500).json({ error: err.message });
     }
   });
 
