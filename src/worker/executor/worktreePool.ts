@@ -1,8 +1,61 @@
 import { execSync } from "node:child_process";
-import { existsSync, mkdirSync, readdirSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  readdirSync,
+  readFileSync,
+  unlinkSync,
+  writeFileSync,
+} from "node:fs";
 import path from "node:path";
 import { createLogger } from "../../shared/logger.js";
 import type { RepoEntry } from "./repoRegistry.js";
+
+const LOCKFILE_NAME = ".sos-lock";
+
+interface LockInfo {
+  pid: number;
+  taskId: string;
+  acquiredAt: string;
+}
+
+/** Check whether a process with the given PID is still running. */
+function isProcessAlive(pid: number): boolean {
+  try {
+    process.kill(pid, 0); // signal 0 = existence check, no actual signal sent
+    return true;
+  } catch (err: any) {
+    // EPERM = process exists but we lack permission to signal it → still alive
+    if (err.code === "EPERM") return true;
+    // ESRCH = no such process → dead
+    return false;
+  }
+}
+
+function readLockfile(worktreePath: string): LockInfo | null {
+  const lockPath = path.join(worktreePath, LOCKFILE_NAME);
+  if (!existsSync(lockPath)) return null;
+  try {
+    return JSON.parse(readFileSync(lockPath, "utf-8")) as LockInfo;
+  } catch {
+    return null;
+  }
+}
+
+function writeLockfile(worktreePath: string, taskId: string): void {
+  const lockPath = path.join(worktreePath, LOCKFILE_NAME);
+  const info: LockInfo = { pid: process.pid, taskId, acquiredAt: new Date().toISOString() };
+  writeFileSync(lockPath, JSON.stringify(info), "utf-8");
+}
+
+function removeLockfile(worktreePath: string): void {
+  const lockPath = path.join(worktreePath, LOCKFILE_NAME);
+  try {
+    unlinkSync(lockPath);
+  } catch {
+    /* may not exist */
+  }
+}
 
 const log = createLogger("worker:worktreePool");
 
@@ -40,6 +93,9 @@ class WorktreePoolImpl {
   acquire(repo: RepoEntry, clonePath: string, taskId: string, branch: string): WorktreeSlot | null {
     const states = this.getOrCreateStates(repo, clonePath);
 
+    // Reconcile in-memory state with on-disk lockfiles (handles restarts / multi-process)
+    this.reconcileLocks(states);
+
     // 1) Find a free existing slot
     for (const state of states) {
       if (!state.inUse) {
@@ -50,6 +106,7 @@ class WorktreePoolImpl {
           taskId,
         });
         this.resetWorktree(state.slot, repo, clonePath, branch);
+        writeLockfile(state.slot.worktreePath, taskId);
         return state.slot;
       }
     }
@@ -58,6 +115,7 @@ class WorktreePoolImpl {
     if (states.length < repo.max_worktrees) {
       const slotIndex = states.length + 1;
       const slot = this.createSlot(repo, clonePath, slotIndex, branch);
+      writeLockfile(slot.worktreePath, taskId);
       const state: SlotState = { slot, inUse: true, taskId };
       states.push(state);
       log.info("Created new worktree slot", {
@@ -91,6 +149,7 @@ class WorktreePoolImpl {
         slot: slotName,
         taskId: state.taskId,
       });
+      removeLockfile(state.slot.worktreePath);
       state.inUse = false;
       state.taskId = undefined;
     }
@@ -106,6 +165,49 @@ class WorktreePoolImpl {
   }
 
   // --- Internal ---
+
+  /**
+   * Reconcile in-memory slot states with on-disk lockfiles.
+   * Handles cases where another process holds a slot (lockfile exists, PID alive)
+   * or a previous process crashed (lockfile exists, PID dead → stale, clean up).
+   */
+  private reconcileLocks(states: SlotState[]): void {
+    for (const state of states) {
+      const lock = readLockfile(state.slot.worktreePath);
+      if (lock) {
+        if (lock.pid === process.pid) {
+          // Our own lock — trust in-memory state
+          continue;
+        }
+        if (isProcessAlive(lock.pid)) {
+          // Another live process holds this slot
+          if (!state.inUse) {
+            log.warn("Slot locked by another process, marking in-use", {
+              slot: state.slot.slotName,
+              lockPid: lock.pid,
+              lockTaskId: lock.taskId,
+            });
+            state.inUse = true;
+            state.taskId = lock.taskId;
+          }
+        } else {
+          // Stale lockfile from a dead process — clean up
+          log.warn("Removing stale lockfile from dead process", {
+            slot: state.slot.slotName,
+            stalePid: lock.pid,
+            staleTaskId: lock.taskId,
+          });
+          removeLockfile(state.slot.worktreePath);
+          state.inUse = false;
+          state.taskId = undefined;
+        }
+      } else if (state.inUse && state.taskId) {
+        // In-memory says in-use but no lockfile — could mean the slot was released
+        // externally or the lockfile was manually removed. Trust the absence.
+        // (This branch is mostly a safety net; normal release removes both.)
+      }
+    }
+  }
 
   private getOrCreateStates(repo: RepoEntry, _clonePath: string): SlotState[] {
     let states = this.slots.get(repo.id);

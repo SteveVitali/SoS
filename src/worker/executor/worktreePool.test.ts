@@ -10,11 +10,14 @@ vi.mock("node:fs", () => ({
   existsSync: vi.fn(() => true),
   mkdirSync: vi.fn(),
   readdirSync: vi.fn(() => []),
+  readFileSync: vi.fn(() => ""),
+  writeFileSync: vi.fn(),
+  unlinkSync: vi.fn(),
 }));
 
 // Import after mocks are set up
 const { worktreePool } = await import("./worktreePool.js");
-const { existsSync, readdirSync } = await import("node:fs");
+const { existsSync, readFileSync, readdirSync } = await import("node:fs");
 
 function makeRepo(overrides: Partial<RepoEntry> = {}): RepoEntry {
   return {
@@ -155,6 +158,65 @@ describe("WorktreePool", () => {
       expect(slot2).not.toBeNull();
       expect(slot1!.repoId).toBe("repo-a");
       expect(slot2!.repoId).toBe("repo-b");
+    });
+  });
+
+  describe("file-based locking", () => {
+    it("denies acquire when lockfile held by a live process", () => {
+      // Discover one existing slot on disk
+      vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
+
+      // Simulate a lockfile from another live process (use our own PID + 1 won't work
+      // reliably, so we simulate by returning a lock with current PID but we'll
+      // test the "another process" path by using a known-alive PID: PID 1 (launchd/init))
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({ pid: 1, taskId: "other-task", acquiredAt: new Date().toISOString() }),
+      );
+
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+
+      // PID 1 is always alive, so the slot should be denied
+      expect(slot).toBeNull();
+    });
+
+    it("reclaims slot when lockfile held by a dead process", () => {
+      vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
+
+      // Use a PID that is almost certainly dead (very high number)
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          pid: 999999999,
+          taskId: "dead-task",
+          acquiredAt: new Date().toISOString(),
+        }),
+      );
+
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+
+      // Dead PID → stale lock removed → slot available
+      expect(slot).not.toBeNull();
+      expect(slot!.slotName).toBe("my-repo-n-1");
+    });
+
+    it("allows acquire when lockfile is from our own process", () => {
+      vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
+
+      // Lockfile from our own PID — should trust in-memory state (which is free)
+      vi.mocked(readFileSync).mockReturnValue(
+        JSON.stringify({
+          pid: process.pid,
+          taskId: "old-task",
+          acquiredAt: new Date().toISOString(),
+        }),
+      );
+
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+
+      expect(slot).not.toBeNull();
+      expect(slot!.slotName).toBe("my-repo-n-1");
     });
   });
 });
