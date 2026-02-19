@@ -316,6 +316,61 @@ function StatusBadge({ status }: { status: string }) {
   return <span style={css.badge(color)}>{status}</span>;
 }
 
+// --- Sorting ---
+type SortKey =
+  | "task_id"
+  | "status"
+  | "requested_by"
+  | "created_at"
+  | "updated_at"
+  | "repo"
+  | "worktree_slot"
+  | "pr";
+type SortDir = "asc" | "desc";
+
+function getJobSortValue(job: Job, key: SortKey): string {
+  switch (key) {
+    case "task_id":
+      return job.task_id;
+    case "status":
+      return job.status;
+    case "requested_by": {
+      const cached = slackNameCache.get(job.requested_by);
+      return (cached?.displayName || job.requested_by).toLowerCase();
+    }
+    case "created_at":
+      return job.created_at;
+    case "updated_at":
+      if (job.events?.length) return job.events[job.events.length - 1].at;
+      return job.updated_at;
+    case "repo":
+      return (job.repos_resolved?.join(", ") || job.repo_hint || "").toLowerCase();
+    case "worktree_slot":
+      return (job.worktree_slot || "").toLowerCase();
+    case "pr":
+      return (job.pr_urls?.join(", ") || "").toLowerCase();
+    default:
+      return "";
+  }
+}
+
+function sortJobs(jobs: Job[], key: SortKey | null, dir: SortDir): Job[] {
+  if (!key) return jobs;
+  const sorted = [...jobs].sort((a, b) => {
+    const av = getJobSortValue(a, key);
+    const bv = getJobSortValue(b, key);
+    if (av < bv) return -1;
+    if (av > bv) return 1;
+    return 0;
+  });
+  return dir === "desc" ? sorted.reverse() : sorted;
+}
+
+function SortIndicator({ active, dir }: { active: boolean; dir: SortDir }) {
+  if (!active) return <span style={{ color: "var(--fg3)", marginLeft: 4, fontSize: 10 }}>↕</span>;
+  return <span style={{ marginLeft: 4, fontSize: 10 }}>{dir === "asc" ? "↑" : "↓"}</span>;
+}
+
 // --- Jobs List ---
 function JobsList({
   onSelect,
@@ -333,7 +388,18 @@ function JobsList({
   const [search, setSearch] = useState("");
   const [users, setUsers] = useState<string[]>([]);
   const [offset, setOffset] = useState(0);
+  const [sortKey, setSortKey] = useState<SortKey | null>(null);
+  const [sortDir, setSortDir] = useState<SortDir>("desc");
   const limit = 25;
+
+  const handleSort = (key: SortKey) => {
+    if (sortKey === key) {
+      setSortDir((d) => (d === "asc" ? "desc" : "asc"));
+    } else {
+      setSortKey(key);
+      setSortDir("desc");
+    }
+  };
 
   const load = useCallback(async () => {
     setLoading(true);
@@ -450,19 +516,32 @@ function JobsList({
             <table style={css.table}>
               <thead>
                 <tr>
-                  <th style={css.th}>Task ID</th>
-                  <th style={css.th}>Status</th>
-                  <th style={css.th}>User</th>
-                  <th style={css.th}>Created</th>
-                  <th style={css.th}>Updated</th>
-                  <th style={css.th}>Repo</th>
-                  <th style={css.th}>Worktree</th>
-                  <th style={css.th}>PR</th>
+                  {(
+                    [
+                      ["task_id", "Task ID"],
+                      ["status", "Status"],
+                      ["requested_by", "User"],
+                      ["created_at", "Created"],
+                      ["updated_at", "Updated"],
+                      ["repo", "Repo"],
+                      ["worktree_slot", "Worktree"],
+                      ["pr", "PR"],
+                    ] as [SortKey, string][]
+                  ).map(([key, label]) => (
+                    <th
+                      key={key}
+                      style={{ ...css.th, cursor: "pointer", userSelect: "none" }}
+                      onClick={() => handleSort(key)}
+                    >
+                      {label}
+                      <SortIndicator active={sortKey === key} dir={sortDir} />
+                    </th>
+                  ))}
                   <th style={css.th}>Actions</th>
                 </tr>
               </thead>
               <tbody>
-                {jobs.map((job) => (
+                {sortJobs(jobs, sortKey, sortDir).map((job) => (
                   <tr
                     key={job.task_id}
                     style={{ cursor: "pointer" }}
