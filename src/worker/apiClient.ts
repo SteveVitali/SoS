@@ -133,6 +133,18 @@ export class WorkerApiClient {
     }
   }
 
+  async getJobStatus(taskId: string): Promise<string | null> {
+    try {
+      const data = await this.request<{ status: string }>(
+        "GET",
+        `/api/worker/jobs/${taskId}/status`,
+      );
+      return data.status;
+    } catch {
+      return null;
+    }
+  }
+
   async fetchSlackThread(channelId: string, threadTs: string): Promise<any[]> {
     try {
       const data = await this.request<{ messages: any[] }>(

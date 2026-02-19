@@ -39,6 +39,21 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
     }
   });
 
+  // GET /api/worker/jobs/:task_id/status
+  router.get("/jobs/:task_id/status", async (req: Request, res: Response) => {
+    try {
+      const job = await jobService.findJobByTaskId(pstr(req.params.task_id));
+      if (!job) {
+        res.status(404).json({ error: "Job not found" });
+        return;
+      }
+      res.json({ status: job.status });
+    } catch (err: any) {
+      log.error("Status check error", { error: err.message, task_id: pstr(req.params.task_id) });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
   // POST /api/worker/jobs/:task_id/claim
   router.post("/jobs/:task_id/claim", async (req: Request, res: Response) => {
     try {

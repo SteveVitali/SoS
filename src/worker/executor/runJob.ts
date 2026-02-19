@@ -108,6 +108,14 @@ class RequeueError extends Error {
   }
 }
 
+/** Sentinel error when a job is canceled mid-execution. */
+class CanceledError extends Error {
+  constructor() {
+    super("Job was canceled during execution");
+    this.name = "CanceledError";
+  }
+}
+
 export async function runJob(
   job: JobDoc,
   workerId: string,
@@ -124,6 +132,13 @@ export async function runJob(
   function checkTimeout() {
     if (Date.now() - startTime > maxRuntimeMs) {
       throw new Error(`Job exceeded max runtime of ${config.maxRuntimeMinutes} minutes`);
+    }
+  }
+
+  async function checkCanceled() {
+    const status = await api.getJobStatus(job.task_id);
+    if (status === "CANCELED") {
+      throw new CanceledError();
     }
   }
 
@@ -186,6 +201,7 @@ export async function runJob(
     }
 
     // 4) Run Claude Code CLI
+    await checkCanceled();
     await events.emit("CLAUDE_STARTED", {});
     const claudeResult = await runClaude(
       worktreePath,
@@ -323,6 +339,7 @@ export async function runJob(
         return;
       }
 
+      await checkCanceled();
       if (hasUnpushedCommits(worktreePath, branch)) {
         push(worktreePath, branch);
         await events.emit("BRANCH_PUSHED", { branch });
@@ -332,6 +349,7 @@ export async function runJob(
       checkTimeout();
 
       // 9) Create PR (detect if Claude already created one)
+      await checkCanceled();
       await events.emit("PHASE_STARTED", { phase: "create_pr" });
       const existingPr = detectExistingPr(worktreePath, branch);
       if (existingPr) {
@@ -387,6 +405,7 @@ export async function runJob(
         // CI fix loop
         while (ciAttempt < config.maxCiFixAttempts && !ciPassed) {
           checkTimeout();
+          await checkCanceled();
           ciAttempt++;
           await events.emit("CI_FAILED", {
             attempt: ciAttempt,
@@ -454,6 +473,11 @@ export async function runJob(
       });
     }
   } catch (err: any) {
+    if (err instanceof CanceledError) {
+      log.info("Job canceled during execution", { task_id: job.task_id });
+      return;
+    }
+
     if (err instanceof RequeueError) {
       log.info("Requeuing job", { task_id: job.task_id, reason: err.reason });
       try {
