@@ -744,7 +744,9 @@ function JobsList() {
                     </td>
                     <td style={css.td} onClick={(e) => e.stopPropagation()}>
                       <div style={{ display: "flex", gap: 4 }}>
-                        {["QUEUED", "RUNNING", "FIXING_CI"].includes(job.status) && (
+                        {["QUEUED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(
+                          job.status,
+                        ) && (
                           <button
                             style={css.btnSmall}
                             onClick={() => handleAction("cancel", job.task_id)}
@@ -904,7 +906,7 @@ function JobDetail() {
             <button style={css.btn} onClick={load}>
               ↻
             </button>
-            {["QUEUED", "RUNNING", "FIXING_CI"].includes(job.status) && (
+            {["QUEUED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(job.status) && (
               <button style={css.btnDanger} onClick={() => handleAction("cancel")}>
                 Cancel
               </button>

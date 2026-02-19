@@ -5,6 +5,7 @@ import { closeMongo, connectMongo, getJobsCollection } from "../mongo.js";
 import {
   appendEvent,
   atomicClaim,
+  awaitApprovalJob,
   cancelJob,
   completeJob,
   failJob,
@@ -12,6 +13,7 @@ import {
   findJobByTaskId,
   findPollableJobs,
   insertJob,
+  promoteJob,
   queryJobs,
   requeueJob,
   softDeleteJob,
@@ -226,6 +228,84 @@ describe("completeJob", () => {
 
     const result = await completeJob("comp-2", "worker-OTHER", { result_summary: "done" });
     expect(result).toBeNull();
+  });
+});
+
+describe("awaitApprovalJob", () => {
+  it("transitions RUNNING job to WAITING_FOR_APPROVAL", async () => {
+    await insertJob(makeJob({ task_id: "await-1", status: "RUNNING", claimed_by: "worker-1" }));
+
+    const result = await awaitApprovalJob("await-1", "worker-1", {
+      result_summary: "draft PR ready",
+      pr_urls: ["https://github.com/pull/99"],
+    });
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("WAITING_FOR_APPROVAL");
+    expect(result!.result_summary).toBe("draft PR ready");
+    expect(result!.pr_urls).toEqual(["https://github.com/pull/99"]);
+    expect(result!.run_ended_at).toBeDefined();
+    expect(result!.claimed_by).toBeUndefined();
+  });
+
+  it("rejects from non-owner", async () => {
+    await insertJob(makeJob({ task_id: "await-2", status: "RUNNING", claimed_by: "worker-1" }));
+
+    const result = await awaitApprovalJob("await-2", "worker-OTHER", {
+      result_summary: "nope",
+    });
+    expect(result).toBeNull();
+  });
+
+  it("rejects for terminal job", async () => {
+    await insertJob(makeJob({ task_id: "await-3", status: "DONE", claimed_by: "worker-1" }));
+
+    const result = await awaitApprovalJob("await-3", "worker-1", {
+      result_summary: "too late",
+    });
+    expect(result).toBeNull();
+  });
+
+  it("stores metrics when provided", async () => {
+    await insertJob(makeJob({ task_id: "await-4", status: "RUNNING", claimed_by: "worker-1" }));
+
+    const metrics = {
+      durations: { total_ms: 5000, claude_code_ms: 3000 },
+      claude: { sessions: [], total_cost_usd: 0.05, cost_source: "computed" as const },
+    };
+    const result = await awaitApprovalJob("await-4", "worker-1", {
+      result_summary: "with metrics",
+      metrics,
+    });
+    expect(result!.metrics).toBeDefined();
+    expect(result!.metrics!.durations!.total_ms).toBe(5000);
+    expect(result!.metrics!.claude!.total_cost_usd).toBe(0.05);
+  });
+});
+
+describe("promoteJob", () => {
+  it("transitions WAITING_FOR_APPROVAL to DONE", async () => {
+    await insertJob(
+      makeJob({
+        task_id: "promo-1",
+        status: "WAITING_FOR_APPROVAL" as JobStatus,
+        pr_urls: ["https://github.com/pull/99"],
+      }),
+    );
+
+    const result = await promoteJob("promo-1");
+    expect(result).not.toBeNull();
+    expect(result!.status).toBe("DONE");
+    expect(result!.pr_urls).toEqual(["https://github.com/pull/99"]);
+  });
+
+  it("rejects for non-WAITING_FOR_APPROVAL job", async () => {
+    await insertJob(makeJob({ task_id: "promo-2", status: "RUNNING" }));
+    expect(await promoteJob("promo-2")).toBeNull();
+  });
+
+  it("rejects for DONE job", async () => {
+    await insertJob(makeJob({ task_id: "promo-3", status: "DONE" }));
+    expect(await promoteJob("promo-3")).toBeNull();
   });
 });
 

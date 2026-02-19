@@ -156,18 +156,19 @@ export async function runJob(
 
   function buildMetrics(): JobMetrics {
     durations.total_ms = Date.now() - startTime;
-    const totalIn = claudeSessions.reduce((s, c) => s + (c.input_tokens || 0), 0);
-    const totalOut = claudeSessions.reduce((s, c) => s + (c.output_tokens || 0), 0);
-    const totalCost = claudeSessions.reduce((s, c) => s + (c.cost_usd || 0), 0);
+    const totalIn = claudeSessions.reduce((s, c) => s + (c.input_tokens ?? 0), 0);
+    const totalOut = claudeSessions.reduce((s, c) => s + (c.output_tokens ?? 0), 0);
+    const totalCost = claudeSessions.reduce((s, c) => s + (c.cost_usd ?? 0), 0);
     const hasProviderCost = claudeSessions.some((c) => c.cost_source === "provider");
+    const hasCost = claudeSessions.some((c) => c.cost_usd != null);
     return {
       durations,
       claude: {
         sessions: claudeSessions,
-        total_input_tokens: totalIn || undefined,
-        total_output_tokens: totalOut || undefined,
-        total_cost_usd: totalCost || undefined,
-        cost_source: hasProviderCost ? "provider" : totalCost ? "computed" : undefined,
+        total_input_tokens: totalIn > 0 ? totalIn : undefined,
+        total_output_tokens: totalOut > 0 ? totalOut : undefined,
+        total_cost_usd: hasCost ? totalCost : undefined,
+        cost_source: hasProviderCost ? "provider" : hasCost ? "computed" : undefined,
       },
     };
   }
@@ -573,12 +574,14 @@ export async function runJob(
     }
 
     try {
+      const metrics = buildMetrics();
       await api.fail(job.task_id, workerId, {
         error: {
           code: err.code || "EXECUTION_ERROR",
           message: err.message,
           details: err.stack?.slice(0, 2000),
         },
+        metrics,
       });
     } catch (failErr: any) {
       log.error("Failed to report job failure to server", {

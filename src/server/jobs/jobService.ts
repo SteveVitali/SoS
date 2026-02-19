@@ -1,7 +1,14 @@
 import { v4 as uuidv4 } from "uuid";
 import { createLogger } from "../../shared/logger.js";
 import { addSeconds, nowDate } from "../../shared/time.js";
-import type { JobDoc, JobEvent } from "../../shared/types.js";
+import type {
+  CIInfo,
+  JobDoc,
+  JobError,
+  JobEvent,
+  JobMetrics,
+  WorkerEventType,
+} from "../../shared/types.js";
 import { SLACK_NOTIFY_EVENTS } from "../../shared/types.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 import { checkIdempotent } from "./idempotency.js";
@@ -168,7 +175,9 @@ export async function handleWorkerEvent(
 
   // Fetch job once for field updates and Slack notifications
   const needsJob =
-    type === "PR_CREATED" || type === "REPO_RESOLVED" || SLACK_NOTIFY_EVENTS.includes(type);
+    type === "PR_CREATED" ||
+    type === "REPO_RESOLVED" ||
+    SLACK_NOTIFY_EVENTS.includes(type as WorkerEventType);
   const job = needsJob ? await findJobByTaskId(taskId) : null;
 
   // Update job fields based on event type
@@ -201,7 +210,7 @@ export async function handleWorkerEvent(
   }
 
   // Slack notifications for key events
-  if (SLACK_NOTIFY_EVENTS.includes(type) && slackPoster && job) {
+  if (SLACK_NOTIFY_EVENTS.includes(type as WorkerEventType) && slackPoster && job) {
     if (job.slack?.channel_id && job.slack?.thread_ts) {
       await slackPoster.postEvent(job, type, payload);
     }
@@ -212,7 +221,7 @@ export async function handleWorkerEvent(
 export async function awaitApproval(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
+  data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
 ) {
   const job = await repoAwaitApprovalJob(taskId, nodeId, data);
   if (job) {
@@ -255,7 +264,7 @@ export async function promotePr(taskId: string, reviewers?: string[]) {
 export async function complete(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
+  data: { result_summary: string; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
 ) {
   const job = await repoCompleteJob(taskId, nodeId, data);
   if (job) {
@@ -276,7 +285,7 @@ export async function complete(
 export async function fail(
   taskId: string,
   nodeId: string,
-  data: { error: any; pr_urls?: string[]; ci?: any; metrics?: any },
+  data: { error: JobError; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
 ) {
   const job = await repoFailJob(taskId, nodeId, data);
   if (job) {

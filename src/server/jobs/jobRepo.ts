@@ -1,7 +1,14 @@
 import type { Filter, Sort } from "mongodb";
 import { createLogger } from "../../shared/logger.js";
 import { addSeconds, nowDate } from "../../shared/time.js";
-import type { JobDoc, JobStatus, WebJobsQuery } from "../../shared/types.js";
+import type {
+  CIInfo,
+  JobDoc,
+  JobError,
+  JobMetrics,
+  JobStatus,
+  WebJobsQuery,
+} from "../../shared/types.js";
 import { getJobsCollection } from "../mongo.js";
 
 const _log = createLogger("server:jobRepo");
@@ -159,10 +166,19 @@ export async function updateJobFields(
   return result as JobDoc | null;
 }
 
-export async function completeJob(
+interface TransitionData {
+  result_summary: string;
+  pr_urls?: string[];
+  ci?: CIInfo;
+  metrics?: JobMetrics;
+}
+
+/** Shared helper: transition an active job to a target status, clearing the lease. */
+async function transitionJob(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
+  targetStatus: JobStatus,
+  data: TransitionData,
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
@@ -174,7 +190,7 @@ export async function completeJob(
     },
     {
       $set: {
-        status: "DONE" as JobStatus,
+        status: targetStatus,
         result_summary: data.result_summary,
         ...(data.pr_urls ? { pr_urls: data.pr_urls } : {}),
         ...(data.ci ? { ci: data.ci } : {}),
@@ -189,34 +205,20 @@ export async function completeJob(
   return result as JobDoc | null;
 }
 
-export async function awaitApprovalJob(
+export function completeJob(
   taskId: string,
   nodeId: string,
-  data: { result_summary: string; pr_urls?: string[]; ci?: any; metrics?: any },
+  data: TransitionData,
 ): Promise<JobDoc | null> {
-  const col = getJobsCollection();
-  const now = nowDate();
-  const result = await col.findOneAndUpdate(
-    {
-      task_id: taskId,
-      claimed_by: nodeId,
-      status: { $in: ["RUNNING", "FIXING_CI"] },
-    },
-    {
-      $set: {
-        status: "WAITING_FOR_APPROVAL" as JobStatus,
-        result_summary: data.result_summary,
-        ...(data.pr_urls ? { pr_urls: data.pr_urls } : {}),
-        ...(data.ci ? { ci: data.ci } : {}),
-        ...(data.metrics ? { metrics: data.metrics } : {}),
-        run_ended_at: now,
-        updated_at: now,
-      },
-      $unset: { claimed_by: "", lease_expires_at: "" },
-    },
-    { returnDocument: "after" },
-  );
-  return result as JobDoc | null;
+  return transitionJob(taskId, nodeId, "DONE", data);
+}
+
+export function awaitApprovalJob(
+  taskId: string,
+  nodeId: string,
+  data: TransitionData,
+): Promise<JobDoc | null> {
+  return transitionJob(taskId, nodeId, "WAITING_FOR_APPROVAL", data);
 }
 
 export async function promoteJob(taskId: string): Promise<JobDoc | null> {
@@ -233,7 +235,7 @@ export async function promoteJob(taskId: string): Promise<JobDoc | null> {
 export async function failJob(
   taskId: string,
   nodeId: string,
-  data: { error: any; pr_urls?: string[]; ci?: any; metrics?: any },
+  data: { error: JobError; pr_urls?: string[]; ci?: CIInfo; metrics?: JobMetrics },
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();

@@ -98,8 +98,8 @@ export function promotePr(prUrl: string, reviewers?: string[]): void {
   log.info("Promoting draft PR", { url: prUrl });
   execSync(`gh pr ready "${prUrl}"`, { encoding: "utf-8", timeout: 30_000 });
 
-  if (reviewers && reviewers.length > 0) {
-    const unique = [...new Set(reviewers)].filter(Boolean);
+  const unique = [...new Set(reviewers || [])].filter(Boolean);
+  if (unique.length > 0) {
     try {
       execSync(`gh pr edit "${prUrl}" --add-reviewer ${unique.join(",")}`, {
         encoding: "utf-8",
