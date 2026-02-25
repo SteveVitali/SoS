@@ -9,6 +9,7 @@ export {
   fetchRecapData,
   fetchTeamRecapData,
   type GithubQueryResult,
+  GithubRateLimitError,
   type PrResult,
   parseTimeRange,
   type RecapData,

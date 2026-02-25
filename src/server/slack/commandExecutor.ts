@@ -1,7 +1,11 @@
 import { createLogger } from "../../shared/logger.js";
 import type { GithubQueryType, JobAttachment } from "../../shared/types.js";
 import { GITHUB_INSTANT_QUERIES, GITHUB_SUMMARY_QUERIES } from "../../shared/types.js";
-import { executeInstantQuery, formatInstantQueryResult } from "../github/index.js";
+import {
+  executeInstantQuery,
+  formatInstantQueryResult,
+  GithubRateLimitError,
+} from "../github/index.js";
 import {
   cancel,
   confirmJob,
@@ -352,9 +356,13 @@ export async function executeCommand(
           };
         } catch (err: any) {
           log.error("GitHub instant query failed", { queryType, error: err.message });
+          const isRateLimit = err instanceof GithubRateLimitError;
+          const msg = isRateLimit
+            ? "⏳ GitHub API rate limit reached — try again in a minute or two."
+            : `⚠️ GitHub query failed: ${err.message}`;
           return {
-            reply: `${reply}\n\n⚠️ GitHub query failed: ${err.message}`,
-            actionTaken: `github: ${queryType} failed`,
+            reply: `${reply}\n\n${msg}`,
+            actionTaken: `github: ${queryType} ${isRateLimit ? "rate_limited" : "failed"}`,
           };
         }
       }

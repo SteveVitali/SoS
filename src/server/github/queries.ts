@@ -1,13 +1,53 @@
 import { execSync } from "node:child_process";
+import { TtlCache } from "../../shared/cache.js";
 import { createLogger } from "../../shared/logger.js";
 import type { GithubQueryType } from "../../shared/types.js";
 import { getAuthenticatedUser, getTeamMembers } from "./teamCache.js";
 
 const log = createLogger("server:github:queries");
 
-function gh(cmd: string): string {
-  return execSync(`gh ${cmd}`, { encoding: "utf-8", timeout: 60_000 }).trim();
+// --- Rate limit handling ---
+
+export class GithubRateLimitError extends Error {
+  constructor(message?: string) {
+    super(message ?? "GitHub API rate limit exceeded. Try again in a minute or two.");
+    this.name = "GithubRateLimitError";
+  }
 }
+
+function isRateLimitError(err: unknown): boolean {
+  return err instanceof Error && err.message.includes("API rate limit exceeded");
+}
+
+function sleepSync(ms: number): void {
+  Atomics.wait(new Int32Array(new SharedArrayBuffer(4)), 0, 0, ms);
+}
+
+const GH_MAX_RETRIES = 3;
+const GH_INITIAL_BACKOFF_MS = 4_000;
+
+function gh(cmd: string): string {
+  let lastErr: Error | undefined;
+  for (let attempt = 0; attempt <= GH_MAX_RETRIES; attempt++) {
+    try {
+      return execSync(`gh ${cmd}`, { encoding: "utf-8", timeout: 60_000 }).trim();
+    } catch (err: any) {
+      lastErr = err;
+      if (!isRateLimitError(err) || attempt === GH_MAX_RETRIES) break;
+      const backoff = GH_INITIAL_BACKOFF_MS * 2 ** attempt;
+      log.warn("GitHub rate limit hit, retrying", { attempt: attempt + 1, backoffMs: backoff });
+      sleepSync(backoff);
+    }
+  }
+  if (isRateLimitError(lastErr)) {
+    throw new GithubRateLimitError();
+  }
+  throw lastErr;
+}
+
+// --- Query result cache (2-minute TTL) ---
+
+const queryCache = new TtlCache<PrResult[]>({ ttlMs: 120_000, label: "github-queries" });
 
 // --- Shared PR result type ---
 
@@ -168,6 +208,7 @@ function batchedSearch(members: string[], qualifierPrefix: string, extraFlags: s
         }
       }
     } catch (err: any) {
+      if (err instanceof GithubRateLimitError) throw err;
       log.warn("Batched search chunk failed", {
         qualifier: qualifierPrefix,
         chunk,
@@ -180,12 +221,15 @@ function batchedSearch(members: string[], qualifierPrefix: string, extraFlags: s
 }
 
 export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
-  const members = getTeamMembers(org, teamSlug);
-  if (members.length === 0) return [];
+  const cacheKey = `team-open-prs:${org}/${teamSlug}`;
+  return queryCache.getOrSet(cacheKey, () => {
+    const members = getTeamMembers(org, teamSlug);
+    if (members.length === 0) return [];
 
-  const allPrs = batchedSearch(members, "author", "--state=open");
-  allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  return allPrs;
+    const allPrs = batchedSearch(members, "author", "--state=open");
+    allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return allPrs;
+  });
 }
 
 export interface TeamReviewRequestsResult {
@@ -194,12 +238,15 @@ export interface TeamReviewRequestsResult {
 }
 
 export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
-  const members = getTeamMembers(org, teamSlug);
-  if (members.length === 0) return [];
+  const cacheKey = `team-reviews:${org}/${teamSlug}`;
+  return queryCache.getOrSet(cacheKey, () => {
+    const members = getTeamMembers(org, teamSlug);
+    if (members.length === 0) return [];
 
-  const allPrs = batchedSearch(members, "review-requested", "--state=open");
-  allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-  return allPrs;
+    const allPrs = batchedSearch(members, "review-requested", "--state=open");
+    allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+    return allPrs;
+  });
 }
 
 // --- Summary data fetchers (for recap jobs) ---
