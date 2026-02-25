@@ -19,8 +19,9 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
 
   if (isSystem) {
     const isPlanMessage = msg.action?.command === "pending_confirmation";
+    const isRichDoneMessage = msg.action?.command === "done" && msg.text.length > 200;
 
-    if (isPlanMessage) {
+    if (isPlanMessage || isRichDoneMessage) {
       return (
         <div style={{ margin: "10px 0" }}>
           <div
@@ -115,7 +116,13 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
             wordBreak: "break-word",
           }}
         >
-          {msg.text}
+          {isUser ? (
+            msg.text
+          ) : (
+            <div className="chat-markdown">
+              <Markdown>{msg.text}</Markdown>
+            </div>
+          )}
           {msg.action?.task_id && (
             <div style={{ marginTop: 8 }}>
               <Link
