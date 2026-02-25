@@ -79,10 +79,32 @@ export const JobEvent = z.object({
 export type JobEvent = z.infer<typeof JobEvent>;
 
 // --- Metrics ---
-export type JobType = "create" | "respond_to_pr_comments";
+export type JobType = "create" | "respond_to_pr_comments" | "github_summary";
+
+export type GithubQueryType =
+  | "my_review_requests"
+  | "my_open_prs"
+  | "my_merged_prs"
+  | "team_open_prs"
+  | "team_review_requests"
+  | "my_recap"
+  | "team_recap";
+
+export const GITHUB_INSTANT_QUERIES: readonly GithubQueryType[] = [
+  "my_review_requests",
+  "my_open_prs",
+  "my_merged_prs",
+  "team_open_prs",
+  "team_review_requests",
+] as const;
+
+export const GITHUB_SUMMARY_QUERIES: readonly GithubQueryType[] = [
+  "my_recap",
+  "team_recap",
+] as const;
 
 export interface ClaudeSession {
-  phase: "plan" | "code" | "review" | "fix" | "respond_comments";
+  phase: "plan" | "code" | "review" | "fix" | "respond_comments" | "summary";
   model?: string;
   input_tokens?: number;
   output_tokens?: number;
@@ -170,6 +192,15 @@ export interface JobDoc {
 
   // Metrics
   metrics?: JobMetrics;
+
+  // GitHub query params (for github_summary jobs)
+  github_query?: {
+    query_type: GithubQueryType;
+    time_range?: string;
+    org?: string;
+    team_slug?: string;
+    github_username?: string;
+  };
 
   // Pre-flight planning
   needs_plan?: boolean;

@@ -51,6 +51,9 @@ export function loadServerConfig() {
       .split(",")
       .map((s) => s.trim())
       .filter(Boolean),
+    githubOrg: process.env.SOS_GITHUB_ORG || "",
+    githubTeamSlug: process.env.SOS_GITHUB_TEAM_SLUG || "",
+    githubUsername: process.env.SOS_GITHUB_USERNAME || "",
   };
 }
 
