@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Link, useNavigate, useParams } from "react-router-dom";
+import remarkBreaks from "remark-breaks";
 import {
   type Conversation,
   type ConversationMessage,
@@ -57,7 +58,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
               </Link>
             )}
             <div className="chat-markdown" style={{ marginTop: 6 }}>
-              <Markdown>{slackToMarkdown(msg.text)}</Markdown>
+              <Markdown remarkPlugins={[remarkBreaks]}>{slackToMarkdown(msg.text)}</Markdown>
             </div>
           </div>
           <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 3, paddingLeft: 4 }}>
@@ -133,7 +134,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
             msg.text
           ) : (
             <div className="chat-markdown">
-              <Markdown>{slackToMarkdown(msg.text)}</Markdown>
+              <Markdown remarkPlugins={[remarkBreaks]}>{slackToMarkdown(msg.text)}</Markdown>
             </div>
           )}
           {msg.action?.task_id && (
