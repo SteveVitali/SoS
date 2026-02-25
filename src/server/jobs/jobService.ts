@@ -14,6 +14,7 @@ import { notifyConversations } from "../chat/conversationNotifier.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 import { checkIdempotent } from "./idempotency.js";
 import type {
+  CreateGithubSummary,
   CreateJobFromSlack,
   CreateJobFromWeb,
   CreateRespondToCommentsFromWeb,
@@ -178,6 +179,50 @@ export async function createRespondToCommentsJob(
 
   const job = await insertJob(doc);
   log.info("Respond-to-comments job created", { task_id: taskId, pr_url: input.pr_url });
+
+  if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
+    await slackPoster.postQueued(job);
+  }
+
+  return job;
+}
+
+// --- Create GitHub Summary Job ---
+export async function createGithubSummaryJob(
+  input: CreateGithubSummary,
+  source: "web" | "slack" = "web",
+  slack?: { channel_id: string; thread_ts: string },
+): Promise<JobDoc> {
+  const now = nowDate();
+  const taskId = uuidv4();
+
+  const queryLabel = input.query_type === "my_recap" ? "My recap" : "Team recap";
+  const range = input.time_range || "7d";
+  const title = `${queryLabel} (${range})`;
+
+  const doc: JobDoc = {
+    task_id: taskId,
+    job_type: "github_summary",
+    source: { type: source === "slack" ? "slack_app_mention" : "web_create" },
+    requested_by: input.requested_by,
+    status: "QUEUED",
+    created_at: now,
+    updated_at: now,
+    title,
+    task_text: `Generate ${queryLabel.toLowerCase()} for the past ${range}`,
+    github_query: {
+      query_type: input.query_type,
+      time_range: input.time_range,
+      org: input.org,
+      team_slug: input.team_slug,
+      github_username: input.github_username,
+    },
+    ...(slack ? { slack: { channel_id: slack.channel_id, thread_ts: slack.thread_ts } } : {}),
+    events: [{ at: now, type: "QUEUED", payload: { source } }],
+  };
+
+  const job = await insertJob(doc);
+  log.info("GitHub summary job created", { task_id: taskId, query_type: input.query_type });
 
   if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
     await slackPoster.postQueued(job);

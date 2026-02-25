@@ -222,8 +222,14 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
         return "";
       }
 
-      // Execute the command (pass attachments for job creation)
-      const result = await executeCommand(action, { ...ctx, attachments });
+      // Execute the command (pass attachments + github config for job creation)
+      const result = await executeCommand(action, {
+        ...ctx,
+        attachments,
+        githubUsername: config.githubUsername || undefined,
+        githubOrg: config.githubOrg || undefined,
+        githubTeamSlug: config.githubTeamSlug || undefined,
+      });
       log.info("Command executed", { action: result.actionTaken, event_id: eventId });
 
       return result.reply;

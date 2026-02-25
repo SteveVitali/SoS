@@ -1,8 +1,11 @@
 import { createLogger } from "../../shared/logger.js";
-import type { JobAttachment } from "../../shared/types.js";
+import type { GithubQueryType, JobAttachment } from "../../shared/types.js";
+import { GITHUB_INSTANT_QUERIES, GITHUB_SUMMARY_QUERIES } from "../../shared/types.js";
+import { executeInstantQuery, formatInstantQueryResult } from "../github/index.js";
 import {
   cancel,
   confirmJob,
+  createGithubSummaryJob,
   createJobFromSlack,
   createJobFromWeb,
   createRespondToCommentsJob,
@@ -29,6 +32,9 @@ export interface CommandContext {
   attachments?: JobAttachment[];
   slack?: { channelId: string; threadTs: string; messageTs: string };
   web?: { conversationId: string };
+  githubUsername?: string;
+  githubOrg?: string;
+  githubTeamSlug?: string;
 }
 
 async function resolveTaskId(partial: string): Promise<string | null> {
@@ -319,6 +325,77 @@ export async function executeCommand(
           actionTaken: "respond_to_pr_comments failed",
         };
       }
+    }
+
+    case "github": {
+      const queryType = args.query_type as GithubQueryType;
+      if (!queryType) {
+        return {
+          reply: `${reply}\n\n⚠️ Missing query_type for GitHub query.`,
+          actionTaken: "github: missing query_type",
+        };
+      }
+
+      // Instant queries — execute directly and return results
+      if ((GITHUB_INSTANT_QUERIES as readonly string[]).includes(queryType)) {
+        try {
+          const result = executeInstantQuery(queryType, {
+            githubUsername: ctx.githubUsername,
+            org: args.org || ctx.githubOrg,
+            team_slug: args.team_slug || ctx.githubTeamSlug,
+            time_range: args.time_range,
+          });
+          const formatted = formatInstantQueryResult(result);
+          return {
+            reply: reply ? `${reply}\n\n${formatted}` : formatted,
+            actionTaken: `github: ${queryType} (${result.prs?.length ?? result.teamReviews?.length ?? 0} results)`,
+          };
+        } catch (err: any) {
+          log.error("GitHub instant query failed", { queryType, error: err.message });
+          return {
+            reply: `${reply}\n\n⚠️ GitHub query failed: ${err.message}`,
+            actionTaken: `github: ${queryType} failed`,
+          };
+        }
+      }
+
+      // Summary queries — queue as a github_summary job
+      if ((GITHUB_SUMMARY_QUERIES as readonly string[]).includes(queryType)) {
+        try {
+          const slackThread =
+            ctx.source === "slack" && ctx.slack
+              ? { channel_id: ctx.slack.channelId, thread_ts: ctx.slack.threadTs }
+              : undefined;
+          const job = await createGithubSummaryJob(
+            {
+              requested_by: ctx.ownerId,
+              query_type: queryType as "my_recap" | "team_recap",
+              time_range: args.time_range,
+              org: args.org || ctx.githubOrg,
+              team_slug: args.team_slug || ctx.githubTeamSlug,
+              github_username: ctx.githubUsername,
+            },
+            ctx.source,
+            slackThread,
+          );
+          return {
+            reply: `${reply}\n\n📊 Recap queued: \`${job.task_id.slice(0, 8)}…\` — I'll crunch the numbers and post the summary shortly.`,
+            actionTaken: `github: ${queryType} job ${job.task_id}`,
+            taskId: job.task_id,
+          };
+        } catch (err: any) {
+          log.error("GitHub summary job creation failed", { queryType, error: err.message });
+          return {
+            reply: `${reply}\n\n⚠️ Failed to queue recap: ${err.message}`,
+            actionTaken: `github: ${queryType} failed`,
+          };
+        }
+      }
+
+      return {
+        reply: `${reply}\n\n⚠️ Unknown GitHub query type: ${queryType}`,
+        actionTaken: `github: unknown query_type ${queryType}`,
+      };
     }
 
     case "list_jobs": {

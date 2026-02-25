@@ -46,6 +46,16 @@ export const CreateRespondToCommentsFromWebSchema = z.object({
 });
 export type CreateRespondToCommentsFromWeb = z.infer<typeof CreateRespondToCommentsFromWebSchema>;
 
+export const CreateGithubSummarySchema = z.object({
+  requested_by: z.string().min(1, "requested_by is required"),
+  query_type: z.enum(["my_recap", "team_recap"]),
+  time_range: z.string().optional(),
+  org: z.string().optional(),
+  team_slug: z.string().optional(),
+  github_username: z.string().optional(),
+});
+export type CreateGithubSummary = z.infer<typeof CreateGithubSummarySchema>;
+
 export const ClaimJobSchema = z.object({
   requested_by: z.string(),
   node_id: z.string(),

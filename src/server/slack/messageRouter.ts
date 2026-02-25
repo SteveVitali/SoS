@@ -15,6 +15,7 @@ export interface RoutedAction {
     | "retry_job"
     | "promote_pr"
     | "respond_to_pr_comments"
+    | "github"
     | "list_jobs"
     | "chat"
     | "no_op";
@@ -58,6 +59,20 @@ You will receive the full conversation history from the Slack thread. Messages a
 ## Pre-flight Planning
 
 When there is an active PENDING_CONFIRMATION job visible in the recent jobs context, look for explicit user confirmation ("go", "ship it", "looks good", "approved", "do it", thumbs up, etc.) and use confirm_job. If the user asks questions or requests changes to the plan, respond conversationally with chat — they can confirm when ready. If the user wants to abandon the plan, they can cancel it.
+
+## GitHub Queries
+
+Use the \`github\` tool when the user asks about PRs, reviews, team activity, or wants a recap/summary.
+- "What PRs need my review?" / "my reviews" → my_review_requests
+- "What are my open PRs?" / "my PRs" → my_open_prs
+- "What did I merge recently?" / "my merged PRs" → my_merged_prs
+- "What's the team working on?" / "team PRs" → team_open_prs
+- "Who has outstanding reviews?" / "team reviews" → team_review_requests
+- "What did I ship this week?" / "my recap" → my_recap (queues a summary job)
+- "What's the team been up to?" / "team recap" / "sprint summary" → team_recap (queues a summary job)
+
+Time range inference: "this week" = 7d, "this sprint" / "last 2 weeks" = 14d, "this month" = 30d.
+If the user mentions a specific team, extract the team_slug. Otherwise, defaults are used.
 
 ## Recent Jobs Context
 {JOBS_CONTEXT}
@@ -191,6 +206,44 @@ const TOOLS: ToolDefinition[] = [
         },
       },
       required: [],
+    },
+  },
+  {
+    name: "github",
+    description:
+      "Query GitHub for PR and review information, or request a recap summary. Use when the user asks about PRs, reviews, team activity, or wants a weekly/sprint recap.",
+    parameters: {
+      type: "object",
+      properties: {
+        query_type: {
+          type: "string",
+          enum: [
+            "my_review_requests",
+            "my_open_prs",
+            "my_merged_prs",
+            "team_open_prs",
+            "team_review_requests",
+            "my_recap",
+            "team_recap",
+          ],
+          description:
+            "The type of GitHub query: my_review_requests (PRs awaiting my review), my_open_prs (my authored open PRs), my_merged_prs (my recently merged PRs), team_open_prs (team open PRs), team_review_requests (outstanding reviews by team member), my_recap (LLM summary of my recent work), team_recap (LLM summary of team work)",
+        },
+        time_range: {
+          type: "string",
+          description:
+            "Time range like '7d', '2w', '30d', or 'YYYY-MM-DD..YYYY-MM-DD'. Defaults to 7d for recaps and merged PR queries.",
+        },
+        org: {
+          type: "string",
+          description: "GitHub org slug. Only needed for team queries if overriding the default.",
+        },
+        team_slug: {
+          type: "string",
+          description: "GitHub team slug. Only needed for team queries if overriding the default.",
+        },
+      },
+      required: ["query_type"],
     },
   },
   {
