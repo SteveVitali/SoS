@@ -1,4 +1,4 @@
-/** Convert Slack-style markdown to standard markdown for react-markdown rendering. */
+/** Convert Slack-style markdown to standard markdown. Used server-side to normalize messages before storage. */
 export function slackToMarkdown(text: string): string {
   return (
     text
