@@ -13,6 +13,5 @@ export {
   parseTimeRange,
   type RecapData,
   type TeamRecapData,
-  type TeamReviewRequestsResult,
 } from "./queries.js";
 export { clearTeamCache, getAuthenticatedUser, getTeamMembers } from "./teamCache.js";

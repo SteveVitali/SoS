@@ -148,26 +148,42 @@ export function myMergedPrs(githubUsername?: string, timeRange?: string): PrResu
   return parsePrSearchResults(raw);
 }
 
-export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
-  const members = getTeamMembers(org, teamSlug);
+// GitHub search queries have a length limit (~256 chars), so batch members
+// into chunks and use OR queries to minimize API calls (avoids rate limits).
+const BATCH_CHUNK_SIZE = 8;
+
+function batchedSearch(members: string[], qualifierPrefix: string, extraFlags: string): PrResult[] {
   const allPrs: PrResult[] = [];
   const seen = new Set<string>();
 
-  for (const member of members) {
+  for (let i = 0; i < members.length; i += BATCH_CHUNK_SIZE) {
+    const chunk = members.slice(i, i + BATCH_CHUNK_SIZE);
+    const query = chunk.map((m) => `${qualifierPrefix}:${m}`).join(" OR ");
     try {
-      const prs = myOpenPrs(member);
-      for (const pr of prs) {
+      const raw = gh(`search prs "${query}" ${extraFlags} --json ${SEARCH_FIELDS} --limit 100`);
+      for (const pr of parsePrSearchResults(raw)) {
         if (!seen.has(pr.url)) {
           seen.add(pr.url);
           allPrs.push(pr);
         }
       }
     } catch (err: any) {
-      log.warn("Failed to fetch open PRs for team member", { member, error: err.message });
+      log.warn("Batched search chunk failed", {
+        qualifier: qualifierPrefix,
+        chunk,
+        error: err.message,
+      });
     }
   }
 
-  // Sort by updatedAt descending
+  return allPrs;
+}
+
+export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
+  const members = getTeamMembers(org, teamSlug);
+  if (members.length === 0) return [];
+
+  const allPrs = batchedSearch(members, "author", "--state=open");
   allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
   return allPrs;
 }
@@ -177,24 +193,13 @@ export interface TeamReviewRequestsResult {
   prs: PrResult[];
 }
 
-export function teamReviewRequests(org: string, teamSlug: string): TeamReviewRequestsResult[] {
+export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
   const members = getTeamMembers(org, teamSlug);
-  const results: TeamReviewRequestsResult[] = [];
+  if (members.length === 0) return [];
 
-  for (const member of members) {
-    try {
-      const prs = myReviewRequests(member);
-      if (prs.length > 0) {
-        results.push({ member, prs });
-      }
-    } catch (err: any) {
-      log.warn("Failed to fetch review requests for team member", { member, error: err.message });
-    }
-  }
-
-  // Sort by most outstanding reviews first
-  results.sort((a, b) => b.prs.length - a.prs.length);
-  return results;
+  const allPrs = batchedSearch(members, "review-requested", "--state=open");
+  allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
+  return allPrs;
 }
 
 // --- Summary data fetchers (for recap jobs) ---
@@ -277,7 +282,6 @@ export function fetchTeamRecapData(
 export interface GithubQueryResult {
   queryType: GithubQueryType;
   prs?: PrResult[];
-  teamReviews?: TeamReviewRequestsResult[];
 }
 
 function requireTeamParams(params: { org?: string; team_slug?: string }): {
@@ -309,7 +313,7 @@ export function executeInstantQuery(
     }
     case "team_review_requests": {
       const { org, team_slug } = requireTeamParams(params);
-      return { queryType, teamReviews: teamReviewRequests(org, team_slug) };
+      return { queryType, prs: teamReviewRequests(org, team_slug) };
     }
     default:
       throw new Error(`Unknown instant query type: ${queryType}`);

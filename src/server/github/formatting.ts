@@ -1,11 +1,5 @@
 import type { GithubQueryType } from "../../shared/types.js";
-import type {
-  GithubQueryResult,
-  PrResult,
-  RecapData,
-  TeamRecapData,
-  TeamReviewRequestsResult,
-} from "./queries.js";
+import type { GithubQueryResult, PrResult, RecapData, TeamRecapData } from "./queries.js";
 
 // --- Slack formatting for instant query results ---
 
@@ -44,29 +38,11 @@ const QUERY_TITLES: Record<GithubQueryType, string> = {
   team_recap: "📊 Team recap",
 };
 
-function formatTeamReviews(teamReviews: TeamReviewRequestsResult[]): string {
-  if (teamReviews.length === 0) return "_No outstanding review requests for the team._";
-
-  const lines: string[] = [];
-  let totalReviews = 0;
-  for (const { member, prs } of teamReviews) {
-    totalReviews += prs.length;
-    lines.push(`\n*${member}* (${prs.length} pending):`);
-    for (const pr of prs) {
-      lines.push(formatPr(pr));
-    }
-  }
-  lines.unshift(`_${totalReviews} total outstanding reviews across ${teamReviews.length} members_`);
-  return lines.join("\n");
-}
-
 export function formatInstantQueryResult(result: GithubQueryResult): string {
   const title = QUERY_TITLES[result.queryType] || result.queryType;
   let body: string;
 
-  if (result.queryType === "team_review_requests" && result.teamReviews) {
-    body = formatTeamReviews(result.teamReviews);
-  } else if (result.prs) {
+  if (result.prs) {
     body = formatPrList(result.prs);
     if (result.prs.length > 0) {
       body = `_${result.prs.length} result${result.prs.length === 1 ? "" : "s"}_\n${body}`;

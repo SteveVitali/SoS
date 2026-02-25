@@ -5,12 +5,7 @@ import {
   formatInstantQueryResult,
   formatRecapResult,
 } from "./formatting.js";
-import type {
-  GithubQueryResult,
-  PrResult,
-  RecapData,
-  TeamReviewRequestsResult,
-} from "./queries.js";
+import type { GithubQueryResult, PrResult, RecapData } from "./queries.js";
 
 function makePr(overrides: Partial<PrResult> = {}): PrResult {
   return {
@@ -75,23 +70,24 @@ describe("formatInstantQueryResult", () => {
     expect(output).toContain("`urgent`");
   });
 
-  it("formats team_review_requests by member", () => {
-    const teamReviews: TeamReviewRequestsResult[] = [
-      { member: "alice", prs: [makePr()] },
-      { member: "bob", prs: [makePr({ number: 43 }), makePr({ number: 44 })] },
+  it("formats team_review_requests as flat PR list", () => {
+    const prs = [
+      makePr({ number: 42 }),
+      makePr({ number: 43, title: "Add tests" }),
+      makePr({ number: 44, title: "Fix auth" }),
     ];
-    const result: GithubQueryResult = { queryType: "team_review_requests", teamReviews };
+    const result: GithubQueryResult = { queryType: "team_review_requests", prs };
     const output = formatInstantQueryResult(result);
     expect(output).toContain("Team review requests");
-    expect(output).toContain("*alice*");
-    expect(output).toContain("*bob*");
-    expect(output).toContain("3 total outstanding reviews across 2 members");
+    expect(output).toContain("3 results");
+    expect(output).toContain("org/repo#42");
+    expect(output).toContain("org/repo#43");
   });
 
   it("handles empty team reviews", () => {
-    const result: GithubQueryResult = { queryType: "team_review_requests", teamReviews: [] };
+    const result: GithubQueryResult = { queryType: "team_review_requests", prs: [] };
     const output = formatInstantQueryResult(result);
-    expect(output).toContain("No outstanding review requests");
+    expect(output).toContain("None found.");
   });
 
   it("handles missing data gracefully", () => {

@@ -348,7 +348,7 @@ export async function executeCommand(
           const formatted = formatInstantQueryResult(result);
           return {
             reply: reply ? `${reply}\n\n${formatted}` : formatted,
-            actionTaken: `github: ${queryType} (${result.prs?.length ?? result.teamReviews?.length ?? 0} results)`,
+            actionTaken: `github: ${queryType} (${result.prs?.length ?? 0} results)`,
           };
         } catch (err: any) {
           log.error("GitHub instant query failed", { queryType, error: err.message });
