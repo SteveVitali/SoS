@@ -206,20 +206,22 @@ function enrichPrDetails(prs: PrResult[]): PrResult[] {
   return prs;
 }
 
+// Only show open PRs with activity in the last 14 days to filter out stale PRs.
+const DEFAULT_OPEN_PR_WINDOW_DAYS = 14;
+function openPrSince(): string {
+  return toDateStr(new Date(Date.now() - DEFAULT_OPEN_PR_WINDOW_DAYS * 24 * 60 * 60 * 1000));
+}
+
 // --- Individual query functions ---
 
 export function myReviewRequests(githubUsername?: string): PrResult[] {
   const user = githubUsername || getAuthenticatedUser();
-  const raw = gh(
-    `search prs --review-requested="${user}" --state=open --json ${SEARCH_FIELDS} --limit 50`,
-  );
-  return parsePrSearchResults(raw);
+  return searchPrsViaApi(`review-requested:${user} type:pr is:open updated:>=${openPrSince()}`);
 }
 
 export function myOpenPrs(githubUsername?: string): PrResult[] {
   const user = githubUsername || getAuthenticatedUser();
-  const raw = gh(`search prs --author="${user}" --state=open --json ${SEARCH_FIELDS} --limit 50`);
-  return parsePrSearchResults(raw);
+  return searchPrsViaApi(`author:${user} type:pr is:open updated:>=${openPrSince()}`);
 }
 
 export function myMergedPrs(githubUsername?: string, timeRange?: string): PrResult[] {
@@ -263,7 +265,7 @@ export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = memberSearch(members, "author", "is:open");
+    const allPrs = memberSearch(members, "author", `is:open updated:>=${openPrSince()}`);
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
@@ -275,7 +277,7 @@ export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = memberSearch(members, "review-requested", "is:open");
+    const allPrs = memberSearch(members, "review-requested", `is:open updated:>=${openPrSince()}`);
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
