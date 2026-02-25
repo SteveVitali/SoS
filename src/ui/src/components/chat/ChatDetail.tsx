@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import remarkBreaks from "remark-breaks";
-import { slackToMarkdown } from "../../../../shared/slackMarkdown.js";
 import {
   type Conversation,
   type ConversationMessage,
@@ -13,6 +12,7 @@ import {
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { relativeTime, shortId } from "../../utils/format.js";
+import { slackToMarkdown } from "../../utils/slackMarkdown.js";
 import { Spinner } from "../shared/Spinner.js";
 
 function MessageBubble({ msg }: { msg: ConversationMessage }) {
@@ -114,8 +114,8 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
             fontSize: 14,
             lineHeight: 1.5,
             border: isUser ? "none" : "1px solid var(--border)",
-            whiteSpace: "pre-wrap",
             wordBreak: "break-word",
+            ...(isUser ? { whiteSpace: "pre-wrap" as const } : {}),
           }}
         >
           {isUser ? (
