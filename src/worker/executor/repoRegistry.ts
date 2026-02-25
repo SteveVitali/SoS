@@ -48,7 +48,6 @@ export interface RepoEntry {
 
 export interface RepoRegistry {
   repos: Map<string, RepoEntry>;
-  globalMcpServers?: Record<string, McpServerConfig>;
 }
 
 /** Match a GitHub owner/repo (e.g. "SteveVitali/son-of-steve") against a clone URL. */
@@ -158,7 +157,7 @@ export function loadRegistry(path: string): RepoRegistry {
 
     const mcpCount = [...repos.values()].filter((r) => r.mcp_servers).length;
     log.info("Repo registry loaded", { count: repos.size, mcpCount, path });
-    return { repos, globalMcpServers };
+    return { repos };
   } catch (err: any) {
     log.error("Failed to load repo registry", { path, error: err.message });
     return { repos: new Map() };

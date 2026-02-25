@@ -486,7 +486,9 @@ export async function runClaudeRespondToComment(
     file: locationStr,
   });
 
-  const mcpArgs = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcp = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcpToolArgs =
+    mcp.allowedTools.length > 0 ? ["--allowedTools", mcp.allowedTools.join(",")] : [];
 
   return runClaudeProcess(
     [
@@ -497,7 +499,8 @@ export async function runClaudeRespondToComment(
       "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
-      ...mcpArgs,
+      ...mcp.configArgs,
+      ...mcpToolArgs,
     ],
     worktreePath,
     logPath,
