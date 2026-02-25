@@ -228,11 +228,10 @@ export function myMergedPrs(githubUsername?: string, timeRange?: string): PrResu
   return searchPrsViaApi(`author:${user} type:pr is:merged merged:>=${since}`);
 }
 
-// GitHub search queries have a length limit (~256 chars), so batch members
-// into chunks and use OR queries to minimize API calls (avoids rate limits).
-const BATCH_CHUNK_SIZE = 8;
-
-function batchedSearch(
+// Per-member search via REST API. GitHub search doesn't support OR between
+// qualifier terms (e.g. author:a OR author:b), so we query per member.
+// With TtlCache (2 min) + retry, this is safe for typical team sizes.
+function memberSearch(
   members: string[],
   qualifierPrefix: string,
   extraQualifiers: string,
@@ -240,10 +239,8 @@ function batchedSearch(
   const allPrs: PrResult[] = [];
   const seen = new Set<string>();
 
-  for (let i = 0; i < members.length; i += BATCH_CHUNK_SIZE) {
-    const chunk = members.slice(i, i + BATCH_CHUNK_SIZE);
-    const orClause = chunk.map((m) => `${qualifierPrefix}:${m}`).join(" OR ");
-    const query = `type:pr ${extraQualifiers} (${orClause})`;
+  for (const member of members) {
+    const query = `type:pr ${extraQualifiers} ${qualifierPrefix}:${member}`;
     try {
       for (const pr of searchPrsViaApi(query)) {
         if (!seen.has(pr.url)) {
@@ -253,11 +250,7 @@ function batchedSearch(
       }
     } catch (err: any) {
       if (err instanceof GithubRateLimitError) throw err;
-      log.warn("Batched search chunk failed", {
-        qualifier: qualifierPrefix,
-        chunk,
-        error: err.message,
-      });
+      log.warn("Member search failed", { member, qualifier: qualifierPrefix, error: err.message });
     }
   }
 
@@ -270,7 +263,7 @@ export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = batchedSearch(members, "author", "is:open");
+    const allPrs = memberSearch(members, "author", "is:open");
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
@@ -282,7 +275,7 @@ export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = batchedSearch(members, "review-requested", "is:open");
+    const allPrs = memberSearch(members, "review-requested", "is:open");
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
