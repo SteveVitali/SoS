@@ -253,6 +253,20 @@ export async function saveRegistry(registry: RegistryData): Promise<{ ok: boolea
   return request("PUT", "/registry", { registry });
 }
 
+// --- Routing Config ---
+
+export async function getRoutingConfig(): Promise<{ config: any; path: string }> {
+  return request("GET", "/routing-config");
+}
+
+export async function saveRoutingConfig(config: any): Promise<{ ok: boolean }> {
+  return request("PUT", "/routing-config", { config });
+}
+
+export async function reloadRoutingConfig(): Promise<{ ok: boolean }> {
+  return request("POST", "/routing-config/reload");
+}
+
 export interface WorktreeSlotStatus {
   slotName: string;
   inUse: boolean;

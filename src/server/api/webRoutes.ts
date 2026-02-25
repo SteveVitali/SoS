@@ -7,6 +7,12 @@ import { createLogger } from "../../shared/logger.js";
 import type { ServerConfig } from "../config.js";
 import { CreateJobFromWebSchema, CreateRespondToCommentsFromWebSchema } from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
+import {
+  getRoutingConfigPath,
+  getRoutingConfigRaw,
+  reloadRoutingConfig,
+  saveRoutingConfig,
+} from "../routing/index.js";
 import { resolveSlackUser } from "../slack/userResolver.js";
 import { spawnWorkerProcess } from "../workers/spawnWorker.js";
 import {
@@ -565,6 +571,56 @@ export function createWebRoutes(config: ServerConfig): Router {
     req.on("close", () => {
       unsubscribe();
     });
+  });
+
+  // --- Routing Config ---
+
+  // GET /api/web/routing-config — read routing-config.yaml as JSON
+  router.get("/routing-config", async (_req: Request, res: Response) => {
+    try {
+      const configPath = getRoutingConfigPath();
+      if (!configPath) {
+        res.status(501).json({ error: "Routing config not initialized" });
+        return;
+      }
+      const data = getRoutingConfigRaw();
+      res.json({ config: data, path: configPath });
+    } catch (err: any) {
+      log.error("Read routing config error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // PUT /api/web/routing-config — write JSON back as routing-config.yaml
+  router.put("/routing-config", async (req: Request, res: Response) => {
+    try {
+      const configPath = getRoutingConfigPath();
+      if (!configPath) {
+        res.status(501).json({ error: "Routing config not initialized" });
+        return;
+      }
+      const data = req.body?.config;
+      if (!data || typeof data !== "object") {
+        res.status(400).json({ error: "Missing or invalid config object in body" });
+        return;
+      }
+      saveRoutingConfig(data);
+      res.json({ ok: true });
+    } catch (err: any) {
+      log.error("Write routing config error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/web/routing-config/reload — force reload from disk
+  router.post("/routing-config/reload", async (_req: Request, res: Response) => {
+    try {
+      reloadRoutingConfig();
+      res.json({ ok: true });
+    } catch (err: any) {
+      log.error("Reload routing config error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
   });
 
   return router;
