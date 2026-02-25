@@ -1,15 +1,10 @@
 import { execSync } from "node:child_process";
+import { TtlCache } from "../../shared/cache.js";
 import { createLogger } from "../../shared/logger.js";
 
 const log = createLogger("server:github:teamCache");
 
-interface TeamCacheEntry {
-  members: string[];
-  fetchedAt: number;
-}
-
-const cache = new Map<string, TeamCacheEntry>();
-const CACHE_TTL_MS = 5 * 60 * 1000; // 5 minutes
+const teamCache = new TtlCache<string[]>({ ttlMs: 5 * 60 * 1000, label: "github-team-members" });
 
 function gh(cmd: string): string {
   return execSync(`gh ${cmd}`, { encoding: "utf-8", timeout: 30_000 }).trim();
@@ -35,31 +30,27 @@ export function getAuthenticatedUser(): string {
 /** Fetch team members for an org/team via the GitHub Teams API. Results are cached for 5 minutes. */
 export function getTeamMembers(org: string, teamSlug: string): string[] {
   const key = `${org}/${teamSlug}`;
-  const cached = cache.get(key);
-  if (cached && Date.now() - cached.fetchedAt < CACHE_TTL_MS) {
-    return cached.members;
-  }
+  return teamCache.getOrSet(key, () => {
+    try {
+      const raw = gh(`api "/orgs/${org}/teams/${teamSlug}/members" --jq ".[].login" --paginate`);
+      const members = raw
+        .split("\n")
+        .map((s) => s.trim())
+        .filter(Boolean);
 
-  try {
-    const raw = gh(`api "/orgs/${org}/teams/${teamSlug}/members" --jq ".[].login" --paginate`);
-    const members = raw
-      .split("\n")
-      .map((s) => s.trim())
-      .filter(Boolean);
-
-    cache.set(key, { members, fetchedAt: Date.now() });
-    log.info("Fetched team members", { org, teamSlug, count: members.length });
-    return members;
-  } catch (err: any) {
-    log.error("Failed to fetch team members", { org, teamSlug, error: err.message });
-    throw new Error(
-      `Could not fetch team members for ${org}/${teamSlug}. ` +
-        "Ensure you have org access and SOS_GITHUB_ORG / SOS_GITHUB_TEAM_SLUG are correct.",
-    );
-  }
+      log.info("Fetched team members", { org, teamSlug, count: members.length });
+      return members;
+    } catch (err: any) {
+      log.error("Failed to fetch team members", { org, teamSlug, error: err.message });
+      throw new Error(
+        `Could not fetch team members for ${org}/${teamSlug}. ` +
+          "Ensure you have org access and SOS_GITHUB_ORG / SOS_GITHUB_TEAM_SLUG are correct.",
+      );
+    }
+  });
 }
 
 /** Invalidate the team member cache (useful for testing). */
 export function clearTeamCache(): void {
-  cache.clear();
+  teamCache.clear();
 }

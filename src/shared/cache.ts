@@ -25,6 +25,17 @@ export class TtlCache<T> {
     this.label = opts.label ?? "cache";
   }
 
+  /** Check if a non-expired entry exists for the key. */
+  has(key: string): boolean {
+    const entry = this.store.get(key);
+    if (!entry) return false;
+    if (Date.now() > entry.expiresAt) {
+      this.store.delete(key);
+      return false;
+    }
+    return true;
+  }
+
   get(key: string): T | undefined {
     const entry = this.store.get(key);
     if (!entry) return undefined;
@@ -44,10 +55,9 @@ export class TtlCache<T> {
    * cache the result, and return it.
    */
   getOrSet(key: string, fn: () => T): T {
-    const cached = this.get(key);
-    if (cached !== undefined) {
+    if (this.has(key)) {
       log.debug("Cache hit", { label: this.label, key });
-      return cached;
+      return this.get(key) as T;
     }
     const value = fn();
     this.set(key, value);
@@ -58,10 +68,9 @@ export class TtlCache<T> {
    * Async variant of getOrSet.
    */
   async getOrSetAsync(key: string, fn: () => Promise<T>): Promise<T> {
-    const cached = this.get(key);
-    if (cached !== undefined) {
+    if (this.has(key)) {
       log.debug("Cache hit", { label: this.label, key });
-      return cached;
+      return this.get(key) as T;
     }
     const value = await fn();
     this.set(key, value);

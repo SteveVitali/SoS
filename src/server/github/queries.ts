@@ -157,6 +157,7 @@ function enrichPrDetails(prs: PrResult[]): PrResult[] {
       pr.mergedAt = details.mergedAt || pr.mergedAt;
       pr.reviewDecision = details.reviewDecision || pr.reviewDecision;
     } catch (err: any) {
+      if (err instanceof GithubRateLimitError) throw err;
       log.warn("Failed to enrich PR details", { url: pr.url, error: err.message });
     }
   }
@@ -232,11 +233,6 @@ export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
   });
 }
 
-export interface TeamReviewRequestsResult {
-  member: string;
-  prs: PrResult[];
-}
-
 export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
   const cacheKey = `team-reviews:${org}/${teamSlug}`;
   return queryCache.getOrSet(cacheKey, () => {
@@ -276,6 +272,7 @@ export function fetchRecapData(githubUsername: string, timeRange?: string): Reca
     );
     reviewsCompleted = parsePrSearchResults(raw).filter((pr) => pr.author !== githubUsername);
   } catch (err: any) {
+    if (err instanceof GithubRateLimitError) throw err;
     log.warn("Failed to fetch reviews completed", { user: githubUsername, error: err.message });
   }
 
@@ -309,6 +306,7 @@ export function fetchTeamRecapData(
         memberRecaps.push({ username: member, recap });
       }
     } catch (err: any) {
+      if (err instanceof GithubRateLimitError) throw err;
       log.warn("Failed to fetch recap for team member", { member, error: err.message });
     }
   }
