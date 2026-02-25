@@ -1,7 +1,12 @@
+import { mkdtempSync, writeFileSync } from "node:fs";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import { afterAll, afterEach, beforeAll, describe, expect, it } from "vitest";
 import { setSlackPoster } from "../jobs/jobService.js";
 import { closeMongo, connectMongo, getJobsCollection } from "../mongo.js";
+import { generateDefaultConfig } from "../routing/defaultConfig.js";
+import { initRoutingConfig } from "../routing/routingConfig.js";
 import { executeCommand } from "./commandExecutor.js";
 import type { RoutedAction } from "./messageRouter.js";
 
@@ -23,6 +28,12 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await connectMongo(mongod.getUri(), "test-cmd-executor");
   setSlackPoster(null as any);
+
+  // Initialize routing config with defaults so YAML-driven executor works
+  const tmpDir = mkdtempSync(join(tmpdir(), "sos-test-"));
+  const configPath = join(tmpDir, "routing-config.yaml");
+  writeFileSync(configPath, generateDefaultConfig(), "utf-8");
+  initRoutingConfig(configPath);
 });
 
 afterEach(async () => {
@@ -130,7 +141,7 @@ describe("executeCommand", () => {
 
       const result = await executeCommand(cancelAction, ctx);
       expect(result.reply).toContain("Canceled");
-      expect(result.actionTaken).toContain("cancel_job");
+      expect(result.actionTaken).toContain("cancel");
     });
   });
 
