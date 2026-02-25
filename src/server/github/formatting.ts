@@ -11,9 +11,12 @@ function shortDate(dateStr: string): string {
   return `${mon} ${d.getUTCDate()}`;
 }
 
+function prSortDate(pr: PrResult): string {
+  return pr.mergedAt || pr.updatedAt || pr.createdAt || "";
+}
+
 function prDate(pr: PrResult): string {
-  const raw = pr.mergedAt || pr.updatedAt || pr.createdAt;
-  const s = shortDate(raw);
+  const s = shortDate(prSortDate(pr));
   return s ? ` _(${s})_` : "";
 }
 
@@ -39,11 +42,7 @@ function reviewDecisionEmoji(decision: string): string {
 }
 
 function sortPrsDesc(prs: PrResult[]): PrResult[] {
-  return [...prs].sort((a, b) => {
-    const da = a.mergedAt || a.updatedAt || a.createdAt || "";
-    const db = b.mergedAt || b.updatedAt || b.createdAt || "";
-    return db.localeCompare(da);
-  });
+  return [...prs].sort((a, b) => prSortDate(b).localeCompare(prSortDate(a)));
 }
 
 function formatFlatPrList(prs: PrResult[], opts: { showAuthor?: boolean } = {}): string {
@@ -61,7 +60,7 @@ function formatGroupedPrList(prs: PrResult[]): string {
   for (const pr of prs) {
     const author = pr.author || "unknown";
     if (!byAuthor.has(author)) byAuthor.set(author, []);
-    byAuthor.get(author)!.push(pr);
+    byAuthor.get(author)?.push(pr);
   }
 
   // Sort authors by number of PRs descending

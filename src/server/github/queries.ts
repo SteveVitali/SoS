@@ -16,7 +16,9 @@ export class GithubRateLimitError extends Error {
 }
 
 function isRateLimitError(err: unknown): boolean {
-  return err instanceof Error && err.message.includes("API rate limit exceeded");
+  if (!(err instanceof Error)) return false;
+  const msg = err.message;
+  return msg.includes("API rate limit exceeded") || msg.includes("secondary rate limit");
 }
 
 function sleepSync(ms: number): void {
@@ -150,37 +152,6 @@ function parseRestApiSearchResults(raw: string): PrResult[] {
     return [];
   }
 }
-
-function parsePrSearchResults(raw: string): PrResult[] {
-  if (!raw) return [];
-  try {
-    const items = JSON.parse(raw) as Array<Record<string, any>>;
-    return items.map((item) => ({
-      title: item.title || "",
-      url: item.url || "",
-      repo: item.repository?.nameWithOwner || item.repository?.name || "",
-      author: item.author?.login || "",
-      number: item.number || 0,
-      state: item.state || "",
-      createdAt: item.createdAt || "",
-      updatedAt: item.updatedAt || "",
-      labels: (item.labels || []).map((l: any) => (typeof l === "string" ? l : l.name || "")),
-      additions: item.additions,
-      deletions: item.deletions,
-      mergedAt: item.mergedAt || undefined,
-      reviewDecision: item.reviewDecision || undefined,
-      isDraft: item.isDraft || false,
-    }));
-  } catch (err: any) {
-    log.warn("Failed to parse PR search results", { error: err.message });
-    return [];
-  }
-}
-
-// Fields available in `gh search prs --json`. Note: additions, deletions,
-// mergedAt, reviewDecision are NOT available in search — use enrichPrDetails()
-// to fetch those via `gh pr view` when needed (e.g. recap jobs).
-const SEARCH_FIELDS = "title,url,repository,author,number,state,createdAt,updatedAt,labels,isDraft";
 
 const DETAIL_FIELDS = "additions,deletions,mergedAt,reviewDecision";
 

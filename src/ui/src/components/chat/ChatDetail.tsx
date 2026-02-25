@@ -2,6 +2,7 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import Markdown from "react-markdown";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import remarkBreaks from "remark-breaks";
+import { slackToMarkdown } from "../../../../shared/slackMarkdown.js";
 import {
   type Conversation,
   type ConversationMessage,
@@ -13,19 +14,6 @@ import {
 import { css } from "../../styles/theme.js";
 import { relativeTime, shortId } from "../../utils/format.js";
 import { Spinner } from "../shared/Spinner.js";
-
-/** Convert Slack-style markdown to standard markdown for react-markdown rendering. */
-function slackToMarkdown(text: string): string {
-  return (
-    text
-      // Slack bold *text* → markdown bold **text** (but not ** which is already markdown)
-      .replace(/(?<![*\w])\*([^*\n]+)\*(?![*\w])/g, "**$1**")
-      // Slack links <url|label> → markdown [label](url)
-      .replace(/<(https?:\/\/[^|>]+)\|([^>]+)>/g, "[$2]($1)")
-      // Bare Slack links <url> → markdown [url](url)
-      .replace(/<(https?:\/\/[^>]+)>/g, "[$1]($1)")
-  );
-}
 
 function MessageBubble({ msg }: { msg: ConversationMessage }) {
   const isUser = msg.role === "user";
