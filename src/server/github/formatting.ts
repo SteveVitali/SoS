@@ -3,29 +3,79 @@ import type { GithubQueryResult, PrResult, RecapData, TeamRecapData } from "./qu
 
 // --- Slack formatting for instant query results ---
 
-function formatPr(pr: PrResult): string {
+function shortDate(dateStr: string): string {
+  if (!dateStr) return "";
+  const d = new Date(dateStr);
+  if (Number.isNaN(d.getTime())) return "";
+  const mon = d.toLocaleString("en-US", { month: "short", timeZone: "UTC" });
+  return `${mon} ${d.getUTCDate()}`;
+}
+
+function prDate(pr: PrResult): string {
+  const raw = pr.mergedAt || pr.updatedAt || pr.createdAt;
+  const s = shortDate(raw);
+  return s ? ` _(${s})_` : "";
+}
+
+function formatPr(pr: PrResult, opts: { showAuthor?: boolean } = {}): string {
   const draft = pr.isDraft ? " _(draft)_" : "";
-  const review = pr.reviewDecision ? ` | ${reviewDecisionEmoji(pr.reviewDecision)}` : "";
-  const labels = pr.labels.length > 0 ? ` | \`${pr.labels.join("`, `")}\`` : "";
-  return `• <${pr.url}|${pr.repo}#${pr.number}>${draft} — ${pr.title}${review}${labels}`;
+  const review = pr.reviewDecision ? ` ${reviewDecisionEmoji(pr.reviewDecision)}` : "";
+  const labels = pr.labels.length > 0 ? ` \`${pr.labels.join("`, `")}\`` : "";
+  const author = opts.showAuthor && pr.author ? ` by _${pr.author}_` : "";
+  return `• <${pr.url}|${pr.repo}#${pr.number}> — ${pr.title}${draft}${review}${labels}${author}${prDate(pr)}`;
 }
 
 function reviewDecisionEmoji(decision: string): string {
   switch (decision) {
     case "APPROVED":
-      return "✅ Approved";
+      return "✅";
     case "CHANGES_REQUESTED":
-      return "🔴 Changes requested";
+      return "🔴";
     case "REVIEW_REQUIRED":
-      return "⏳ Review required";
+      return "⏳";
     default:
-      return decision;
+      return "";
   }
 }
 
-function formatPrList(prs: PrResult[]): string {
+function sortPrsDesc(prs: PrResult[]): PrResult[] {
+  return [...prs].sort((a, b) => {
+    const da = a.mergedAt || a.updatedAt || a.createdAt || "";
+    const db = b.mergedAt || b.updatedAt || b.createdAt || "";
+    return db.localeCompare(da);
+  });
+}
+
+function formatFlatPrList(prs: PrResult[], opts: { showAuthor?: boolean } = {}): string {
   if (prs.length === 0) return "_None found._";
-  return prs.map(formatPr).join("\n");
+  return sortPrsDesc(prs)
+    .map((pr) => formatPr(pr, opts))
+    .join("\n");
+}
+
+function formatGroupedPrList(prs: PrResult[]): string {
+  if (prs.length === 0) return "_None found._";
+
+  // Group by author
+  const byAuthor = new Map<string, PrResult[]>();
+  for (const pr of prs) {
+    const author = pr.author || "unknown";
+    if (!byAuthor.has(author)) byAuthor.set(author, []);
+    byAuthor.get(author)!.push(pr);
+  }
+
+  // Sort authors by number of PRs descending
+  const sorted = [...byAuthor.entries()].sort((a, b) => b[1].length - a[1].length);
+
+  const sections: string[] = [];
+  for (const [author, authorPrs] of sorted) {
+    const count = authorPrs.length;
+    const header = `*${author}* — ${count} PR${count === 1 ? "" : "s"}`;
+    const lines = sortPrsDesc(authorPrs).map((pr) => formatPr(pr));
+    sections.push(`${header}\n${lines.join("\n")}`);
+  }
+
+  return sections.join("\n\n");
 }
 
 const QUERY_TITLES: Record<GithubQueryType, string> = {
@@ -38,20 +88,27 @@ const QUERY_TITLES: Record<GithubQueryType, string> = {
   team_recap: "📊 Team recap",
 };
 
+const TEAM_QUERY_TYPES = new Set<GithubQueryType>(["team_open_prs", "team_review_requests"]);
+
 export function formatInstantQueryResult(result: GithubQueryResult): string {
   const title = QUERY_TITLES[result.queryType] || result.queryType;
-  let body: string;
 
-  if (result.prs) {
-    body = formatPrList(result.prs);
-    if (result.prs.length > 0) {
-      body = `_${result.prs.length} result${result.prs.length === 1 ? "" : "s"}_\n${body}`;
-    }
-  } else {
-    body = "_No results._";
+  if (!result.prs) return `*${title}*\n\n_No results._`;
+  if (result.prs.length === 0) return `*${title}*\n\n_None found._`;
+
+  const isTeam = TEAM_QUERY_TYPES.has(result.queryType);
+  const count = result.prs.length;
+
+  if (isTeam) {
+    const authors = new Set(result.prs.map((p) => p.author)).size;
+    const subtitle = `_${count} PR${count === 1 ? "" : "s"} across ${authors} contributor${authors === 1 ? "" : "s"}_`;
+    return `*${title}* — ${subtitle}\n\n${formatGroupedPrList(result.prs)}`;
   }
 
-  return `*${title}*\n\n${body}`;
+  // For review requests, show author since these are other people's PRs
+  const showAuthor = result.queryType === "my_review_requests";
+  const subtitle = `_${count} PR${count === 1 ? "" : "s"}_`;
+  return `*${title}* — ${subtitle}\n\n${formatFlatPrList(result.prs, { showAuthor })}`;
 }
 
 // --- Prompt building for LLM recap summaries ---

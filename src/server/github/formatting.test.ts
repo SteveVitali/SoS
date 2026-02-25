@@ -23,16 +23,17 @@ function makePr(overrides: Partial<PrResult> = {}): PrResult {
 }
 
 describe("formatInstantQueryResult", () => {
-  it("formats my_review_requests with PRs", () => {
+  it("formats my_review_requests with PRs and author", () => {
     const result: GithubQueryResult = {
       queryType: "my_review_requests",
-      prs: [makePr(), makePr({ number: 43, title: "Add tests" })],
+      prs: [makePr(), makePr({ number: 43, title: "Add tests", author: "bob" })],
     };
     const output = formatInstantQueryResult(result);
     expect(output).toContain("PRs awaiting your review");
-    expect(output).toContain("2 results");
+    expect(output).toContain("2 PRs");
     expect(output).toContain("org/repo#42");
     expect(output).toContain("org/repo#43");
+    expect(output).toContain("by _bob_");
   });
 
   it("formats empty PR list", () => {
@@ -40,6 +41,30 @@ describe("formatInstantQueryResult", () => {
     const output = formatInstantQueryResult(result);
     expect(output).toContain("Your open PRs");
     expect(output).toContain("None found.");
+  });
+
+  it("includes date in PR output", () => {
+    const result: GithubQueryResult = {
+      queryType: "my_open_prs",
+      prs: [makePr({ updatedAt: "2025-02-21T12:00:00Z" })],
+    };
+    const output = formatInstantQueryResult(result);
+    expect(output).toContain("_(Feb 21)_");
+  });
+
+  it("formats team_open_prs grouped by author", () => {
+    const prs = [
+      makePr({ number: 1, author: "alice", updatedAt: "2025-02-21T00:00:00Z" }),
+      makePr({ number: 2, author: "alice", updatedAt: "2025-02-20T00:00:00Z" }),
+      makePr({ number: 3, author: "bob", updatedAt: "2025-02-19T00:00:00Z" }),
+    ];
+    const result: GithubQueryResult = { queryType: "team_open_prs", prs };
+    const output = formatInstantQueryResult(result);
+    expect(output).toContain("3 PRs across 2 contributors");
+    expect(output).toContain("*alice* \u2014 2 PRs");
+    expect(output).toContain("*bob* \u2014 1 PR");
+    // alice section should come before bob (more PRs)
+    expect(output.indexOf("*alice*")).toBeLessThan(output.indexOf("*bob*"));
   });
 
   it("includes draft indicator", () => {
@@ -57,7 +82,7 @@ describe("formatInstantQueryResult", () => {
       prs: [makePr({ reviewDecision: "APPROVED" })],
     };
     const output = formatInstantQueryResult(result);
-    expect(output).toContain("✅ Approved");
+    expect(output).toContain("✅");
   });
 
   it("includes labels", () => {
@@ -70,18 +95,18 @@ describe("formatInstantQueryResult", () => {
     expect(output).toContain("`urgent`");
   });
 
-  it("formats team_review_requests as flat PR list", () => {
+  it("formats team_review_requests grouped by author", () => {
     const prs = [
-      makePr({ number: 42 }),
-      makePr({ number: 43, title: "Add tests" }),
-      makePr({ number: 44, title: "Fix auth" }),
+      makePr({ number: 42, author: "alice" }),
+      makePr({ number: 43, title: "Add tests", author: "bob" }),
+      makePr({ number: 44, title: "Fix auth", author: "alice" }),
     ];
     const result: GithubQueryResult = { queryType: "team_review_requests", prs };
     const output = formatInstantQueryResult(result);
     expect(output).toContain("Team review requests");
-    expect(output).toContain("3 results");
-    expect(output).toContain("org/repo#42");
-    expect(output).toContain("org/repo#43");
+    expect(output).toContain("3 PRs across 2 contributors");
+    expect(output).toContain("*alice*");
+    expect(output).toContain("*bob*");
   });
 
   it("handles empty team reviews", () => {
