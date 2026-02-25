@@ -270,7 +270,7 @@ export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = batchedSearch(members, "author", "state:open");
+    const allPrs = batchedSearch(members, "author", "is:open");
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
@@ -282,7 +282,7 @@ export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = batchedSearch(members, "review-requested", "state:open");
+    const allPrs = batchedSearch(members, "review-requested", "is:open");
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
