@@ -243,7 +243,7 @@ function batchedSearch(
   for (let i = 0; i < members.length; i += BATCH_CHUNK_SIZE) {
     const chunk = members.slice(i, i + BATCH_CHUNK_SIZE);
     const orClause = chunk.map((m) => `${qualifierPrefix}:${m}`).join(" OR ");
-    const query = `type:pr ${extraQualifiers} ${orClause}`;
+    const query = `type:pr ${extraQualifiers} (${orClause})`;
     try {
       for (const pr of searchPrsViaApi(query)) {
         if (!seen.has(pr.url)) {
