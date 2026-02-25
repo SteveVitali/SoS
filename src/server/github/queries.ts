@@ -232,16 +232,20 @@ export function myMergedPrs(githubUsername?: string, timeRange?: string): PrResu
 // into chunks and use OR queries to minimize API calls (avoids rate limits).
 const BATCH_CHUNK_SIZE = 8;
 
-function batchedSearch(members: string[], qualifierPrefix: string, extraFlags: string): PrResult[] {
+function batchedSearch(
+  members: string[],
+  qualifierPrefix: string,
+  extraQualifiers: string,
+): PrResult[] {
   const allPrs: PrResult[] = [];
   const seen = new Set<string>();
 
   for (let i = 0; i < members.length; i += BATCH_CHUNK_SIZE) {
     const chunk = members.slice(i, i + BATCH_CHUNK_SIZE);
-    const query = chunk.map((m) => `${qualifierPrefix}:${m}`).join(" OR ");
+    const orClause = chunk.map((m) => `${qualifierPrefix}:${m}`).join(" OR ");
+    const query = `type:pr ${extraQualifiers} ${orClause}`;
     try {
-      const raw = gh(`search prs "${query}" ${extraFlags} --json ${SEARCH_FIELDS} --limit 100`);
-      for (const pr of parsePrSearchResults(raw)) {
+      for (const pr of searchPrsViaApi(query)) {
         if (!seen.has(pr.url)) {
           seen.add(pr.url);
           allPrs.push(pr);
@@ -266,7 +270,7 @@ export function teamOpenPrs(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = batchedSearch(members, "author", "--state=open");
+    const allPrs = batchedSearch(members, "author", "state:open");
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
@@ -278,7 +282,7 @@ export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = batchedSearch(members, "review-requested", "--state=open");
+    const allPrs = batchedSearch(members, "review-requested", "state:open");
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
