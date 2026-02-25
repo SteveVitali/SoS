@@ -143,7 +143,7 @@ export function myMergedPrs(githubUsername?: string, timeRange?: string): PrResu
   const user = githubUsername || getAuthenticatedUser();
   const since = toDateStr(parseTimeRange(timeRange));
   const raw = gh(
-    `search prs --author="${user}" "is:merged merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
+    `search prs --author="${user}" --merged "merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
   );
   return parsePrSearchResults(raw);
 }
@@ -220,7 +220,7 @@ export function fetchRecapData(githubUsername: string, timeRange?: string): Reca
   let reviewsCompleted: PrResult[] = [];
   try {
     const raw = gh(
-      `search prs --reviewed-by="${githubUsername}" "is:merged merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
+      `search prs --reviewed-by="${githubUsername}" --merged "merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
     );
     reviewsCompleted = parsePrSearchResults(raw).filter((pr) => pr.author !== githubUsername);
   } catch (err: any) {
