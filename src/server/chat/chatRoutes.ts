@@ -119,6 +119,9 @@ export function createChatRoutes(config: ServerConfig): Router {
         source: "web",
         eventId: `web-chat-${userMessage.id}`,
         web: { conversationId: conversation.conversation_id },
+        githubOrg: config.githubOrg || undefined,
+        githubTeamSlug: config.githubTeamSlug || undefined,
+        githubUsername: config.githubUsername || undefined,
       };
       const result = await executeCommand(action, ctx);
 
