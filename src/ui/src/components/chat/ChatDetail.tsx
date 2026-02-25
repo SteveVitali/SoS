@@ -13,6 +13,19 @@ import { css } from "../../styles/theme.js";
 import { relativeTime, shortId } from "../../utils/format.js";
 import { Spinner } from "../shared/Spinner.js";
 
+/** Convert Slack-style markdown to standard markdown for react-markdown rendering. */
+function slackToMarkdown(text: string): string {
+  return (
+    text
+      // Slack bold *text* → markdown bold **text** (but not ** which is already markdown)
+      .replace(/(?<![*\w])\*([^*\n]+)\*(?![*\w])/g, "**$1**")
+      // Slack links <url|label> → markdown [label](url)
+      .replace(/<(https?:\/\/[^|>]+)\|([^>]+)>/g, "[$2]($1)")
+      // Bare Slack links <url> → markdown [url](url)
+      .replace(/<(https?:\/\/[^>]+)>/g, "[$1]($1)")
+  );
+}
+
 function MessageBubble({ msg }: { msg: ConversationMessage }) {
   const isUser = msg.role === "user";
   const isSystem = msg.role === "system";
@@ -43,8 +56,8 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
                 {shortId(msg.action.task_id)}…
               </Link>
             )}
-            <div className="plan-markdown" style={{ marginTop: 6 }}>
-              <Markdown>{msg.text}</Markdown>
+            <div className="chat-markdown" style={{ marginTop: 6 }}>
+              <Markdown>{slackToMarkdown(msg.text)}</Markdown>
             </div>
           </div>
           <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 3, paddingLeft: 4 }}>
@@ -120,7 +133,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
             msg.text
           ) : (
             <div className="chat-markdown">
-              <Markdown>{msg.text}</Markdown>
+              <Markdown>{slackToMarkdown(msg.text)}</Markdown>
             </div>
           )}
           {msg.action?.task_id && (
