@@ -213,6 +213,9 @@ export interface JobDoc {
     cost_usd?: number;
   };
 
+  // Custom instructions from YAML routing config (for agent_task execution)
+  custom_instructions?: string;
+
   // Linking
   parent_task_id?: string;
 }

@@ -85,6 +85,7 @@ export async function createJobFromSlack(
     reviewers: input.reviewers,
     attachments: input.attachments,
     ...(input.needs_plan ? { needs_plan: true } : {}),
+    ...(input.custom_instructions ? { custom_instructions: input.custom_instructions } : {}),
     events: [{ at: now, type: "QUEUED", payload: { source: "slack" } }],
   };
 
@@ -133,6 +134,7 @@ export async function createJobFromWeb(input: CreateJobFromWeb): Promise<JobDoc>
     ci_fix_enabled: input.ci_fix_enabled ?? true,
     reviewers: input.reviewers,
     ...(input.needs_plan ? { needs_plan: true } : {}),
+    ...(input.custom_instructions ? { custom_instructions: input.custom_instructions } : {}),
     events: [{ at: now, type: "QUEUED", payload: { source: "web" } }],
   };
 

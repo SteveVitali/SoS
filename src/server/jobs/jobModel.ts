@@ -25,6 +25,7 @@ export const CreateJobFromSlackSchema = z.object({
     )
     .optional(),
   needs_plan: z.boolean().optional(),
+  custom_instructions: z.string().optional(),
 });
 export type CreateJobFromSlack = z.infer<typeof CreateJobFromSlackSchema>;
 
@@ -36,6 +37,7 @@ export const CreateJobFromWebSchema = z.object({
   ci_fix_enabled: z.boolean().optional(),
   reviewers: z.array(z.string()).optional(),
   needs_plan: z.boolean().optional(),
+  custom_instructions: z.string().optional(),
 });
 export type CreateJobFromWeb = z.infer<typeof CreateJobFromWebSchema>;
 
