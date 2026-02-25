@@ -109,6 +109,48 @@ function toDateStr(d: Date): string {
   return d.toISOString().split("T")[0];
 }
 
+/**
+ * Search PRs via the REST API directly, bypassing `gh search prs` CLI which
+ * wraps positional query args in parentheses and adds `advanced_search=true`,
+ * producing unreliable results for complex qualifiers like `merged:>=DATE`.
+ */
+function searchPrsViaApi(query: string, limit = 100): PrResult[] {
+  const perPage = Math.min(limit, 100);
+  const raw = gh(
+    `api "/search/issues?q=${encodeURIComponent(query)}&per_page=${perPage}&sort=updated&order=desc"`,
+  );
+  return parseRestApiSearchResults(raw);
+}
+
+function parseRestApiSearchResults(raw: string): PrResult[] {
+  if (!raw) return [];
+  try {
+    const response = JSON.parse(raw);
+    const items = response.items || response;
+    if (!Array.isArray(items)) return [];
+    return items.map((item: Record<string, any>) => {
+      const repoUrl: string = item.repository_url || "";
+      const repo = repoUrl.replace("https://api.github.com/repos/", "");
+      return {
+        title: item.title || "",
+        url: item.html_url || item.url || "",
+        repo,
+        author: item.user?.login || "",
+        number: item.number || 0,
+        state: item.state || "",
+        createdAt: item.created_at || "",
+        updatedAt: item.updated_at || "",
+        labels: (item.labels || []).map((l: any) => (typeof l === "string" ? l : l.name || "")),
+        mergedAt: item.pull_request?.merged_at || undefined,
+        isDraft: item.draft || false,
+      };
+    });
+  } catch (err: any) {
+    log.warn("Failed to parse REST API search results", { error: err.message });
+    return [];
+  }
+}
+
 function parsePrSearchResults(raw: string): PrResult[] {
   if (!raw) return [];
   try {
@@ -183,10 +225,7 @@ export function myOpenPrs(githubUsername?: string): PrResult[] {
 export function myMergedPrs(githubUsername?: string, timeRange?: string): PrResult[] {
   const user = githubUsername || getAuthenticatedUser();
   const since = toDateStr(parseTimeRange(timeRange));
-  const raw = gh(
-    `search prs --author="${user}" --merged "merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
-  );
-  return parsePrSearchResults(raw);
+  return searchPrsViaApi(`author:${user} type:pr is:merged merged:>=${since}`);
 }
 
 // GitHub search queries have a length limit (~256 chars), so batch members
@@ -267,10 +306,9 @@ export function fetchRecapData(githubUsername: string, timeRange?: string): Reca
   // PRs reviewed by this user that were merged in the range
   let reviewsCompleted: PrResult[] = [];
   try {
-    const raw = gh(
-      `search prs --reviewed-by="${githubUsername}" --merged "merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
-    );
-    reviewsCompleted = parsePrSearchResults(raw).filter((pr) => pr.author !== githubUsername);
+    reviewsCompleted = searchPrsViaApi(
+      `reviewed-by:${githubUsername} type:pr is:merged merged:>=${since}`,
+    ).filter((pr) => pr.author !== githubUsername);
   } catch (err: any) {
     if (err instanceof GithubRateLimitError) throw err;
     log.warn("Failed to fetch reviews completed", { user: githubUsername, error: err.message });
