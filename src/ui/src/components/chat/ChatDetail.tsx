@@ -1,7 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import Markdown from "react-markdown";
 import { Link, useNavigate, useParams } from "react-router-dom";
-import remarkBreaks from "remark-breaks";
 import {
   type Conversation,
   type ConversationMessage,
@@ -12,6 +10,7 @@ import {
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { relativeTime, shortId } from "../../utils/format.js";
+import { renderMarkdown } from "../../utils/renderMarkdown.js";
 import { Spinner } from "../shared/Spinner.js";
 
 function MessageBubble({ msg }: { msg: ConversationMessage }) {
@@ -45,7 +44,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
               </Link>
             )}
             <div className="chat-markdown" style={{ marginTop: 6 }}>
-              <Markdown remarkPlugins={[remarkBreaks]}>{msg.text}</Markdown>
+              {renderMarkdown(msg.text)}
             </div>
           </div>
           <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 3, paddingLeft: 4 }}>
@@ -117,13 +116,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
             ...(isUser ? { whiteSpace: "pre-wrap" as const } : {}),
           }}
         >
-          {isUser ? (
-            msg.text
-          ) : (
-            <div className="chat-markdown">
-              <Markdown remarkPlugins={[remarkBreaks]}>{msg.text}</Markdown>
-            </div>
-          )}
+          {isUser ? msg.text : <div className="chat-markdown">{renderMarkdown(msg.text)}</div>}
           {msg.action?.task_id && (
             <div style={{ marginTop: 8 }}>
               <Link
