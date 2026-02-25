@@ -95,8 +95,33 @@ function parsePrSearchResults(raw: string): PrResult[] {
   }
 }
 
-const SEARCH_FIELDS =
-  "title,url,repository,author,number,state,createdAt,updatedAt,labels,additions,deletions,mergedAt,reviewDecision,isDraft";
+// Fields available in `gh search prs --json`. Note: additions, deletions,
+// mergedAt, reviewDecision are NOT available in search — use enrichPrDetails()
+// to fetch those via `gh pr view` when needed (e.g. recap jobs).
+const SEARCH_FIELDS = "title,url,repository,author,number,state,createdAt,updatedAt,labels,isDraft";
+
+const DETAIL_FIELDS = "additions,deletions,mergedAt,reviewDecision";
+
+/**
+ * Enrich PRs with fields only available via `gh pr view` (additions, deletions,
+ * mergedAt, reviewDecision). O(N) calls — use only for async recap jobs, not
+ * instant queries.
+ */
+function enrichPrDetails(prs: PrResult[]): PrResult[] {
+  for (const pr of prs) {
+    try {
+      const raw = gh(`pr view "${pr.url}" --json ${DETAIL_FIELDS}`);
+      const details = JSON.parse(raw);
+      pr.additions = details.additions;
+      pr.deletions = details.deletions;
+      pr.mergedAt = details.mergedAt || pr.mergedAt;
+      pr.reviewDecision = details.reviewDecision || pr.reviewDecision;
+    } catch (err: any) {
+      log.warn("Failed to enrich PR details", { url: pr.url, error: err.message });
+    }
+  }
+  return prs;
+}
 
 // --- Individual query functions ---
 
@@ -118,7 +143,7 @@ export function myMergedPrs(githubUsername?: string, timeRange?: string): PrResu
   const user = githubUsername || getAuthenticatedUser();
   const since = toDateStr(parseTimeRange(timeRange));
   const raw = gh(
-    `search prs --author="${user}" --merged=">=${since}" --json ${SEARCH_FIELDS} --limit 100`,
+    `search prs "author:${user} is:merged merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
   );
   return parsePrSearchResults(raw);
 }
@@ -188,11 +213,14 @@ export function fetchRecapData(githubUsername: string, timeRange?: string): Reca
   // Merged PRs authored
   const mergedPrs = myMergedPrs(githubUsername, timeRange);
 
+  // Enrich merged PRs with additions/deletions/mergedAt for recap stats
+  enrichPrDetails(mergedPrs);
+
   // PRs reviewed by this user that were merged in the range
   let reviewsCompleted: PrResult[] = [];
   try {
     const raw = gh(
-      `search prs --reviewed-by="${githubUsername}" --merged=">=${since}" --json ${SEARCH_FIELDS} --limit 100`,
+      `search prs "reviewed-by:${githubUsername} is:merged merged:>=${since}" --json ${SEARCH_FIELDS} --limit 100`,
     );
     reviewsCompleted = parsePrSearchResults(raw).filter((pr) => pr.author !== githubUsername);
   } catch (err: any) {
