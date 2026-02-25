@@ -52,3 +52,79 @@ The worker reads from the same `.env` file.
 | `SOS_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `SOS_REQUIRE_LOCAL_TESTS_BEFORE_PR` | No (true) | Require local tests pass before PR |
 | `SOS_TEST_LEVEL_DEFAULT` | No (`fast`) | Default test level: `fast`/`full`/`none` |
+
+## MCP Servers
+
+You can give Claude CLI access to [MCP (Model Context Protocol)](https://modelcontextprotocol.io/) servers during job execution. This lets Claude interact with external tools like Linear, Sentry, databases, etc.
+
+MCP servers are configured in `repo-registry.yaml` at two levels:
+
+- **Global** — top-level `mcp_servers:` block, available to all repos
+- **Per-repo** — under each repo's `mcp_servers:` block, merged with global (repo overrides by name)
+
+### Supported transports
+
+| Transport | Fields | Description |
+|---|---|---|
+| `stdio` | `command`, `args`, `env` | Spawns a local process (most common) |
+| `http` | `url`, `headers` | Connects to a remote HTTP MCP server |
+| `sse` | `url`, `headers` | Connects to a remote SSE MCP server |
+
+### Environment variable interpolation
+
+String values in `env`, `url`, and `headers` support `${VAR}` placeholders that are resolved from `process.env` at registry load time. Store secrets in your `.env` file and reference them in the YAML:
+
+```yaml
+mcp_servers:
+  linear:
+    transport: stdio
+    command: npx
+    args: ["-y", "@anthropic/linear-mcp-server"]
+    env:
+      LINEAR_API_KEY: "${LINEAR_API_KEY}"
+```
+
+### Tool filtering
+
+Use `allowed_tools` to expose only a subset of an MCP server's tools to Claude. This reduces prompt bloat and limits blast radius. Omit to expose all tools.
+
+```yaml
+mcp_servers:
+  linear:
+    transport: stdio
+    command: npx
+    args: ["-y", "@anthropic/linear-mcp-server"]
+    allowed_tools:
+      - search_issues
+      - get_issue
+```
+
+### Example: global + per-repo
+
+```yaml
+# Global — all repos get this
+mcp_servers:
+  github-notifications:
+    transport: stdio
+    command: npx
+    args: ["-y", "@anthropic/github-mcp-server"]
+    env:
+      GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
+repos:
+  my-api:
+    clone: "git@github.com:yourorg/my-api.git"
+    default_branch: "main"
+    mcp_servers:
+      sentry:
+        transport: http
+        url: "https://mcp.sentry.dev/mcp"
+        headers:
+          Authorization: "Bearer ${SENTRY_AUTH_TOKEN}"
+```
+
+In this example, `my-api` jobs get both `github-notifications` (global) and `sentry` (repo-level).
+
+### Security note
+
+MCP tools run with the same permissions as the Claude CLI session (which uses `--dangerously-skip-permissions`). The `allowed_tools` whitelist is the primary guardrail for limiting what MCP tools can do.

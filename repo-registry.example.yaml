@@ -1,3 +1,12 @@
+# Global MCP servers — available to all repos (repo-level overrides by name)
+# mcp_servers:
+#   github-notifications:
+#     transport: stdio
+#     command: npx
+#     args: ["-y", "@anthropic/github-mcp-server"]
+#     env:
+#       GITHUB_TOKEN: "${GITHUB_TOKEN}"
+
 repos:
   my-app:
     clone: "git@github.com:yourorg/my-app.git"
@@ -28,3 +37,20 @@ repos:
       provider: "github_actions"
     max_worktrees: 2          # concurrent worktree slots (default: 1)
     clean_mode: "light"       # "light" preserves .gitignore'd build caches; "full" cleans everything
+
+    # Per-repo MCP servers (merged with global; repo-level overrides by name)
+    # mcp_servers:
+    #   linear:                          # stdio transport (local process)
+    #     transport: stdio
+    #     command: npx
+    #     args: ["-y", "@anthropic/linear-mcp-server"]
+    #     env:
+    #       LINEAR_API_KEY: "${LINEAR_API_KEY}"
+    #     allowed_tools:                  # optional: expose only these tools
+    #       - search_issues
+    #       - get_issue
+    #   sentry:                           # http transport (remote server)
+    #     transport: http
+    #     url: "https://mcp.sentry.dev/mcp"
+    #     headers:
+    #       Authorization: "Bearer ${SENTRY_AUTH_TOKEN}"
