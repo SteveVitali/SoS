@@ -11,6 +11,7 @@ import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
 import { initTitleGenerator } from "./jobs/titleGenerator.js";
 import { createLLMProvider } from "./llm/index.js";
 import { closeMongo, connectMongo } from "./mongo.js";
+import { initRoutingConfig } from "./routing/index.js";
 import { initMessageRouter } from "./slack/messageRouter.js";
 import { createSlackPoster } from "./slack/slackClient.js";
 import { startSlackSocketMode } from "./slack/socketMode.js";
@@ -36,6 +37,25 @@ async function main() {
     initUserResolver(config.slackBotToken);
   } else {
     log.warn("Slack tokens not configured — running without Slack integration");
+  }
+
+  // Initialize YAML-driven routing config
+  if (config.routingConfigPath) {
+    try {
+      initRoutingConfig(config.routingConfigPath);
+    } catch (err: any) {
+      log.error("Failed to initialize routing config", { error: err.message });
+    }
+  } else {
+    // Default to routing-config.yaml next to repo-registry if available
+    const fallbackPath = config.repoRegistryPath
+      ? path.join(path.dirname(config.repoRegistryPath), "routing-config.yaml")
+      : path.join(process.cwd(), "routing-config.yaml");
+    try {
+      initRoutingConfig(fallbackPath);
+    } catch (err: any) {
+      log.warn("No routing config found, using hardcoded defaults", { path: fallbackPath });
+    }
   }
 
   // Initialize LLM provider for Slack message routing
