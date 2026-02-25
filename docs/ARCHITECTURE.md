@@ -65,7 +65,9 @@ The worker runs a **configurable pool of independent loops** (default 4). Each l
 5. **Reports** structured events back to the server (which may trigger Slack updates)
 6. **Completes or fails** the job
 
-The worker also supports a second job type, `respond_to_pr_comments`, which fetches unresolved PR review threads, runs Claude to address each thread, commits, pushes, and replies to the threads.
+The worker also supports additional job types:
+- **`respond_to_pr_comments`** — fetches unresolved PR review threads, runs Claude to address each thread, commits, pushes, and replies to the threads.
+- **`github_summary`** — fetches GitHub activity data (merged PRs, reviews, stats) via `gh` CLI, builds an LLM prompt, runs Claude to generate a narrative recap, and posts the formatted summary.
 
 On startup, the worker **registers** with the server (hostname, PID, concurrency) and opens a **WebSocket** connection for real-time log streaming and receiving commands (e.g., shutdown). Each loop reports its status (idle/busy, current task) on every poll cycle. Claude's raw stream-json output is teed to the server via WebSocket so it can be viewed live in the web UI.
 
@@ -249,6 +251,11 @@ son-of-steve/
 │   │   │   ├── anthropicProvider.ts   # Anthropic API implementation
 │   │   │   ├── openaiProvider.ts      # OpenAI-compatible implementation
 │   │   │   └── index.ts               # Provider factory
+│   │   ├── github/
+│   │   │   ├── teamCache.ts       # Cached GitHub team member resolution via Teams API
+│   │   │   ├── queries.ts         # gh CLI wrappers for PR search, recap data fetching
+│   │   │   ├── formatting.ts      # Slack formatting for query results + LLM prompt builders
+│   │   │   └── index.ts           # Barrel export
 │   │   ├── slack/
 │   │   │   ├── socketMode.ts      # Slack Bolt app with Socket Mode
 │   │   │   ├── eventHandlers.ts   # app_mention → job creation logic
@@ -273,6 +280,8 @@ son-of-steve/
 │   │   ├── workerWs.ts        # WebSocket client for log streaming + commands
 │   │   └── executor/
 │   │       ├── runJob.ts              # Main orchestrator: full create-job workflow
+│   │       ├── runPlanJob.ts          # Pre-flight planning workflow (read-only Claude)
+│   │       ├── runGithubSummaryJob.ts # GitHub recap summary (data fetch → Claude → format)
 │   │       ├── runRespondToComments.ts # PR comment review workflow
 │   │       ├── repoRegistry.ts        # YAML registry loader
 │   │       ├── repoResolver.ts        # Hint/keyword-based repo resolution
@@ -359,3 +368,7 @@ Claude Code can produce hundreds of stream-json lines per second during an activ
 ### Why a separate "respond to PR comments" job type?
 
 Responding to PR review comments is fundamentally different from creating new code: the worker needs to check out the existing PR branch, read specific review threads, fix each one, and reply inline. Rather than cramming this into the `create` pipeline with flags, a dedicated `respond_to_pr_comments` job type has its own clean workflow in `runRespondToComments.ts`.
+
+### Why split GitHub queries into instant vs. async?
+
+GitHub queries like "my open PRs" or "team review requests" are fast `gh search prs` calls that return in seconds — these execute synchronously on the server and return results directly in the Slack reply. Recap summaries ("my weekly recap", "team recap") require fetching data for potentially many team members, enriching PRs with per-PR detail calls, then running Claude to generate a narrative — this can take minutes, so they're queued as `github_summary` worker jobs. A single polymorphic `github` tool in the LLM router handles both; the `commandExecutor` dispatches to the right path based on the `query_type`.

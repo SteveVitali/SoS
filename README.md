@@ -139,6 +139,18 @@ Mention the bot in any channel. Messages are routed through an LLM ("Steve" pers
 @SonOfSteve hey what can you do?
 ```
 
+GitHub queries (requires `gh` CLI auth; team queries need `SOS_GITHUB_ORG` and `SOS_GITHUB_TEAM_SLUG`):
+
+```
+@SonOfSteve what PRs need my review?
+@SonOfSteve what are my open PRs?
+@SonOfSteve what did I merge this week?
+@SonOfSteve what's the team working on?
+@SonOfSteve who has outstanding reviews on the team?
+@SonOfSteve give me my weekly recap          (async — queues an LLM summary job)
+@SonOfSteve team recap for the last 2 weeks  (async — queues an LLM summary job)
+```
+
 Optional modifiers (for job creation):
 
 ```
@@ -201,6 +213,7 @@ The worker resolves which repo to use based on:
 |---|---|
 | `create` (default) | Full pipeline: resolve repo → worktree → Claude → lint/test → self-review → commit → PR → CI → fix CI |
 | `respond_to_pr_comments` | Read unresolved PR review threads → Claude fixes each → commit → push → reply to threads |
+| `github_summary` | Fetch GitHub activity data (merged PRs, reviews, stats) → Claude generates a narrative recap → post to Slack |
 
 ## Job Lifecycle
 
