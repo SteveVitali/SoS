@@ -7,6 +7,44 @@ import { Spinner } from "../shared/Spinner.js";
 
 type ViewMode = "visual" | "yaml";
 
+function ViewModeToggle({
+  viewMode,
+  onChange,
+}: {
+  viewMode: ViewMode;
+  onChange: (mode: ViewMode) => void;
+}) {
+  const btnStyle = (active: boolean): React.CSSProperties => ({
+    ...css.btnSmall,
+    background: active ? "var(--bg2)" : "transparent",
+    border: active ? "1px solid var(--border)" : "1px solid transparent",
+    fontWeight: active ? 600 : 400,
+  });
+
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 2,
+        background: "var(--bg3)",
+        borderRadius: "var(--radius)",
+        padding: 2,
+      }}
+    >
+      <button
+        type="button"
+        style={btnStyle(viewMode === "visual")}
+        onClick={() => onChange("visual")}
+      >
+        Visual
+      </button>
+      <button type="button" style={btnStyle(viewMode === "yaml")} onClick={() => onChange("yaml")}>
+        YAML
+      </button>
+    </div>
+  );
+}
+
 export function RoutingConfigEditor() {
   const [config, setConfig] = useState<any>(null);
   const [configPath, setConfigPath] = useState("");
@@ -133,41 +171,7 @@ export function RoutingConfigEditor() {
                 {saveMsg}
               </span>
             )}
-            <div
-              style={{
-                display: "flex",
-                gap: 2,
-                background: "var(--bg3)",
-                borderRadius: "var(--radius)",
-                padding: 2,
-              }}
-            >
-              <button
-                type="button"
-                style={{
-                  ...css.btnSmall,
-                  background: viewMode === "visual" ? "var(--bg2)" : "transparent",
-                  border:
-                    viewMode === "visual" ? "1px solid var(--border)" : "1px solid transparent",
-                  fontWeight: viewMode === "visual" ? 600 : 400,
-                }}
-                onClick={() => setViewMode("visual")}
-              >
-                Visual
-              </button>
-              <button
-                type="button"
-                style={{
-                  ...css.btnSmall,
-                  background: viewMode === "yaml" ? "var(--bg2)" : "transparent",
-                  border: viewMode === "yaml" ? "1px solid var(--border)" : "1px solid transparent",
-                  fontWeight: viewMode === "yaml" ? 600 : 400,
-                }}
-                onClick={() => setViewMode("yaml")}
-              >
-                YAML
-              </button>
-            </div>
+            <ViewModeToggle viewMode={viewMode} onChange={setViewMode} />
             <button type="button" style={css.btn} onClick={handleReload}>
               ↻ Reload
             </button>
@@ -318,9 +322,7 @@ export function RoutingConfigEditor() {
                   {expanded && (
                     <div style={{ padding: 14, background: "var(--bg2)" }}>
                       <ActionEditor
-                        name={name}
                         action={action}
-                        isCustom={custom}
                         onChange={(updated) => {
                           const section = custom ? "custom_actions" : "actions";
                           updateConfig((prev: any) => ({
@@ -341,17 +343,7 @@ export function RoutingConfigEditor() {
   );
 }
 
-function ActionEditor({
-  name,
-  action,
-  isCustom,
-  onChange,
-}: {
-  name: string;
-  action: any;
-  isCustom: boolean;
-  onChange: (updated: any) => void;
-}) {
+function ActionEditor({ action, onChange }: { action: any; onChange: (updated: any) => void }) {
   const update = (field: string, value: any) => {
     onChange({ ...action, [field]: value });
   };

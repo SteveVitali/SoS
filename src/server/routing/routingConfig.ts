@@ -15,6 +15,7 @@ const log = createLogger("server:routing:config");
 let cachedConfig: RoutingConfig | null = null;
 let configPath: string | null = null;
 let watcherActive = false;
+let suppressNextWatch = false;
 
 /**
  * Parse a raw YAML action definition into a typed ActionDef.
@@ -114,6 +115,10 @@ export function initRoutingConfig(filePath: string): RoutingConfig {
     try {
       watch(filePath, (eventType) => {
         if (eventType === "change") {
+          if (suppressNextWatch) {
+            suppressNextWatch = false;
+            return;
+          }
           log.info("Routing config file changed, reloading");
           try {
             cachedConfig = loadFromFile(filePath);
@@ -170,6 +175,7 @@ export function saveRoutingConfig(data: any): void {
     throw new Error("Routing config not initialized.");
   }
   const yaml = stringifyYaml(data, { lineWidth: 120 });
+  suppressNextWatch = true;
   writeFileSync(configPath, yaml, "utf-8");
   log.info("Routing config saved", { path: configPath });
   // Reload the cache

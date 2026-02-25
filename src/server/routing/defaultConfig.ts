@@ -48,6 +48,8 @@ system_prompt: |
   Time range inference: "this week" = 7d, "this sprint" / "last 2 weeks" = 14d, "this month" = 30d.
   If the user mentions a specific team, extract the team_slug. Otherwise, defaults are used.
 
+  {ACTIONS}
+
   ## Recent Jobs Context
   {JOBS_CONTEXT}
 

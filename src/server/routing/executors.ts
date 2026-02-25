@@ -71,7 +71,9 @@ function tplCtx(
       user_id: ctx.userId,
       owner_id: ctx.ownerId,
     },
-    env: process.env as Record<string, string>,
+    env: Object.fromEntries(
+      Object.entries(process.env).filter((e): e is [string, string] => e[1] != null),
+    ),
     ...extra,
   };
 }
@@ -175,9 +177,11 @@ async function executeJobAction(
     };
   }
 
+  // Pre-fetch job for status/PR checks and for methods that need it
+  const existing = await findJobByTaskId(taskId);
+
   // Check status requirement
   if (execDef.require_status) {
-    const existing = await findJobByTaskId(taskId);
     if (!existing || existing.status !== execDef.require_status) {
       const reply = renderTemplate(
         execDef.reply_wrong_status ||
@@ -193,18 +197,18 @@ async function executeJobAction(
         actionTaken: `${execDef.method}: wrong status`,
       };
     }
+  }
 
-    // Check PR requirement
-    if (execDef.require_pr && !existing.pr_urls?.length) {
-      const reply = renderTemplate(
-        execDef.reply_no_pr || "⚠️ No PR URL on `{{task_id:0:8}}…`.",
-        tplCtx(action, ctx, { task_id: taskId }),
-      );
-      return {
-        reply: appendReply(action.reply, reply),
-        actionTaken: `${execDef.method}: no pr`,
-      };
-    }
+  // Check PR requirement (independent of status check)
+  if (execDef.require_pr && !existing?.pr_urls?.length) {
+    const reply = renderTemplate(
+      execDef.reply_no_pr || "⚠️ No PR URL on `{{task_id:0:8}}…`.",
+      tplCtx(action, ctx, { task_id: taskId }),
+    );
+    return {
+      reply: appendReply(action.reply, reply),
+      actionTaken: `${execDef.method}: no pr`,
+    };
   }
 
   // Execute the method
@@ -245,19 +249,16 @@ async function executeJobAction(
       }
 
       case "confirm": {
-        const extraArgs: Record<string, unknown> = {};
-        for (const arg of execDef.extra_args || []) {
-          if (action.args[arg] !== undefined) extraArgs[arg] = action.args[arg];
-        }
         await confirmJob(taskId, action.args.revised_task_text);
         break;
       }
 
       case "promote": {
-        const existing = await findJobByTaskId(taskId);
         prUrl = existing?.pr_urls?.[0];
-        const { promotePr: ghPromotePr } = await import("../../worker/executor/pr.js");
-        ghPromotePr(existing!.pr_urls![0], action.args.reviewers);
+        if (prUrl) {
+          const { promotePr: ghPromotePr } = await import("../../worker/executor/pr.js");
+          ghPromotePr(prUrl, action.args.reviewers);
+        }
         await promotePr(taskId, action.args.reviewers);
         break;
       }
