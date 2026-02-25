@@ -1,5 +1,6 @@
 import { v4 as uuidv4 } from "uuid";
 import { createLogger } from "../../shared/logger.js";
+import { slackToMarkdown } from "../../shared/slackMarkdown.js";
 import type { JobDoc } from "../../shared/types.js";
 import type { ConversationMessage } from "./conversationRepo.js";
 import { appendMessage, findConversationsByTaskId } from "./conversationRepo.js";
@@ -54,7 +55,7 @@ export async function notifyConversations(job: JobDoc, eventType: string): Promi
     const conversations = await findConversationsByTaskId(job.task_id);
     if (conversations.length === 0) return;
 
-    const text = formatStatusMessage(job, eventType);
+    const text = slackToMarkdown(formatStatusMessage(job, eventType));
     const message: ConversationMessage = {
       id: uuidv4(),
       role: "system",

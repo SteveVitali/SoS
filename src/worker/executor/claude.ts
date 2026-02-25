@@ -211,7 +211,9 @@ export async function runClaude(
 
   log.info("Running Claude Code CLI", { worktree: worktreePath });
 
-  const mcpArgs = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcp = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcpToolArgs =
+    mcp.allowedTools.length > 0 ? ["--allowedTools", mcp.allowedTools.join(",")] : [];
 
   return runClaudeProcess(
     [
@@ -222,7 +224,8 @@ export async function runClaude(
       "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
-      ...mcpArgs,
+      ...mcp.configArgs,
+      ...mcpToolArgs,
     ],
     worktreePath,
     logPath,
@@ -261,19 +264,11 @@ export async function runClaudePlan(
 
   log.info("Running Claude Code CLI for planning", { worktree: worktreePath });
 
-  // For planning, merge MCP allowed tools with the read-only base tools
   const basePlanTools =
     "Read,Grep,Glob,LS,Bash(find:*),Bash(cat:*),Bash(head:*),Bash(tail:*),Bash(wc:*)";
-  const mcpArgs = buildMcpArgs(sosDir, repo.mcp_servers);
-
-  // Extract any --allowedTools from mcpArgs and merge with base plan tools
-  const mcpAllowedIdx = mcpArgs.indexOf("--allowedTools");
-  let allowedTools = basePlanTools;
-  const filteredMcpArgs = [...mcpArgs];
-  if (mcpAllowedIdx !== -1) {
-    allowedTools = `${basePlanTools},${mcpArgs[mcpAllowedIdx + 1]}`;
-    filteredMcpArgs.splice(mcpAllowedIdx, 2);
-  }
+  const mcp = buildMcpArgs(sosDir, repo.mcp_servers);
+  const allowedTools =
+    mcp.allowedTools.length > 0 ? `${basePlanTools},${mcp.allowedTools.join(",")}` : basePlanTools;
 
   return runClaudeProcess(
     [
@@ -285,7 +280,7 @@ export async function runClaudePlan(
       "--verbose",
       "--allowedTools",
       allowedTools,
-      ...filteredMcpArgs,
+      ...mcp.configArgs,
     ],
     worktreePath,
     logPath,
@@ -327,7 +322,9 @@ export async function runClaudeFix(
 
   log.info("Running Claude Code CLI for CI fix", { worktree: worktreePath });
 
-  const mcpArgs = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcp = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcpToolArgs =
+    mcp.allowedTools.length > 0 ? ["--allowedTools", mcp.allowedTools.join(",")] : [];
 
   return runClaudeProcess(
     [
@@ -338,7 +335,8 @@ export async function runClaudeFix(
       "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
-      ...mcpArgs,
+      ...mcp.configArgs,
+      ...mcpToolArgs,
     ],
     worktreePath,
     logPath,
@@ -395,7 +393,9 @@ export async function runClaudeReview(
 
   log.info("Running Claude Code CLI for self-review", { worktree: worktreePath });
 
-  const mcpArgs = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcp = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcpToolArgs =
+    mcp.allowedTools.length > 0 ? ["--allowedTools", mcp.allowedTools.join(",")] : [];
 
   return runClaudeProcess(
     [
@@ -406,7 +406,8 @@ export async function runClaudeReview(
       "stream-json",
       "--verbose",
       "--dangerously-skip-permissions",
-      ...mcpArgs,
+      ...mcp.configArgs,
+      ...mcpToolArgs,
     ],
     worktreePath,
     logPath,
@@ -510,17 +511,25 @@ function ensureSosGitignore(sosDir: string) {
   if (!existsSync(gi)) writeFileSync(gi, "*\n", "utf-8");
 }
 
+interface McpArgs {
+  /** CLI args for --mcp-config (empty if no servers) */
+  configArgs: string[];
+  /** MCP tool names in mcp__<server>__<tool> format for --allowedTools */
+  allowedTools: string[];
+}
+
 /**
  * Build a Claude CLI MCP config JSON file from the repo's mcp_servers config.
- * Returns extra CLI args to append (--mcp-config <path> and optionally --allowedTools
- * entries for tool-filtered servers). Returns empty array if no MCP servers configured.
+ * Returns config args and allowed tool names separately so callers can merge
+ * allowed tools with their own --allowedTools list.
  */
-function buildMcpArgs(sosDir: string, mcpServers?: Record<string, McpServerConfig>): string[] {
-  if (!mcpServers || Object.keys(mcpServers).length === 0) return [];
+function buildMcpArgs(sosDir: string, mcpServers?: Record<string, McpServerConfig>): McpArgs {
+  const empty: McpArgs = { configArgs: [], allowedTools: [] };
+  if (!mcpServers || Object.keys(mcpServers).length === 0) return empty;
 
   // Build the mcpServers object in Claude CLI's expected format
-  const cliServers: Record<string, any> = {};
-  const allowedMcpTools: string[] = [];
+  const cliServers: Record<string, Record<string, unknown>> = {};
+  const allowedTools: string[] = [];
 
   for (const [name, cfg] of Object.entries(mcpServers)) {
     if (cfg.transport === "stdio") {
@@ -530,29 +539,23 @@ function buildMcpArgs(sosDir: string, mcpServers?: Record<string, McpServerConfi
         args: cfg.args || [],
         ...(cfg.env && Object.keys(cfg.env).length > 0 ? { env: cfg.env } : {}),
       };
-    } else if (cfg.transport === "http") {
+    } else {
+      // http and sse share the same shape
       cliServers[name] = {
-        type: "http",
-        url: cfg.url,
-        ...(cfg.headers && Object.keys(cfg.headers).length > 0 ? { headers: cfg.headers } : {}),
-      };
-    } else if (cfg.transport === "sse") {
-      cliServers[name] = {
-        type: "sse",
+        type: cfg.transport,
         url: cfg.url,
         ...(cfg.headers && Object.keys(cfg.headers).length > 0 ? { headers: cfg.headers } : {}),
       };
     }
 
-    // Collect allowed_tools filter
     if (cfg.allowed_tools && cfg.allowed_tools.length > 0) {
       for (const tool of cfg.allowed_tools) {
-        allowedMcpTools.push(`mcp__${name}__${tool}`);
+        allowedTools.push(`mcp__${name}__${tool}`);
       }
     }
   }
 
-  if (Object.keys(cliServers).length === 0) return [];
+  if (Object.keys(cliServers).length === 0) return empty;
 
   const configPath = path.join(sosDir, "mcp-config.json");
   writeFileSync(configPath, JSON.stringify({ mcpServers: cliServers }, null, 2), "utf-8");
@@ -561,13 +564,7 @@ function buildMcpArgs(sosDir: string, mcpServers?: Record<string, McpServerConfi
     servers: Object.keys(cliServers),
   });
 
-  const args = ["--mcp-config", configPath];
-
-  if (allowedMcpTools.length > 0) {
-    args.push("--allowedTools", allowedMcpTools.join(","));
-  }
-
-  return args;
+  return { configArgs: ["--mcp-config", configPath], allowedTools };
 }
 
 // Shared runner: streams Claude output to terminal in real-time via stream-json

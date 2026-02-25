@@ -1,6 +1,7 @@
 import { type Request, type Response, Router } from "express";
 import { v4 as uuidv4 } from "uuid";
 import { createLogger } from "../../shared/logger.js";
+import { slackToMarkdown } from "../../shared/slackMarkdown.js";
 import type { ServerConfig } from "../config.js";
 import type { CommandContext } from "../slack/commandExecutor.js";
 import { executeCommand } from "../slack/commandExecutor.js";
@@ -125,11 +126,11 @@ export function createChatRoutes(config: ServerConfig): Router {
       };
       const result = await executeCommand(action, ctx);
 
-      // Persist assistant reply
+      // Persist assistant reply (convert Slack markdown to standard markdown for web rendering)
       const assistantMessage: ConversationMessage = {
         id: uuidv4(),
         role: "assistant",
-        text: result.reply,
+        text: slackToMarkdown(result.reply),
         at: new Date(),
         action: result.taskId
           ? { command: action.command, task_id: result.taskId }

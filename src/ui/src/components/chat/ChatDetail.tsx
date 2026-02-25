@@ -12,7 +12,6 @@ import {
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { relativeTime, shortId } from "../../utils/format.js";
-import { slackToMarkdown } from "../../utils/slackMarkdown.js";
 import { Spinner } from "../shared/Spinner.js";
 
 function MessageBubble({ msg }: { msg: ConversationMessage }) {
@@ -46,7 +45,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
               </Link>
             )}
             <div className="chat-markdown" style={{ marginTop: 6 }}>
-              <Markdown remarkPlugins={[remarkBreaks]}>{slackToMarkdown(msg.text)}</Markdown>
+              <Markdown remarkPlugins={[remarkBreaks]}>{msg.text}</Markdown>
             </div>
           </div>
           <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 3, paddingLeft: 4 }}>
@@ -122,7 +121,7 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
             msg.text
           ) : (
             <div className="chat-markdown">
-              <Markdown remarkPlugins={[remarkBreaks]}>{slackToMarkdown(msg.text)}</Markdown>
+              <Markdown remarkPlugins={[remarkBreaks]}>{msg.text}</Markdown>
             </div>
           )}
           {msg.action?.task_id && (
