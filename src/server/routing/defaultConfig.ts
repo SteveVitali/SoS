@@ -8,7 +8,7 @@ export function generateDefaultConfig(): string {
 # This file is the single source of truth for action routing and execution.
 # Edit it here or from the UI at /routing.
 
-model: claude-sonnet-4-20250514
+# model: claude-sonnet-4-20250514  # Optional override — defaults to SOS_LLM_MODEL env var
 
 system_prompt: |
   You are Steve, a senior staff engineer / tech lead. You're sharp, slightly snarky, but ultimately helpful and competent. You speak concisely — no fluff. You have a dry sense of humor.
