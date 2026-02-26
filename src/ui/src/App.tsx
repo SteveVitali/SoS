@@ -7,6 +7,7 @@ import { JobDetail } from "./components/jobs/JobDetail.js";
 import { JobsList } from "./components/jobs/JobsList.js";
 import { PrsList } from "./components/prs/PrsList.js";
 import { RepoRegistryEditor } from "./components/registry/RepoRegistryEditor.js";
+import { RoutingConfigEditor } from "./components/routing/RoutingConfigEditor.js";
 import { NavTab } from "./components/shared/NavTab.js";
 import { TokenSetup } from "./components/TokenSetup.js";
 import { WorkerDetail } from "./components/workers/WorkerDetail.js";
@@ -26,6 +27,7 @@ function AppShell() {
   const isJobsTab = path === "/" || path.startsWith("/jobs");
   const isPrsTab = path === "/prs";
   const isReposTab = path === "/repos";
+  const isRoutingTab = path === "/routing";
 
   return (
     <div style={css.container}>
@@ -40,6 +42,7 @@ function AppShell() {
             <NavTab to="/prs" label="PRs" active={isPrsTab} />
             <NavTab to="/workers" label="Workers" active={isWorkersTab} />
             <NavTab to="/repos" label="Repos" active={isReposTab} />
+            <NavTab to="/routing" label="Routing" active={isRoutingTab} />
           </div>
         </div>
         <div style={css.nav}>
@@ -75,6 +78,7 @@ function AppShell() {
         <Route path="/workers/:id" element={<WorkerDetail />} />
         <Route path="/chats/:id" element={<ChatDetail />} />
         <Route path="/repos" element={<RepoRegistryEditor />} />
+        <Route path="/routing" element={<RoutingConfigEditor />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />
         <Route path="/jobs/:taskId" element={<JobDetail />} />
         <Route path="*" element={null} />

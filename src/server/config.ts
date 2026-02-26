@@ -54,6 +54,7 @@ export function loadServerConfig() {
     githubOrg: process.env.SOS_GITHUB_ORG || "",
     githubTeamSlug: process.env.SOS_GITHUB_TEAM_SLUG || "",
     githubUsername: process.env.SOS_GITHUB_USERNAME || "",
+    routingConfigPath: process.env.SOS_ROUTING_CONFIG || "",
   };
 }
 

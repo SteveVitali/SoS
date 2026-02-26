@@ -28,6 +28,7 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `SOS_GITHUB_ORG` | No | Default GitHub organization slug for team queries (e.g., `my-company`) |
 | `SOS_GITHUB_TEAM_SLUG` | No | Default GitHub team slug for team queries (e.g., `platform-eng`) |
 | `SOS_GITHUB_USERNAME` | No | GitHub username for personal queries. Auto-detected via `gh api user` if not set. |
+| `SOS_ROUTING_CONFIG` | No | Path to `routing-config.yaml`. Auto-generated with defaults if missing. Falls back to same directory as `SOS_REPO_REGISTRY`. |
 | `SOS_WORKSPACE_ROOT` | No | Directory for clones/worktrees (also used by server for worktree status endpoint) |
 | `SOS_REPO_REGISTRY` | No | Path to `repo-registry.yaml` (also used by server for PR listing and registry editor) |
 | `WEB_BASIC_AUTH_USER` | No | Optional basic auth for web UI |
