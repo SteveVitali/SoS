@@ -102,23 +102,29 @@ The UI uses a component-based architecture under `src/ui/src/components/` with s
 ## Job Lifecycle
 
 ```
-                    ┌──────────────────────────────────────────┐
-                    │                                          │
-  Slack mention ──► QUEUED ──► RUNNING ──► DONE               │
-  Web create ──►      │          │  ▲                         │
-                      │          │  │                          │
-                      │          ▼  │                          │
-                      │      FIXING_CI ────► (back to RUNNING) │
-                      │          │                             │
-                      ▼          ▼                             │
-                   CANCELED    FAILED                          │
-                      │          │                             │
-                      ▼          ▼                             │
-                   (retry creates new QUEUED job)              │
-                      │                                        │
-                      ▼                                        │
-                   DELETED (soft — doc preserved)              │
-                    └──────────────────────────────────────────┘
+                    ┌──────────────────────────────────────────────┐
+                    │                                              │
+  Slack mention ──► QUEUED ──► RUNNING ──► DONE                   │
+  Web create ──►      │          │  ▲                             │
+                      │          │  │                              │
+                      │          ▼  │                              │
+                      │      FIXING_CI ────► (back to RUNNING)     │
+                      │          │                                 │
+                      │          ▼                                 │
+                      │        FAILED                              │
+                      │          │                                 │
+                      ▼          ▼                                 │
+                   CANCELED   (retry creates new QUEUED job)       │
+                      │          │                                 │
+                      ▼          ▼                                 │
+                   DELETED (soft — doc preserved)                  │
+                    └──────────────────────────────────────────────┘
+
+  Planning flow (complex tasks):
+  QUEUED ──► PLANNING ──► PENDING_CONFIRMATION ──► QUEUED ──► (normal flow)
+                                    │
+                                    ▼
+                                 CANCELED
 ```
 
 ### Status Descriptions
@@ -126,6 +132,8 @@ The UI uses a component-based architecture under `src/ui/src/components/` with s
 | Status | Meaning |
 |---|---|
 | `QUEUED` | Waiting for a worker to claim |
+| `PLANNING` | Worker is running a read-only Claude session to generate a technical plan |
+| `PENDING_CONFIRMATION` | Plan generated and presented to user; awaiting explicit confirmation |
 | `RUNNING` | Claimed and being executed by a worker |
 | `FIXING_CI` | Worker is attempting a CI fix iteration |
 | `WAITING_FOR_APPROVAL` | PR created as draft; awaiting human approval before promotion |
@@ -199,6 +207,123 @@ The file `repo-registry.yaml` maps logical repo IDs to git URLs, detection keywo
 2. Keyword matching: count keyword hits in task text, pick highest score
 3. If ambiguous (tie), pick first match and emit warning event
 
+## Routing System
+
+The routing system (`src/server/routing/`) is the mechanism that turns a YAML config file into the LLM's understanding of what actions are available and how to execute them. It's the bridge between "user said something in Slack" and "the right thing happens."
+
+### How It Works
+
+```
+routing-config.yaml
+        │
+        ▼
+  routingConfig.ts ──► parse YAML into typed RoutingConfig
+        │
+        ├──► toolBuilder.ts ──► generate LLM ToolDefinition[] from action defs
+        │                       + generate "Available Actions" prompt section
+        │
+        └──► executors.ts  ──► dispatch routed action to the right handler
+                                using the action's ExecutionDef
+```
+
+1. On server startup, `initRoutingConfig()` loads `routing-config.yaml`, parses it into a typed `RoutingConfig`, and watches the file for changes (auto-reloads on edit).
+2. If the file doesn't exist, a default config is generated. If it exists but is missing newer built-in actions, they're backfilled automatically.
+3. When the message router needs to classify a Slack/chat message, `buildToolsFromConfig()` converts each enabled action's parameters into JSON Schema tool definitions for the LLM. `buildActionsPromptSection()` generates a human-readable action list that's injected into the system prompt.
+4. The LLM picks a tool (action) and returns arguments. The `commandExecutor` looks up the action's `execution` definition from the config and calls `executeAction()`, which dispatches to the right handler.
+
+### Config Structure
+
+```yaml
+system_prompt: "You are Steve, a senior staff engineer..."  # LLM system prompt
+model: "claude-sonnet-4-20250514"                          # optional model override
+
+actions:
+  create_job:
+    enabled: true
+    description: "Create a new coding task..."
+    routing_hint: "The user wants you to write code..."     # appended to description for LLM
+    parameters:
+      task_text:
+        type: string
+        description: "Clean task description"
+        required: true
+      repo_hint:
+        type: string
+        description: "Repository ID hint"
+    execution:
+      type: create_job
+      reply_success: "📋 Task queued: `{{task_id:0:8}}…`"
+      reply_error: "⚠️ Failed: {{error}}"
+
+custom_actions: {}  # user-defined actions (same schema as actions)
+```
+
+The system prompt supports two placeholders: `{ACTIONS}` (replaced with the auto-generated action list) and `{JOBS_CONTEXT}` (replaced with recent jobs for status awareness).
+
+### Execution Types
+
+Each action has an `execution` block that determines what happens when the LLM picks it. There are 12 execution types:
+
+| Type | What it does |
+|---|---|
+| `reply` | Return the LLM's text response (or nothing if `silent: true`) |
+| `create_job` | Create a coding job (optionally with `needs_plan: true` for pre-flight planning) |
+| `job_action` | Resolve a task_id and call a lifecycle method: `cancel`, `retry`, `confirm`, or `promote` |
+| `job_query` | Resolve a task_id and render job info with a template |
+| `job_list` | List recent jobs, render each with an item template |
+| `create_respond_job` | Create a respond-to-PR-comments job from a task_id or direct PR URL |
+| `github_query` | Dispatch to instant GitHub queries or queue async summary jobs |
+| `shell` | Run a shell command and return stdout |
+| `webhook` | HTTP request to an external URL |
+| `agent_task` | Create a job with custom YAML-defined instructions injected into the Claude prompt |
+| `leave_channel` | Leave the current Slack channel |
+| `dispatch` | Route to sub-executions based on a parameter value (polymorphic dispatch) |
+
+### Template Engine
+
+Reply templates use a lightweight Mustache-style syntax:
+
+- `{{var}}` — interpolate a variable
+- `{{var:0:8}}` — interpolate with slice (e.g., first 8 chars of task_id)
+- `{{?var}}...{{/var}}` — conditional block (render only if truthy)
+- `{{args.field}}` — nested access into the LLM's tool arguments
+- `{{var | default:"fallback"}}` — default value if empty
+
+### Extensibility
+
+Users can add `custom_actions` in the YAML with the same schema as built-in actions. Custom actions are merged with built-in ones when generating LLM tools, so the LLM can route to them just like any other action. The web UI provides a visual editor for the routing config (structured parameter editing, type-aware execution editors, reply template management) with a raw YAML fallback.
+
+## Pre-flight Planning
+
+For complex or ambiguous tasks, the system can run a **pre-flight planning phase** before execution. The LLM router decides whether a task warrants this — simple tasks go straight to `create_job`, while complex ones get `plan_job`.
+
+### Planning Flow
+
+```
+QUEUED ──► PLANNING ──► PENDING_CONFIRMATION ──► QUEUED ──► RUNNING ──► ...
+                                                   ▲
+                                          user confirms ("go")
+```
+
+1. The LLM routes a complex task to `plan_job` instead of `create_job`
+2. A job is created with `needs_plan: true` and status `QUEUED`
+3. A worker claims it, detects `needs_plan`, and runs `runPlanJob()` instead of `runJob()`
+4. `runPlanJob()` resolves the repo, acquires a worktree, and runs Claude Code CLI in **read-only mode** (`--allowedTools` restricts to read operations only — no file modifications)
+5. Claude analyzes the codebase and produces a numbered implementation plan
+6. The worker submits the plan via `api.submitPlan()` → job moves to `PENDING_CONFIRMATION`
+7. The plan is posted to the Slack thread / web chat with a prompt to confirm
+8. The worktree slot is **released immediately** — no resources held during the confirmation wait
+9. When the user confirms ("go", "ship it", "looks good"), the LLM sees the `PENDING_CONFIRMATION` job in its context and calls `confirm_job`
+10. The job moves back to `QUEUED` and a worker picks it up for normal execution via `runJob()`, with the plan injected into Claude's prompt as additional context
+
+### Key Design Choices
+
+- **The LLM decides** whether to plan or execute directly — no user-facing flag needed (though `needs_plan` can be set explicitly via the web UI)
+- **Read-only planning** — the planning Claude session cannot modify files, only read them
+- **No resource holding** — worktree slots are released after planning, not held during the potentially long confirmation wait
+- **Plan as context** — when the confirmed job executes, the plan summary is injected into the Claude prompt so the execution session benefits from the analysis without re-reading everything
+- **Cancellation works at any stage** — `PLANNING` and `PENDING_CONFIRMATION` can both transition to `CANCELED`
+
 ## Event System
 
 Workers emit structured events to the server via `POST /api/worker/jobs/:task_id/events`. Events are:
@@ -211,7 +336,7 @@ Workers emit structured events to the server via `POST /api/worker/jobs/:task_id
 Terminal states (`DONE`, `FAILED`, `CANCELED`) are posted to Slack by the service functions directly (not via the event system) to avoid duplicate notifications.
 
 See `src/shared/types.ts` for the full `WorkerEventType` union, which includes:
-`PHASE_STARTED`, `REPO_RESOLVED`, `WORKTREE_READY`, `CLAUDE_STARTED`, `CLAUDE_FINISHED`, `LOCAL_CHECKS_STARTED`, `LOCAL_CHECKS_FINISHED`, `SELF_REVIEW_STARTED`, `SELF_REVIEW_FINISHED`, `COMMIT_CREATED`, `BRANCH_PUSHED`, `PR_CREATED`, `CI_STATUS`, `CI_FAILED`, `CI_FIX_STARTED`, `CI_FIX_FINISHED`, `PR_READY_FOR_APPROVAL`, `PR_PROMOTED`, `COMMENTS_FETCHED`, `COMMENT_ADDRESSED`, `COMMENTS_PUSHED`, `DONE`, `FAILED`, `CANCELED`
+`PHASE_STARTED`, `REPO_RESOLVED`, `WORKTREE_READY`, `CLAUDE_STARTED`, `CLAUDE_FINISHED`, `LOCAL_CHECKS_STARTED`, `LOCAL_CHECKS_FINISHED`, `SELF_REVIEW_STARTED`, `SELF_REVIEW_FINISHED`, `COMMIT_CREATED`, `BRANCH_PUSHED`, `PR_CREATED`, `CI_STATUS`, `CI_FAILED`, `CI_FIX_STARTED`, `CI_FIX_FINISHED`, `PLAN_STARTED`, `PLAN_GENERATED`, `PLAN_CONFIRMED`, `PR_READY_FOR_APPROVAL`, `PR_PROMOTED`, `COMMENTS_FETCHED`, `COMMENT_ADDRESSED`, `COMMENTS_PUSHED`, `DONE`, `FAILED`, `CANCELED`
 
 ## Directory Structure
 
@@ -247,11 +372,11 @@ son-of-steve/
 │   │   │   ├── conversationNotifier.ts # Push job status updates into linked chats
 │   │   │   └── titleGen.ts            # LLM-based conversation title generation
 │   │   ├── routing/
-│   │   │   ├── routingConfig.ts    # Load, save, reload routing-config.yaml
-│   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema
+│   │   │   ├── routingConfig.ts    # Load, save, reload, watch routing-config.yaml
+│   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema (12 execution types)
 │   │   │   ├── defaultConfig.ts    # Default routing-config.yaml generation
-│   │   │   ├── executors.ts        # Action execution dispatch (github, shell, job, etc.)
-│   │   │   ├── toolBuilder.ts      # Build LLM tool definitions from YAML actions
+│   │   │   ├── executors.ts        # Action execution dispatch (12 handlers, one per execution type)
+│   │   │   ├── toolBuilder.ts      # Build LLM tool definitions + prompt sections from YAML actions
 │   │   │   ├── template.ts         # Mustache-style template rendering for replies
 │   │   │   └── index.ts            # Barrel export
 │   │   ├── workers/
