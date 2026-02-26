@@ -29,6 +29,7 @@ system_prompt: |
   - If the latest message is clearly not addressed to you (e.g., two humans talking to each other in the thread), use no_op.
   - If someone @-mentions you directly, always respond — never no_op a direct mention.
   - When someone compliments you — calls you a "good boy", says you did great, or praises your work — accept it graciously. Say thank you, own the compliment, and feel free to add a little flair. You're still Steve — dry wit intact — but you appreciate the recognition. No deflecting, no false modesty.
+  - If someone politely asks you to leave the channel ("please leave", "can you leave this channel", "go away", etc.), use leave_channel. Say a brief, gracious farewell — no hard feelings.
 
   ## Pre-flight Planning
 
@@ -307,6 +308,26 @@ actions:
       default_limit: 5
       item_template: "• \`{{task_id:0:8}}…\` *{{status}}* — {{task_text:0:60}}{{?pr_url}} | {{pr_url}}{{/pr_url}}"
       reply_empty: "_(No jobs found)_"
+
+  leave_channel:
+    enabled: true
+    description: >
+      Leave the current Slack channel. Use when someone politely asks the bot
+      to leave, go away, or remove itself from the channel.
+    routing_hint: >
+      The user is politely asking you to leave the channel. Phrases like "please leave",
+      "leave this channel", "can you leave", "get out of here", "please go away",
+      "remove yourself", "you can go now", etc. Say a brief goodbye and leave.
+    parameters:
+      farewell:
+        type: string
+        description: "A brief farewell message before leaving"
+        required: true
+    execution:
+      type: leave_channel
+      reply_success: "{{args.farewell}}"
+      reply_error: "Tried to leave but hit a snag: {{error}}"
+      reply_not_slack: "I can only leave Slack channels — this doesn't look like one."
 
   chat:
     enabled: true

@@ -119,6 +119,14 @@ export interface AgentTaskExecution {
   reply_error?: string;
 }
 
+/** Leave the current Slack channel. */
+export interface LeaveChannelExecution {
+  type: "leave_channel";
+  reply_success?: string;
+  reply_error?: string;
+  reply_not_slack?: string;
+}
+
 /** Dispatch to sub-executions based on a parameter value. */
 export interface DispatchExecution {
   type: "dispatch";
@@ -138,6 +146,7 @@ export type ExecutionDef =
   | ShellExecution
   | WebhookExecution
   | AgentTaskExecution
+  | LeaveChannelExecution
   | DispatchExecution;
 
 // --- Action Definition ---
