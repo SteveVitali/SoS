@@ -15,8 +15,8 @@ const spawnedPids = new Set<number>();
 
 /**
  * Spawn a new worker process. Returns the child PID.
- * Workers are kept in the same process group (no detach) so they're
- * cleaned up if the server is killed ungracefully.
+ * Each worker is spawned detached (own process group) so we can
+ * reliably kill the entire tree (tsx wrapper + node child) via -pid.
  */
 export function spawnWorkerProcess(): number {
   const workerEntry = path.resolve(projectRoot, "src/worker/index.ts");
@@ -25,9 +25,11 @@ export function spawnWorkerProcess(): number {
   const child = spawn(tsxBin, [workerEntry], {
     stdio: "ignore",
     env: process.env,
+    detached: true,
   });
-  // unref so the server can exit without waiting for the child to finish,
-  // but do NOT detach — we want the child in our process group.
+  // unref so the server can exit without waiting for the child.
+  // detached gives each worker its own process group so we can
+  // kill the whole tree (tsx wrapper + node grandchild) via -pid.
   child.unref();
 
   const pid = child.pid;
@@ -67,11 +69,13 @@ export async function shutdownAllWorkers(): Promise<void> {
   // Step 2: give workers a moment to deregister gracefully
   await new Promise((r) => setTimeout(r, 2000));
 
-  // Step 3: SIGTERM any spawned PIDs still alive
+  // Step 3: SIGTERM any spawned PIDs still alive.
+  // Kill with -pid to terminate the entire process group
+  // (tsx wrapper + the node grandchild it spawns).
   for (const pid of spawnedPids) {
     try {
-      process.kill(pid, "SIGTERM");
-      log.info("Sent SIGTERM to lingering worker", { pid });
+      process.kill(-pid, "SIGTERM");
+      log.info("Sent SIGTERM to worker process group", { pid });
     } catch {
       // Process already exited — ignore
     }

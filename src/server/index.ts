@@ -152,7 +152,13 @@ async function main() {
   process.on("SIGTERM", shutdown);
 }
 
-main().catch((err) => {
+main().catch(async (err) => {
   log.error("Fatal error", { error: err.message, stack: err.stack });
+  try {
+    const { shutdownAllWorkers } = await import("./workers/spawnWorker.js");
+    await shutdownAllWorkers();
+  } catch {
+    // best effort
+  }
   process.exit(1);
 });
