@@ -337,6 +337,7 @@ actions:
     routing_hint: >
       The user is just talking, asking a question about you, saying hi, or their message
       doesn't map to any action. Just respond conversationally as Steve.
+      Do NOT use chat when the user asks you to leave the channel — use leave_channel instead.
     parameters:
       response:
         type: string

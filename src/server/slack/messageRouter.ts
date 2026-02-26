@@ -189,6 +189,27 @@ export async function routeMessage(
       reply = "On it.";
     }
 
+    // Post-routing guard: if the LLM picked "chat" but the user is clearly
+    // asking the bot to leave the channel, override to leave_channel so the
+    // bot actually calls conversations.leave instead of just chatting about it.
+    if (command === "chat" && configTools.some((t) => t.name === "leave_channel")) {
+      const userLeaveIntent =
+        /\b(leave\s+(this|the)(\s+\w+)?\s+channel|please\s+leave|go\s+away|get\s+out|remove\s+yourself|you\s+can\s+(go|leave)|can\s+you\s+leave)\b/i;
+      if (userLeaveIntent.test(userMessage)) {
+        log.info(
+          "Post-routing override: chat → leave_channel (user message indicated leave intent)",
+        );
+        const chatReply = reply || args.response || "";
+        // If the LLM's reply is a refusal ("I can't leave", "I don't have the ability"),
+        // use a sensible default farewell instead of posting the refusal before leaving.
+        const isRefusal = /\b(can'?t|cannot|don'?t|do not|unable|not able)\b.{0,40}\bleave\b/i.test(
+          chatReply,
+        );
+        command = "leave_channel";
+        args = { farewell: isRefusal || !chatReply ? "Alright, I'm out. ✌️" : chatReply };
+      }
+    }
+
     log.info("Message routed", {
       command,
       args: JSON.stringify(args).slice(0, 200),

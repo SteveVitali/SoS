@@ -94,6 +94,43 @@ function loadFromFile(filePath: string): RoutingConfig {
 }
 
 /**
+ * Backfill any built-in actions that were added to defaultConfig after the
+ * user's YAML was originally generated. Missing actions are inserted and
+ * the file is persisted so this only happens once per new action.
+ */
+function backfillMissingActions(filePath: string, config: RoutingConfig): RoutingConfig {
+  const defaultYaml = generateDefaultConfig();
+  const defaultData = parseYaml(defaultYaml);
+  const defaultConfig = parseRoutingConfig(defaultData);
+
+  const missing: string[] = [];
+  for (const [name, actionDef] of Object.entries(defaultConfig.actions)) {
+    if (!(name in config.actions)) {
+      config.actions[name] = actionDef;
+      missing.push(name);
+    }
+  }
+
+  if (missing.length > 0) {
+    log.info("Backfilled missing built-in actions into routing config", {
+      actions: missing,
+    });
+    // Persist so this only runs once: read raw YAML, add missing action blocks, rewrite
+    const rawData = parseYaml(readFileSync(filePath, "utf-8")) || {};
+    if (!rawData.actions) rawData.actions = {};
+    const defaultRawActions = defaultData.actions || {};
+    for (const name of missing) {
+      rawData.actions[name] = defaultRawActions[name];
+    }
+    suppressNextWatch = true;
+    writeFileSync(filePath, stringifyYaml(rawData, { lineWidth: 120 }), "utf-8");
+    log.info("Updated routing config file with backfilled actions", { path: filePath });
+  }
+
+  return config;
+}
+
+/**
  * Initialize the routing config system. Call once at server startup.
  * If the file doesn't exist, generates a default config.
  */
@@ -109,6 +146,7 @@ export function initRoutingConfig(filePath: string): RoutingConfig {
   }
 
   cachedConfig = loadFromFile(filePath);
+  cachedConfig = backfillMissingActions(filePath, cachedConfig);
 
   // Watch for file changes
   if (!watcherActive) {

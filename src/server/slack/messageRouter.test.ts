@@ -7,6 +7,41 @@ vi.mock("../jobs/jobService.js", () => ({
   queryJobs: vi.fn().mockResolvedValue({ jobs: [], total: 0 }),
 }));
 
+// Mock routing config so configTools includes leave_channel
+vi.mock("../routing/index.js", () => ({
+  getRoutingConfig: vi.fn().mockReturnValue({
+    system_prompt: "You are Steve.",
+    actions: {
+      leave_channel: {
+        enabled: true,
+        description: "Leave the current Slack channel.",
+        parameters: { farewell: { type: "string", required: true, description: "Farewell" } },
+        execution: { type: "leave_channel" },
+      },
+      chat: {
+        enabled: true,
+        description: "Respond conversationally.",
+        parameters: { response: { type: "string", required: true, description: "Response" } },
+        execution: { type: "reply" },
+      },
+    },
+    custom_actions: {},
+  }),
+  buildToolsFromConfig: vi.fn().mockReturnValue([
+    {
+      name: "leave_channel",
+      description: "Leave the channel",
+      parameters: { type: "object", properties: {} },
+    },
+    {
+      name: "chat",
+      description: "Respond conversationally",
+      parameters: { type: "object", properties: {} },
+    },
+  ]),
+  buildActionsPromptSection: vi.fn().mockReturnValue("## Available Actions"),
+}));
+
 function makeMockProvider(toolCalls: any[] = [], text = ""): LLMProvider {
   return {
     chat: vi.fn().mockResolvedValue({ text, toolCalls }),
@@ -78,5 +113,60 @@ describe("routeMessage", () => {
     expect(result.command).toBe("create_job");
     expect(result.args.task_text).toBe("fix the bug");
     expect(result.reply).toContain("LLM routing unavailable");
+  });
+
+  it("overrides chat → leave_channel when user message has leave intent", async () => {
+    const provider = makeMockProvider(
+      [{ name: "chat", input: { response: "Understood. I'll see myself out. 👋" } }],
+      "",
+    );
+    initMessageRouter(provider, "test-model");
+
+    const result = await routeMessage("please leave this channel", "U123");
+    expect(result.command).toBe("leave_channel");
+    expect(result.args.farewell).toBe("Understood. I'll see myself out. 👋");
+  });
+
+  it("overrides chat → leave_channel with default farewell when LLM says it can't leave", async () => {
+    const provider = makeMockProvider(
+      [
+        {
+          name: "chat",
+          input: {
+            response: "I don't actually have the ability to leave Slack channels on my own.",
+          },
+        },
+      ],
+      "",
+    );
+    initMessageRouter(provider, "test-model");
+
+    const result = await routeMessage("leave this channel", "U123");
+    expect(result.command).toBe("leave_channel");
+    expect(result.args.farewell).toBe("Alright, I'm out. ✌️");
+  });
+
+  it("overrides chat → leave_channel for 'can you leave the Slack channel'", async () => {
+    const provider = makeMockProvider(
+      [{ name: "chat", input: { response: "I don't have a leave tool." } }],
+      "",
+    );
+    initMessageRouter(provider, "test-model");
+
+    const result = await routeMessage("can you leave the Slack channel now?", "U123");
+    expect(result.command).toBe("leave_channel");
+    expect(result.args.farewell).toBe("Alright, I'm out. ✌️");
+  });
+
+  it("does NOT override chat when user message has no leave intent", async () => {
+    const provider = makeMockProvider(
+      [{ name: "chat", input: { response: "Hey there, what's up?" } }],
+      "",
+    );
+    initMessageRouter(provider, "test-model");
+
+    const result = await routeMessage("hello", "U123");
+    expect(result.command).toBe("chat");
+    expect(result.reply).toBe("Hey there, what's up?");
   });
 });

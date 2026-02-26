@@ -80,9 +80,9 @@ describe("reloadRoutingConfig", () => {
     writeFileSync(configPath, generateDefaultConfig(), "utf-8");
     initRoutingConfig(configPath);
 
-    // Modify the file directly
+    // Modify the file directly — replace the commented model line with an uncommented one
     const raw = readFileSync(configPath, "utf-8");
-    writeFileSync(configPath, raw.replace("claude-sonnet-4-20250514", "test-model"), "utf-8");
+    writeFileSync(configPath, raw.replace(/^#\s*model:.*$/m, "model: test-model"), "utf-8");
 
     const reloaded = reloadRoutingConfig();
     expect(reloaded.model).toBe("test-model");
@@ -104,6 +104,46 @@ describe("saveRoutingConfig", () => {
     // Verify it was written to disk
     const diskRaw = readFileSync(configPath, "utf-8");
     expect(diskRaw).toContain("custom-model");
+  });
+});
+
+describe("backfillMissingActions", () => {
+  it("adds missing built-in actions to an existing config", () => {
+    // Write a config that is missing leave_channel
+    const defaultYaml = generateDefaultConfig();
+    writeFileSync(configPath, defaultYaml, "utf-8");
+
+    // Remove leave_channel from the YAML file to simulate an old config
+    const raw = readFileSync(configPath, "utf-8");
+    const lines = raw.split("\n");
+    const filtered: string[] = [];
+    let skipping = false;
+    for (const line of lines) {
+      if (/^\s{2}leave_channel:/.test(line)) {
+        skipping = true;
+        continue;
+      }
+      if (skipping && /^\s{2}\w/.test(line)) {
+        skipping = false;
+      }
+      if (!skipping) {
+        filtered.push(line);
+      }
+    }
+    writeFileSync(configPath, filtered.join("\n"), "utf-8");
+
+    // Verify leave_channel is missing from the file
+    const beforeRaw = readFileSync(configPath, "utf-8");
+    expect(beforeRaw).not.toContain("leave_channel:");
+
+    // Init should backfill it
+    const config = initRoutingConfig(configPath);
+    expect(config.actions.leave_channel).toBeDefined();
+    expect(config.actions.leave_channel.execution.type).toBe("leave_channel");
+
+    // Verify it was persisted to disk
+    const afterRaw = readFileSync(configPath, "utf-8");
+    expect(afterRaw).toContain("leave_channel");
   });
 });
 
