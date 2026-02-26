@@ -4,6 +4,8 @@ import { getRoutingConfig, reloadRoutingConfig, saveRoutingConfig } from "../../
 import { css } from "../../styles/theme.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { Spinner } from "../shared/Spinner.js";
+import { ExecutionEditor } from "./ExecutionEditor.js";
+import { ParameterListEditor } from "./ParameterListEditor.js";
 
 type ViewMode = "visual" | "yaml";
 
@@ -348,14 +350,10 @@ function ActionEditor({ action, onChange }: { action: any; onChange: (updated: a
     onChange({ ...action, [field]: value });
   };
 
-  const updateExecution = (field: string, value: any) => {
-    onChange({ ...action, execution: { ...action.execution, [field]: value } });
-  };
-
   return (
     <div style={{ display: "flex", flexDirection: "column", gap: 12 }}>
       <div style={css.field}>
-        <label style={css.label}>Description</label>
+        <span style={css.label}>Description</span>
         <textarea
           style={{ ...css.textarea, minHeight: 50 }}
           value={action?.description || ""}
@@ -363,7 +361,7 @@ function ActionEditor({ action, onChange }: { action: any; onChange: (updated: a
         />
       </div>
       <div style={css.field}>
-        <label style={css.label}>Routing Hint</label>
+        <span style={css.label}>Routing Hint</span>
         <textarea
           style={{ ...css.textarea, minHeight: 50 }}
           value={action?.routing_hint || ""}
@@ -371,51 +369,17 @@ function ActionEditor({ action, onChange }: { action: any; onChange: (updated: a
         />
       </div>
       <div style={css.field}>
-        <label style={css.label}>Execution Type</label>
-        <input
-          style={{ ...css.input, maxWidth: 300 }}
-          value={action?.execution?.type || ""}
-          onChange={(e) => updateExecution("type", e.target.value)}
+        <ParameterListEditor
+          parameters={action?.parameters || {}}
+          onChange={(params) => update("parameters", params)}
         />
       </div>
-      {action?.execution?.type === "agent_task" && (
-        <div style={css.field}>
-          <label style={css.label}>Agent Instructions</label>
-          <textarea
-            style={{
-              ...css.textarea,
-              minHeight: 150,
-              fontFamily: "'SF Mono', Monaco, Consolas, monospace",
-              fontSize: 12,
-            }}
-            value={action?.execution?.instructions || ""}
-            onChange={(e) => updateExecution("instructions", e.target.value)}
-          />
-        </div>
-      )}
-      {(action?.execution?.reply_success || action?.execution?.type === "create_job") && (
-        <div style={css.field}>
-          <label style={css.label}>Success Reply Template</label>
-          <input
-            style={css.input}
-            value={action?.execution?.reply_success || action?.execution?.reply_queued || ""}
-            onChange={(e) =>
-              updateExecution(
-                action?.execution?.type === "agent_task" ? "reply_queued" : "reply_success",
-                e.target.value,
-              )
-            }
-          />
-        </div>
-      )}
       <div style={css.field}>
-        <label style={css.label}>Parameters & Execution (raw YAML)</label>
-        <pre style={{ ...css.pre, fontSize: 11, maxHeight: 200 }}>
-          {stringifyYaml(
-            { parameters: action?.parameters, execution: action?.execution },
-            { lineWidth: 100 },
-          )}
-        </pre>
+        <span style={{ ...css.label, marginBottom: 8 }}>Execution</span>
+        <ExecutionEditor
+          execution={action?.execution || {}}
+          onChange={(exec) => update("execution", exec)}
+        />
       </div>
     </div>
   );

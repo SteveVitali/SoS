@@ -248,7 +248,11 @@ export function teamReviewRequests(org: string, teamSlug: string): PrResult[] {
     const members = getTeamMembers(org, teamSlug);
     if (members.length === 0) return [];
 
-    const allPrs = memberSearch(members, "review-requested", `is:open updated:>=${openPrSince()}`);
+    const allPrs = memberSearch(
+      members,
+      "review-requested",
+      `is:open -draft:true updated:>=${openPrSince()}`,
+    );
     allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
     return allPrs;
   });
