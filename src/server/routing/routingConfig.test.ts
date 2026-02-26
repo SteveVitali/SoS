@@ -44,6 +44,7 @@ describe("initRoutingConfig", () => {
     expect(config.actions.cancel_job.execution.type).toBe("job_action");
     expect(config.actions.job_status.execution.type).toBe("job_query");
     expect(config.actions.list_jobs.execution.type).toBe("job_list");
+    expect(config.actions.leave_channel.execution.type).toBe("leave_channel");
     expect(config.actions.chat.execution.type).toBe("reply");
     expect(config.actions.no_op.execution.type).toBe("reply");
     expect(config.actions.github.execution.type).toBe("github_query");
@@ -141,6 +142,7 @@ describe("generateDefaultConfig", () => {
       "respond_to_pr_comments",
       "github",
       "list_jobs",
+      "leave_channel",
       "chat",
       "no_op",
     ];

@@ -39,6 +39,7 @@ import type {
   JobActionExecution,
   JobListExecution,
   JobQueryExecution,
+  LeaveChannelExecution,
   ReplyExecution,
   ShellExecution,
   WebhookExecution,
@@ -703,6 +704,48 @@ async function executeAgentTask(
   }
 }
 
+// --- Executor: leave_channel ---
+
+async function executeLeaveChannel(
+  action: RoutedAction,
+  ctx: CommandContext,
+  execDef: LeaveChannelExecution,
+): Promise<CommandResult> {
+  if (ctx.source !== "slack" || !ctx.slack) {
+    const reply = renderTemplate(
+      execDef.reply_not_slack || "I can only leave Slack channels — this doesn't appear to be one.",
+      tplCtx(action, ctx),
+    );
+    return { reply: appendReply(action.reply, reply), actionTaken: "leave_channel: not slack" };
+  }
+
+  try {
+    const botToken = process.env.SLACK_BOT_TOKEN;
+    if (!botToken) {
+      throw new Error("SLACK_BOT_TOKEN not configured");
+    }
+    const { WebClient } = await import("@slack/web-api");
+    const client = new WebClient(botToken);
+    await client.conversations.leave({ channel: ctx.slack.channelId });
+
+    const reply = renderTemplate(
+      execDef.reply_success || "Alright, I'm out. ✌️",
+      tplCtx(action, ctx),
+    );
+    return {
+      reply: appendReply(action.reply, reply),
+      actionTaken: `leave_channel: ${ctx.slack.channelId}`,
+    };
+  } catch (err: any) {
+    log.error("Failed to leave channel", { error: err.message, channel: ctx.slack.channelId });
+    const reply = renderTemplate(
+      execDef.reply_error || "Couldn't leave the channel: {{error}}",
+      tplCtx(action, ctx, { error: err.message }),
+    );
+    return { reply: appendReply(action.reply, reply), actionTaken: "leave_channel: failed" };
+  }
+}
+
 // --- Executor: dispatch ---
 
 async function executeDispatch(
@@ -763,6 +806,8 @@ export async function executeAction(
       return executeWebhook(action, ctx, execDef);
     case "agent_task":
       return executeAgentTask(action, ctx, execDef);
+    case "leave_channel":
+      return executeLeaveChannel(action, ctx, execDef);
     case "dispatch":
       return executeDispatch(action, ctx, execDef);
     default:
