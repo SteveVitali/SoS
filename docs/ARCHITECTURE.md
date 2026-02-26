@@ -49,7 +49,7 @@ The server is the **single source of truth** for job state. It:
 7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
 8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
 9. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
-10. **Can spawn and kill worker processes** via `child_process` (local machine)
+10. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
 11. **Serves the React SPA** as static files (production build)
 
 The server **holds all Slack credentials**. Workers never touch Slack directly.
@@ -95,6 +95,7 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 - **PRs** — open PRs across registered repos with review thread / unresolved comment stats
 - **Workers** — live worker health dashboard with per-loop status, spawn new workers, shutdown, live log terminal with Claude output streaming via SSE
 - **Repos** — in-browser YAML editor for the repo registry
+- **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 11 execution types, reply template management, with a raw YAML fallback view
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
 
@@ -220,8 +221,10 @@ son-of-steve/
 │   ├── shared/                # Shared between server and worker
 │   │   ├── types.ts           # Zod schemas, JobDoc, event types, worker registry types
 │   │   ├── modelPricing.ts    # Claude model pricing for cost estimation
+│   │   ├── cache.ts           # Generic TTL cache with getOrSet
 │   │   ├── time.ts            # Date helpers (nowDate, addSeconds, isExpired)
 │   │   ├── slug.ts            # Text slugification for branch names
+│   │   ├── slackMarkdown.ts   # Slack mrkdwn → plain text conversion
 │   │   └── logger.ts          # Structured JSON logger with secret redaction
 │   │
 │   ├── server/                # sos-server process
@@ -237,13 +240,22 @@ son-of-steve/
 │   │   │   ├── lease.ts           # Claim + heartbeat helpers
 │   │   │   ├── leaseReaper.ts     # Periodic check for stale RUNNING jobs
 │   │   │   ├── idempotency.ts     # Slack event deduplication
-│   │   │   └── titleGenerator.ts   # LLM-based job title generation
+│   │   │   └── titleGenerator.ts  # LLM-based job title generation
 │   │   ├── chat/
 │   │   │   ├── chatRoutes.ts          # /api/web/chats/* CRUD + message send
 │   │   │   ├── conversationRepo.ts    # MongoDB CRUD for conversations
 │   │   │   ├── conversationNotifier.ts # Push job status updates into linked chats
 │   │   │   └── titleGen.ts            # LLM-based conversation title generation
+│   │   ├── routing/
+│   │   │   ├── routingConfig.ts    # Load, save, reload routing-config.yaml
+│   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema
+│   │   │   ├── defaultConfig.ts    # Default routing-config.yaml generation
+│   │   │   ├── executors.ts        # Action execution dispatch (github, shell, job, etc.)
+│   │   │   ├── toolBuilder.ts      # Build LLM tool definitions from YAML actions
+│   │   │   ├── template.ts         # Mustache-style template rendering for replies
+│   │   │   └── index.ts            # Barrel export
 │   │   ├── workers/
+│   │   │   ├── spawnWorker.ts     # Spawn/kill worker processes (detached process groups)
 │   │   │   ├── workerRegistry.ts  # In-memory registry (status, logs, SSE fan-out)
 │   │   │   └── workerWs.ts        # WebSocket server for worker log streaming + commands
 │   │   ├── llm/
@@ -267,7 +279,7 @@ son-of-steve/
 │   │   └── api/
 │   │       ├── router.ts        # Mount worker + web + chat routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)
-│   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, worktrees)
+│   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, routing, worktrees)
 │   │       └── ghPrs.ts         # GitHub PR listing + comment stats (with TTL cache)
 │   │
 │   ├── worker/                # sos-worker process
@@ -313,6 +325,7 @@ son-of-steve/
 │               ├── prs/           # PrsList, PrRow
 │               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal
 │               ├── registry/      # RepoRegistryEditor
+│               ├── routing/       # RoutingConfigEditor, ParameterListEditor, ExecutionEditor
 │               └── shared/        # PageHeader, NavTab, HoverRow, Badge, Spinner, etc.
 │
 ├── docs/                  # Documentation
@@ -324,6 +337,7 @@ son-of-steve/
 ├── .env.example
 ├── .gitignore
 ├── repo-registry.example.yaml
+├── routing-config.yaml    # YAML-driven LLM action routing (auto-generated if missing)
 └── README.md
 ```
 

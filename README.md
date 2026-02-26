@@ -175,6 +175,7 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack app creation, LLM routi
    - **PRs** — view open PRs across registered repos with comment/review thread stats
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
    - **Repos** — edit the repo registry (YAML) directly from the browser
+   - **Routing** — visual editor for LLM action routing config (parameters, execution types, reply templates) with raw YAML fallback
 
 ---
 

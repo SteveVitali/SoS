@@ -9,6 +9,9 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **YAML-driven routing config** — `routing-config.yaml` controls LLM action routing: system prompt, model, per-action parameters, execution types, and reply templates; auto-generated with sensible defaults if missing
+- **Routing config visual editor** — new Routing tab in the web UI with structured editors for all 11 execution types (ParameterListEditor, ExecutionEditor with type-aware fields, ReplyTemplatesEditor), plus raw YAML fallback view
+- **Routing config API** — `GET/PUT /api/web/routing-config` and `POST /api/web/routing-config/reload` for reading, saving, and hot-reloading the routing config
 - **Worker management system** — spawn, monitor, and shut down worker processes from the web UI
   - In-memory worker registry on the server with 60s stale detection
   - WebSocket server (`/api/worker/ws`) for real-time log streaming and command dispatch
@@ -50,7 +53,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded `.gitignore` with common Node/TS/macOS patterns
 - Auto-formatted entire codebase with Biome
 - Decoupled PR stats fetching from job polling to avoid GitHub API rate limit exhaustion
-- Web UI expanded from single-page to tabbed layout (Chats, Jobs, PRs, Workers, Repos)
+- Web UI expanded from single-page to tabbed layout (Chats, Jobs, PRs, Workers, Repos, Routing)
+
+### Fixed
+
+- **Worker process cleanup** — spawned workers now use detached process groups (`detached: true` + `process.kill(-pid)`) so both the `tsx` wrapper and its `node` grandchild are reliably killed on shutdown
+- **Fatal error cleanup** — `shutdownAllWorkers()` is now called in the server's fatal error handler to prevent orphaned worker processes on crashes
+- **Draft PRs excluded from team review requests** — `teamReviewRequests` query now includes `-draft:true` so draft PRs don't appear in "who has outstanding reviews" results
 
 ## [0.1.0] - 2025-06-01
 

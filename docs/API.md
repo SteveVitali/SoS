@@ -329,6 +329,17 @@ Sets status to `CANCELED` if not already terminal. Posts Slack update.
 **Response (200):** `{ "job": { ... } }`
 **Response (409):** `{ "error": "Cannot cancel: job is terminal or not found" }`
 
+### Confirm Plan
+
+```
+POST /api/web/jobs/:task_id/confirm-plan
+```
+
+Confirms a plan for a job in `PENDING_CONFIRMATION` status. Creates a new execution job based on the confirmed plan.
+
+**Response (200):** `{ "job": { ... } }` (the new execution job)
+**Response (409):** `{ "error": "Job not in PENDING_CONFIRMATION status" }`
+
 ### Retry Job
 
 ```
@@ -644,13 +655,49 @@ DELETE /api/web/chats/:id
 
 ---
 
+## Routing Config Endpoints (`/api/web`)
+
+### Get Routing Config
+
+```
+GET /api/web/routing-config
+```
+
+Returns the current `routing-config.yaml` contents as JSON, along with the file path.
+
+**Response:** `{ "config": { ... }, "path": "/path/to/routing-config.yaml" }`
+
+### Update Routing Config
+
+```
+PUT /api/web/routing-config
+```
+
+Writes JSON back to `routing-config.yaml`.
+
+**Body:** `{ "system_prompt": "...", "model": "...", "actions": { ... } }`
+
+**Response (200):** `{ "ok": true }`
+
+### Reload Routing Config
+
+```
+POST /api/web/routing-config/reload
+```
+
+Force-reloads the routing config from disk (useful after manual edits).
+
+**Response (200):** `{ "ok": true }`
+
+---
+
 ## Job Document Schema
 
 ```typescript
 interface JobDoc {
   _id?: ObjectId;
   task_id: string;                    // UUID, unique
-  job_type?: "create" | "respond_to_pr_comments";  // default: "create"
+  job_type?: "create" | "respond_to_pr_comments" | "github_summary" | "plan";  // default: "create"
   source: {
     type: "slack_app_mention" | "web_create";
     event_id?: string;                // Slack event ID (unique when present)
