@@ -35,7 +35,11 @@ vi.mock("./ingestion.js", () => ({
 
 import { getEmbeddingProvider } from "./embeddings.js";
 import { listEnabledKBsByScope } from "./kbRepo.js";
-import { distanceToSimilarity, searchKnowledgeBases } from "./kbService.js";
+import {
+  distanceToSimilarity,
+  searchKnowledgeBases,
+  searchKnowledgeBasesWithRouting,
+} from "./kbService.js";
 import { searchKBTable } from "./vectorStore.js";
 
 const mockListEnabledKBsByScope = listEnabledKBsByScope as ReturnType<typeof vi.fn>;
@@ -343,5 +347,73 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
     for (let i = 1; i < results.length; i++) {
       expect(results[i].score).toBeLessThanOrEqual(results[i - 1].score);
     }
+  });
+});
+
+describe("searchKnowledgeBasesWithRouting", () => {
+  it("returns routing metadata with probe scores and pass/fail status", async () => {
+    const kb1 = makeKB({ kb_id: "kb-1", name: "Relevant KB", min_similarity_score: 0.3 });
+    const kb2 = makeKB({ kb_id: "kb-2", name: "Irrelevant KB", min_similarity_score: 0.3 });
+
+    mockListEnabledKBsByScope.mockResolvedValue([kb1, kb2]);
+    mockGetEmbeddingProvider.mockReturnValue(mockEmbedder);
+
+    mockSearchKBTable
+      .mockResolvedValueOnce([makeSearchResult({ kb_id: "kb-1", _distance: 0.5 })]) // kb-1 probe passes
+      .mockResolvedValueOnce([makeSearchResult({ kb_id: "kb-2", _distance: 10 })]) // kb-2 probe fails
+      .mockResolvedValueOnce([
+        // kb-1 full search
+        makeSearchResult({ kb_id: "kb-1", _distance: 0.5, content: "result" }),
+      ]);
+
+    const { results, routing } = await searchKnowledgeBasesWithRouting({
+      query: "test",
+      scopes: ["chat"],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(routing.total_kbs).toBe(2);
+    expect(routing.relevant_kbs).toBe(1);
+    expect(routing.probes).toHaveLength(2);
+
+    const probe1 = routing.probes.find((p) => p.kb_id === "kb-1");
+    expect(probe1).toBeDefined();
+    expect(probe1!.passed).toBe(true);
+    expect(probe1!.probe_score).toBeCloseTo(0.667, 2);
+
+    const probe2 = routing.probes.find((p) => p.kb_id === "kb-2");
+    expect(probe2).toBeDefined();
+    expect(probe2!.passed).toBe(false);
+    expect(probe2!.probe_score).toBeCloseTo(0.091, 2);
+  });
+
+  it("returns empty probes array with correct total when no KBs match scopes", async () => {
+    mockListEnabledKBsByScope.mockResolvedValue([]);
+
+    const { results, routing } = await searchKnowledgeBasesWithRouting({
+      query: "test",
+      scopes: ["chat"],
+    });
+
+    expect(results).toEqual([]);
+    expect(routing.total_kbs).toBe(0);
+    expect(routing.relevant_kbs).toBe(0);
+    expect(routing.probes).toEqual([]);
+  });
+
+  it("records probe_score 0 for empty KB tables", async () => {
+    const kb1 = makeKB({ kb_id: "kb-1" });
+    mockListEnabledKBsByScope.mockResolvedValue([kb1]);
+    mockGetEmbeddingProvider.mockReturnValue(mockEmbedder);
+    mockSearchKBTable.mockResolvedValueOnce([]); // empty table
+
+    const { routing } = await searchKnowledgeBasesWithRouting({
+      query: "test",
+      scopes: ["chat"],
+    });
+
+    expect(routing.probes).toHaveLength(1);
+    expect(routing.probes[0].probe_score).toBe(0);
+    expect(routing.probes[0].passed).toBe(false);
   });
 });

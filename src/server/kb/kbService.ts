@@ -4,9 +4,11 @@
 
 import { v4 as uuidv4 } from "uuid";
 import type {
+  KBProbeResult,
   KBScope,
   KBSearchRequest,
   KBSearchResult,
+  KBSearchWithRoutingResult,
   KnowledgeBase,
 } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
@@ -272,21 +274,19 @@ export async function deleteKnowledgeBase(kbId: string): Promise<boolean> {
 }
 
 /**
- * Search across enabled knowledge bases for a given query.
- *
- * Uses two-stage routing to avoid expensive full searches on irrelevant KBs:
- *   Stage 1 — Probe each KB with limit=1 to find which KBs have relevant content.
- *   Stage 2 — Full search only on KBs whose probe result met the similarity threshold.
+ * Internal two-stage search implementation that returns both results and routing metadata.
  */
-export async function searchKnowledgeBases(
+async function twoStageSearch(
   request: KBSearchRequest,
   owner?: string,
-): Promise<KBSearchResult[]> {
+): Promise<KBSearchWithRoutingResult> {
   const { query, scopes, max_chunks, min_score } = request;
+
+  const emptyRouting = { results: [], routing: { total_kbs: 0, relevant_kbs: 0, probes: [] } };
 
   // Find all enabled KBs matching the requested scopes
   const kbs = await listEnabledKBsByScope(scopes, owner);
-  if (kbs.length === 0) return [];
+  if (kbs.length === 0) return emptyRouting;
 
   const embeddingProvider = getEmbeddingProvider();
 
@@ -297,11 +297,12 @@ export async function searchKnowledgeBases(
     queryVector = vector;
   } catch (err: any) {
     log.error("Query embedding failed", { error: err.message });
-    return [];
+    return { ...emptyRouting, routing: { total_kbs: kbs.length, relevant_kbs: 0, probes: [] } };
   }
 
   // --- Stage 1: Probe each KB with limit=1 ---
-  const probeResults: Array<{ kb: KnowledgeBase; topScore: number }> = [];
+  const probes: KBProbeResult[] = [];
+  const passedKBs: KnowledgeBase[] = [];
 
   for (const kb of kbs) {
     const minScore_ = min_score ?? kb.min_similarity_score;
@@ -309,9 +310,11 @@ export async function searchKnowledgeBases(
       const probe = await searchKBTable(kb.kb_id, queryVector, 1);
       if (probe.length > 0) {
         const topScore = distanceToSimilarity(probe[0]._distance);
-        if (topScore >= minScore_) {
-          probeResults.push({ kb, topScore });
-        }
+        const passed = topScore >= minScore_;
+        probes.push({ kb_id: kb.kb_id, kb_name: kb.name, probe_score: topScore, passed });
+        if (passed) passedKBs.push(kb);
+      } else {
+        probes.push({ kb_id: kb.kb_id, kb_name: kb.name, probe_score: 0, passed: false });
       }
     } catch (err: any) {
       log.warn("KB probe failed, skipping", {
@@ -319,21 +322,28 @@ export async function searchKnowledgeBases(
         name: kb.name,
         error: err.message,
       });
+      probes.push({ kb_id: kb.kb_id, kb_name: kb.name, probe_score: 0, passed: false });
     }
   }
 
+  const routing = { total_kbs: kbs.length, relevant_kbs: passedKBs.length, probes };
+
   log.info("KB routing stage 1 complete", {
     totalKBs: kbs.length,
-    relevantKBs: probeResults.length,
-    kbScores: probeResults.map((p) => ({ name: p.kb.name, score: p.topScore.toFixed(3) })),
+    relevantKBs: passedKBs.length,
+    kbScores: probes.map((p) => ({
+      name: p.kb_name,
+      score: p.probe_score.toFixed(3),
+      passed: p.passed,
+    })),
   });
 
-  if (probeResults.length === 0) return [];
+  if (passedKBs.length === 0) return { results: [], routing };
 
   // --- Stage 2: Full search on relevant KBs only ---
   const allResults: KBSearchResult[] = [];
 
-  for (const { kb } of probeResults) {
+  for (const kb of passedKBs) {
     const perKBLimit = max_chunks ?? kb.max_chunks_per_query;
     const minScore_ = min_score ?? kb.min_similarity_score;
 
@@ -368,7 +378,30 @@ export async function searchKnowledgeBases(
   // Sort by score descending and limit total results
   allResults.sort((a, b) => b.score - a.score);
   const totalLimit = max_chunks ?? 10;
-  return allResults.slice(0, totalLimit);
+  return { results: allResults.slice(0, totalLimit), routing };
+}
+
+/**
+ * Search across enabled knowledge bases for a given query.
+ * Returns just the results (used by worker API and message router).
+ */
+export async function searchKnowledgeBases(
+  request: KBSearchRequest,
+  owner?: string,
+): Promise<KBSearchResult[]> {
+  const { results } = await twoStageSearch(request, owner);
+  return results;
+}
+
+/**
+ * Search across enabled knowledge bases with full routing metadata.
+ * Used by the web UI playground to visualize two-stage routing decisions.
+ */
+export async function searchKnowledgeBasesWithRouting(
+  request: KBSearchRequest,
+  owner?: string,
+): Promise<KBSearchWithRoutingResult> {
+  return twoStageSearch(request, owner);
 }
 
 /**

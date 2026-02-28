@@ -805,6 +805,39 @@ Upload files for ingestion. Supports text files (`.md`, `.txt`, `.py`, `.ts`, et
 }
 ```
 
+### Cross-KB Search (with routing metadata)
+
+```
+POST /api/web/kb/search
+```
+
+Search across all enabled knowledge bases using two-stage routing. Returns results plus routing metadata showing which KBs were probed and which passed the similarity threshold.
+
+**Body:**
+```json
+{
+  "query": "auth flow",
+  "scopes": ["chat", "create_job"],
+  "max_chunks": 10,
+  "min_score": 0.3
+}
+```
+
+**Response:**
+```json
+{
+  "results": [{ "content": "...", "source_file": "...", "kb_name": "...", "kb_id": "...", "score": 0.87, "metadata": {} }],
+  "routing": {
+    "total_kbs": 3,
+    "relevant_kbs": 2,
+    "probes": [
+      { "kb_id": "...", "kb_name": "Design Docs", "probe_score": 0.91, "passed": true },
+      { "kb_id": "...", "kb_name": "Slack History", "probe_score": 0.12, "passed": false }
+    ]
+  }
+}
+```
+
 ### Search Single KB
 
 ```
@@ -816,6 +849,16 @@ Search within a specific KB (for testing/debugging).
 **Body:** `{ "query": "auth flow", "limit": 5 }`
 
 **Response:** `{ "results": [{ "content": "...", "source_file": "...", "score": 0.87, ... }] }`
+
+### List Document Chunks
+
+```
+GET /api/web/kb/:id/documents/:name/chunks?offset=0&limit=20
+```
+
+Paginated list of chunks for a specific document. Limit is capped at 100.
+
+**Response:** `{ "chunks": [{ "id": "...", "content": "...", "section": "...", "page": 0, "created_at": "..." }], "total": 47 }`
 
 ### List Documents
 

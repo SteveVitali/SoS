@@ -14,7 +14,7 @@ import {
   updateKB,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { formatBytes, ScopeBadge, ScopeToggleButtons } from "./kbShared.js";
+import { formatBytes, ScopeBadge, ScopeToggleButtons, SearchResultCard } from "./kbShared.js";
 
 export function KBDetail() {
   const { id } = useParams<{ id: string }>();
@@ -650,29 +650,7 @@ export function KBDetail() {
         {searchResults.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {searchResults.map((r, i) => (
-              <div
-                key={i}
-                style={{
-                  background: "var(--bg)",
-                  border: "1px solid var(--border)",
-                  borderRadius: "var(--radius)",
-                  padding: 12,
-                }}
-              >
-                <div style={{ display: "flex", justifyContent: "space-between", marginBottom: 6 }}>
-                  <span style={{ fontSize: 12, color: "var(--fg2)", fontFamily: "monospace" }}>
-                    {r.source_file}
-                    {r.metadata.section ? ` > ${r.metadata.section}` : ""}
-                  </span>
-                  <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
-                    {(r.score * 100).toFixed(1)}%
-                  </span>
-                </div>
-                <div style={{ fontSize: 13, whiteSpace: "pre-wrap", lineHeight: 1.5 }}>
-                  {r.content.slice(0, 500)}
-                  {r.content.length > 500 ? "..." : ""}
-                </div>
-              </div>
+              <SearchResultCard key={i} result={r} />
             ))}
           </div>
         )}

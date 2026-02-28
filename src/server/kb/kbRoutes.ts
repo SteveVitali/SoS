@@ -17,6 +17,7 @@ import {
   listKnowledgeBases,
   removeDocument,
   searchKnowledgeBases,
+  searchKnowledgeBasesWithRouting,
   searchSingleKB,
   updateKnowledgeBase,
 } from "./kbService.js";
@@ -38,6 +39,33 @@ const upload = multer({
  */
 export function createKBWebRoutes(): Router {
   const router = Router();
+
+  // POST /api/web/kb/search — cross-KB search with routing metadata (playground)
+  router.post("/search", async (req: Request, res: Response) => {
+    try {
+      const { query, scopes, max_chunks, min_score } = req.body;
+
+      if (!query || typeof query !== "string") {
+        res.status(400).json({ error: "query is required" });
+        return;
+      }
+
+      const result = await searchKnowledgeBasesWithRouting(
+        {
+          query,
+          scopes: scopes || ["chat"],
+          max_chunks,
+          min_score,
+        },
+        req.body.owner,
+      );
+
+      res.json(result);
+    } catch (err: any) {
+      log.error("Cross-KB search error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
 
   // POST /api/web/kb — create a new knowledge base
   router.post("/", async (req: Request, res: Response) => {

@@ -469,6 +469,36 @@ export interface KBSearchResult {
   metadata: { section?: string; page?: number };
 }
 
+export interface KBProbeResult {
+  kb_id: string;
+  kb_name: string;
+  probe_score: number;
+  passed: boolean;
+}
+
+export interface KBSearchWithRoutingResult {
+  results: KBSearchResult[];
+  routing: {
+    total_kbs: number;
+    relevant_kbs: number;
+    probes: KBProbeResult[];
+  };
+}
+
+export async function searchAllKBs(params: {
+  query: string;
+  scopes?: KBScope[];
+  max_chunks?: number;
+  min_score?: number;
+}): Promise<KBSearchWithRoutingResult> {
+  return request("POST", "/kb/search", {
+    query: params.query,
+    scopes: params.scopes || ["chat", "create_job", "plan_job", "agent_task", "all"],
+    max_chunks: params.max_chunks,
+    min_score: params.min_score,
+  });
+}
+
 export async function listKBs(): Promise<{ kbs: KnowledgeBase[] }> {
   return request("GET", "/kb");
 }

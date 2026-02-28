@@ -69,3 +69,19 @@ export interface KBSearchRequest {
   max_chunks?: number;
   min_score?: number;
 }
+
+export interface KBProbeResult {
+  kb_id: string;
+  kb_name: string;
+  probe_score: number;
+  passed: boolean;
+}
+
+export interface KBSearchWithRoutingResult {
+  results: KBSearchResult[];
+  routing: {
+    total_kbs: number;
+    relevant_kbs: number;
+    probes: KBProbeResult[];
+  };
+}

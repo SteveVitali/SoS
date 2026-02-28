@@ -10,6 +10,7 @@ import {
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { PageHeader } from "../shared/PageHeader.js";
+import { KBPlayground } from "./KBPlayground.js";
 import { formatBytes, ScopeBadge, ScopeToggleButtons } from "./kbShared.js";
 
 export function KBList() {
@@ -132,6 +133,8 @@ export function KBList() {
           </button>
         </div>
       )}
+
+      <KBPlayground />
 
       {loading ? (
         <div style={{ color: "var(--fg2)", padding: 20 }}>Loading...</div>
