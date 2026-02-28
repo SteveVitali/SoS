@@ -46,7 +46,7 @@ export function WorkersList() {
       await shutdownWorker(w.worker_id);
       refreshWorkerNodes();
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 
@@ -56,7 +56,7 @@ export function WorkersList() {
       await removeWorkerEntry(w.worker_id);
       refreshWorkerNodes();
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 

@@ -32,6 +32,7 @@ export class HeartbeatManager {
    * unreachable for too long (MAX_CONSECUTIVE_FAILURES).
    */
   start(taskId: string): AbortSignal {
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     if (this.slots.has(taskId)) return this.slots.get(taskId)!.abortController.signal;
 
     const abortController = new AbortController();
@@ -56,14 +57,14 @@ export class HeartbeatManager {
           log.warn("Heartbeat rejected — lease lost (409)", { task_id: taskId });
           this.abortAndStop(taskId, "Lease lost (server rejected heartbeat)");
         }
-      } catch (err: any) {
+      } catch (err: unknown) {
         // Transient error (server down, network issue)
         slot.failures++;
         if (slot.failures <= 3 || slot.failures % 10 === 0) {
           log.warn("Heartbeat failed (server unreachable)", {
             task_id: taskId,
             consecutive_failures: slot.failures,
-            error: err.message,
+            error: (err as Error).message,
           });
         }
         if (slot.failures >= MAX_CONSECUTIVE_FAILURES) {

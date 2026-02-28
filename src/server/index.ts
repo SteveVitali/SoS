@@ -43,8 +43,8 @@ async function main() {
   if (config.routingConfigPath) {
     try {
       initRoutingConfig(config.routingConfigPath);
-    } catch (err: any) {
-      log.error("Failed to initialize routing config", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Failed to initialize routing config", { error: (err as Error).message });
     }
   } else {
     // Default to routing-config.yaml next to repo-registry if available
@@ -53,7 +53,7 @@ async function main() {
       : path.join(process.cwd(), "routing-config.yaml");
     try {
       initRoutingConfig(fallbackPath);
-    } catch (err: any) {
+    } catch (_err: unknown) {
       log.warn("No routing config found, using hardcoded defaults", { path: fallbackPath });
     }
   }
@@ -70,10 +70,10 @@ async function main() {
       initMessageRouter(llmProvider, config.llmModel);
       initTitleGenerator(llmProvider, config.llmModel);
       initChatTitleGenerator(llmProvider, config.llmModel);
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn(
         "Failed to initialize LLM provider — message routing will treat all mentions as jobs",
-        { error: err.message },
+        { error: (err as Error).message },
       );
     }
   } else {
@@ -118,7 +118,7 @@ async function main() {
     log.info("Auto-spawned default worker", { pid });
   } catch (err: unknown) {
     log.warn("Failed to auto-spawn worker (non-fatal)", {
-      error: err instanceof Error ? err.message : String(err),
+      error: err instanceof Error ? (err as Error).message : String(err),
     });
   }
 
@@ -129,9 +129,9 @@ async function main() {
   if (slackEnabled) {
     try {
       await startSlackSocketMode(config, slackPoster);
-      await slackPoster!.setPresenceActive();
-    } catch (err: any) {
-      log.error("Failed to start Slack Socket Mode", { error: err.message });
+      await slackPoster?.setPresenceActive();
+    } catch (err: unknown) {
+      log.error("Failed to start Slack Socket Mode", { error: (err as Error).message });
       log.warn("Server will continue without Slack integration");
     }
   }
@@ -153,7 +153,7 @@ async function main() {
 }
 
 main().catch(async (err) => {
-  log.error("Fatal error", { error: err.message, stack: err.stack });
+  log.error("Fatal error", { error: (err as Error).message, stack: (err as Error).stack });
   try {
     const { shutdownAllWorkers } = await import("./workers/spawnWorker.js");
     await shutdownAllWorkers();

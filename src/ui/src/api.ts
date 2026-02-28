@@ -8,6 +8,7 @@ function getHeaders(): HeadersInit {
   };
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: dynamic API type
 async function request<T>(method: string, path: string, body?: any): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
     method,
@@ -53,6 +54,7 @@ export interface Job {
     runs?: Array<{ url: string; status: string; conclusion?: string; updated_at?: string }>;
   };
   result_summary?: string;
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
   error?: { code?: string; message: string; details?: any };
   metrics?: {
     durations?: Record<string, number>;
@@ -74,6 +76,7 @@ export interface Job {
       cost_source?: string;
     };
   };
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
   events?: Array<{ at: string; node_id?: string; type: string; payload?: any }>;
   parent_task_id?: string;
   needs_plan?: boolean;
@@ -255,10 +258,12 @@ export async function saveRegistry(registry: RegistryData): Promise<{ ok: boolea
 
 // --- Routing Config ---
 
+// biome-ignore lint/suspicious/noExplicitAny: dynamic config type
 export async function getRoutingConfig(): Promise<{ config: any; path: string }> {
   return request("GET", "/routing-config");
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: dynamic config type
 export async function saveRoutingConfig(config: any): Promise<{ ok: boolean }> {
   return request("PUT", "/routing-config", { config });
 }

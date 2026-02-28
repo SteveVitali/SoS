@@ -12,18 +12,21 @@ export class WorkerApiClient {
   private async requestWithRetry<T>(
     method: string,
     path: string,
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
     body?: any,
     retries = 3,
     baseDelayMs = 1000,
   ): Promise<T> {
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
     let lastErr: any;
     for (let attempt = 0; attempt <= retries; attempt++) {
       try {
         return await this.request<T>(method, path, body);
-      } catch (err: any) {
+      } catch (err: unknown) {
         lastErr = err;
         // Don't retry client errors (4xx) — they won't succeed on retry
-        if (err.status && err.status >= 400 && err.status < 500) throw err;
+        const errStatus = (err as { status?: number }).status;
+        if (errStatus && errStatus >= 400 && errStatus < 500) throw err;
         if (attempt < retries) {
           const delay = baseDelayMs * 2 ** attempt;
           log.warn("Transient API error, retrying", {
@@ -32,7 +35,7 @@ export class WorkerApiClient {
             attempt: attempt + 1,
             maxRetries: retries,
             delayMs: delay,
-            error: err.message,
+            error: (err as Error).message,
           });
           await new Promise((r) => setTimeout(r, delay));
         }
@@ -41,6 +44,7 @@ export class WorkerApiClient {
     throw lastErr;
   }
 
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
   private async request<T>(method: string, path: string, body?: any): Promise<T> {
     const url = `${this.baseUrl}${path}`;
     const res = await fetch(url, {
@@ -55,6 +59,7 @@ export class WorkerApiClient {
     if (!res.ok) {
       const text = await res.text().catch(() => "");
       const err = new Error(`API ${method} ${path} => ${res.status}: ${text}`);
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
       (err as any).status = res.status;
       throw err;
     }
@@ -83,8 +88,8 @@ export class WorkerApiClient {
         lease_seconds: leaseSeconds,
       });
       return data.job;
-    } catch (err: any) {
-      if (err.status === 409) return null;
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 409) return null;
       throw err;
     }
   }
@@ -96,8 +101,8 @@ export class WorkerApiClient {
         extend_seconds: extendSeconds,
       });
       return true;
-    } catch (err: any) {
-      if (err.status === 409) return false; // Lease genuinely lost
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 409) return false; // Lease genuinely lost
       throw err; // Network/transient error — let caller decide
     }
   }
@@ -106,6 +111,7 @@ export class WorkerApiClient {
     taskId: string,
     nodeId: string,
     type: WorkerEventType,
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
     payload?: any,
   ): Promise<void> {
     await this.requestWithRetry("POST", `/api/worker/jobs/${taskId}/events`, {
@@ -129,8 +135,8 @@ export class WorkerApiClient {
         2000,
       );
       return res.job;
-    } catch (err: any) {
-      if (err.status === 409) return null;
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 409) return null;
       throw err;
     }
   }
@@ -149,8 +155,8 @@ export class WorkerApiClient {
         2000,
       );
       return res.job;
-    } catch (err: any) {
-      if (err.status === 409) return null;
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 409) return null;
       throw err;
     }
   }
@@ -163,8 +169,8 @@ export class WorkerApiClient {
         { node_id: nodeId, reason },
       );
       return res.job;
-    } catch (err: any) {
-      if (err.status === 409) return null;
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 409) return null;
       throw err;
     }
   }
@@ -181,8 +187,8 @@ export class WorkerApiClient {
         { node_id: nodeId, ...data },
       );
       return res.job;
-    } catch (err: any) {
-      if (err.status === 409) return null;
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 409) return null;
       throw err;
     }
   }
@@ -201,8 +207,8 @@ export class WorkerApiClient {
         2000,
       );
       return res.job;
-    } catch (err: any) {
-      if (err.status === 409) return null;
+    } catch (err: unknown) {
+      if ((err as { status?: number }).status === 409) return null;
       throw err;
     }
   }
@@ -247,15 +253,17 @@ export class WorkerApiClient {
     await this.request("POST", "/api/worker/status", { worker_id: workerId, loops });
   }
 
+  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   async fetchSlackThread(channelId: string, threadTs: string): Promise<any[]> {
     try {
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
       const data = await this.request<{ messages: any[] }>(
         "GET",
         `/api/worker/slack/thread?channel_id=${encodeURIComponent(channelId)}&thread_ts=${encodeURIComponent(threadTs)}`,
       );
       return data.messages;
-    } catch (err: any) {
-      log.warn("Failed to fetch Slack thread", { error: err.message });
+    } catch (err: unknown) {
+      log.warn("Failed to fetch Slack thread", { error: (err as Error).message });
       return [];
     }
   }

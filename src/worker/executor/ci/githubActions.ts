@@ -57,8 +57,8 @@ export class GitHubActionsProvider implements CIProvider {
       }
 
       return { status: "in_progress", url };
-    } catch (err: any) {
-      log.warn("Failed to poll CI checks", { error: err.message });
+    } catch (err: unknown) {
+      log.warn("Failed to poll CI checks", { error: (err as Error).message });
       return { status: "pending" };
     }
   }
@@ -78,9 +78,9 @@ export class GitHubActionsProvider implements CIProvider {
 
       const lines = failed.map((c) => `- ${c.name}: ${c.bucket} (${c.link})`);
       return `Failed CI checks:\n${lines.join("\n")}`;
-    } catch (err: any) {
-      log.warn("Failed to get CI failure summary", { error: err.message });
-      return `Failed to retrieve CI failure details: ${err.message}`;
+    } catch (err: unknown) {
+      log.warn("Failed to get CI failure summary", { error: (err as Error).message });
+      return `Failed to retrieve CI failure details: ${(err as Error).message}`;
     }
   }
 }

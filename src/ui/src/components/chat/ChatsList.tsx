@@ -27,7 +27,7 @@ export function ChatsList() {
       setTotal(res.total);
       setError("");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setLoading(false);
     }
@@ -50,7 +50,7 @@ export function ChatsList() {
       const res = await createConversation();
       navigate(`/chats/${res.conversation.conversation_id}`);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 
@@ -62,7 +62,7 @@ export function ChatsList() {
       setConversations((prev) => prev.filter((c) => c.conversation_id !== id));
       setTotal((prev) => prev - 1);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 

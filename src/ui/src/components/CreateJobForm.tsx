@@ -64,7 +64,7 @@ export function CreateJobForm() {
         navigate(`/jobs/${res.job.task_id}`);
       }
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setSubmitting(false);
     }
@@ -84,7 +84,9 @@ export function CreateJobForm() {
   return (
     <div>
       <Link to="/" style={{ textDecoration: "none" }}>
-        <button style={{ ...css.btn, marginBottom: 16 }}>← Back</button>
+        <button type="button" style={{ ...css.btn, marginBottom: 16 }}>
+          ← Back
+        </button>
       </Link>
       <div style={css.card}>
         <div
@@ -95,10 +97,18 @@ export function CreateJobForm() {
             marginBottom: 16,
           }}
         >
-          <button style={tabStyle(mode === "create")} onClick={() => setMode("create")}>
+          <button
+            type="button"
+            style={tabStyle(mode === "create")}
+            onClick={() => setMode("create")}
+          >
             Create Job
           </button>
-          <button style={tabStyle(mode === "respond")} onClick={() => setMode("respond")}>
+          <button
+            type="button"
+            style={tabStyle(mode === "respond")}
+            onClick={() => setMode("respond")}
+          >
             Respond to PR
           </button>
         </div>

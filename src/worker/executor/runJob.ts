@@ -41,9 +41,11 @@ function runLocalChecks(
         timeout: 120_000,
       });
       results.push(`Lint: PASS\n${out.slice(-500)}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       allOk = false;
-      results.push(`Lint: FAIL\n${(err.stdout || err.message).slice(-500)}`);
+      results.push(
+        `Lint: FAIL\n${((err as { stdout?: string }).stdout || (err as Error).message).slice(-500)}`,
+      );
     }
   }
 
@@ -57,9 +59,11 @@ function runLocalChecks(
         timeout: 300_000,
       });
       results.push(`Tests (${level}): PASS\n${out.slice(-500)}`);
-    } catch (err: any) {
+    } catch (err: unknown) {
       allOk = false;
-      results.push(`Tests (${level}): FAIL\n${(err.stdout || err.message).slice(-500)}`);
+      results.push(
+        `Tests (${level}): FAIL\n${((err as { stdout?: string }).stdout || (err as Error).message).slice(-500)}`,
+      );
     }
   }
 
@@ -240,6 +244,7 @@ export async function runJob(
         const messages = await api.fetchSlackThread(job.slack.channel_id, job.slack.thread_ts);
         if (messages.length > 0) {
           threadContext = messages
+            // biome-ignore lint/suspicious/noExplicitAny: dynamic type
             .map((m: any) => `[${m.user}]: ${m.text}`)
             .join("\n")
             .slice(0, 5000);
@@ -559,14 +564,17 @@ export async function runJob(
         metrics,
       });
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof CanceledError) {
       log.info("Job canceled during execution", { task_id: job.task_id });
       return;
     }
 
     if (err instanceof LeaseAbortedError) {
-      log.warn("Job aborted due to lease loss", { task_id: job.task_id, reason: err.message });
+      log.warn("Job aborted due to lease loss", {
+        task_id: job.task_id,
+        reason: (err as Error).message,
+      });
       return;
     }
 
@@ -574,15 +582,16 @@ export async function runJob(
       log.info("Requeuing job", { task_id: job.task_id, reason: err.reason });
       try {
         await api.requeue(job.task_id, workerId, err.reason);
+        // biome-ignore lint/suspicious/noExplicitAny: error handling
       } catch (reqErr: any) {
         log.error("Failed to requeue job", { task_id: job.task_id, error: reqErr.message });
       }
       return; // Don't release the slot — we never acquired one
     }
 
-    log.error("Job failed", { task_id: job.task_id, error: err.message });
+    log.error("Job failed", { task_id: job.task_id, error: (err as Error).message });
     try {
-      await events.emit("FAILED", { error: err.message });
+      await events.emit("FAILED", { error: (err as Error).message });
     } catch {
       /* best-effort */
     }
@@ -591,12 +600,13 @@ export async function runJob(
       const metrics = buildMetrics();
       await api.fail(job.task_id, workerId, {
         error: {
-          code: err.code || "EXECUTION_ERROR",
-          message: err.message,
-          details: err.stack?.slice(0, 2000),
+          code: (err as { code?: string }).code || "EXECUTION_ERROR",
+          message: (err as Error).message,
+          details: (err as Error).stack?.slice(0, 2000),
         },
         metrics,
       });
+      // biome-ignore lint/suspicious/noExplicitAny: error handling
     } catch (failErr: any) {
       log.error("Failed to report job failure to server", {
         task_id: job.task_id,

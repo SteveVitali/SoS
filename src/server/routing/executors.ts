@@ -54,6 +54,7 @@ async function resolveTaskId(partial: string): Promise<string | null> {
   const exact = await findJobByTaskId(partial);
   if (exact) return exact.task_id;
   const { jobs } = await queryJobs({ limit: 50 });
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   const match = jobs.find((j: any) => j.task_id.startsWith(partial));
   return match?.task_id || null;
 }
@@ -149,11 +150,11 @@ async function executeCreateJob(
       actionTaken: `created job ${job.task_id}`,
       taskId: job.task_id,
     };
-  } catch (err: any) {
-    log.error("Failed to create job", { error: err.message });
+  } catch (err: unknown) {
+    log.error("Failed to create job", { error: (err as Error).message });
     const reply = renderTemplate(
       execDef.reply_error || "⚠️ Failed to queue task: {{error}}",
-      tplCtx(action, ctx, { error: err.message }),
+      tplCtx(action, ctx, { error: (err as Error).message }),
     );
     return { reply: appendReply(action.reply, reply), actionTaken: "create_job failed" };
   }
@@ -274,11 +275,11 @@ async function executeJobAction(
       actionTaken: `${execDef.method}: ${resultTaskId}`,
       taskId: resultTaskId,
     };
-  } catch (err: any) {
-    log.error(`Failed to ${execDef.method} job`, { error: err.message });
+  } catch (err: unknown) {
+    log.error(`Failed to ${execDef.method} job`, { error: (err as Error).message });
     const reply = renderTemplate(
       execDef.reply_error || "⚠️ Failed: {{error}}",
-      tplCtx(action, ctx, { task_id: taskId, error: err.message }),
+      tplCtx(action, ctx, { task_id: taskId, error: (err as Error).message }),
     );
     return {
       reply: appendReply(action.reply, reply),
@@ -334,7 +335,7 @@ async function executeJobQuery(
 
 async function executeJobList(
   action: RoutedAction,
-  ctx: CommandContext,
+  _ctx: CommandContext,
   execDef: JobListExecution,
 ): Promise<CommandResult> {
   const limit = action.args.limit || execDef.default_limit || 5;
@@ -351,6 +352,7 @@ async function executeJobList(
   const template =
     execDef.item_template || "• `{{task_id:0:8}}…` *{{status}}* — {{task_text:0:60}}";
 
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   const lines = jobs.map((j: any) =>
     renderTemplate(template, {
       task_id: j.task_id,
@@ -437,11 +439,11 @@ async function executeCreateRespondJob(
       actionTaken: `respond_to_pr_comments: ${job.task_id}`,
       taskId: job.task_id,
     };
-  } catch (err: any) {
-    log.error("Failed to create respond-to-comments job", { error: err.message });
+  } catch (err: unknown) {
+    log.error("Failed to create respond-to-comments job", { error: (err as Error).message });
     const reply = renderTemplate(
       execDef.reply_error || "⚠️ Failed: {{error}}",
-      tplCtx(action, ctx, { error: err.message }),
+      tplCtx(action, ctx, { error: (err as Error).message }),
     );
     return {
       reply: appendReply(action.reply, reply),
@@ -482,14 +484,17 @@ async function executeGithubQuery(
         reply: action.reply ? appendReply(action.reply, formatted) : formatted,
         actionTaken: `github: ${queryType} (${result.prs?.length ?? 0} results)`,
       };
-    } catch (err: any) {
-      log.error("GitHub instant query failed", { queryType, error: err.message });
+    } catch (err: unknown) {
+      log.error("GitHub instant query failed", { queryType, error: (err as Error).message });
       const isRateLimit = err instanceof GithubRateLimitError;
       const template = isRateLimit
         ? execDef.reply_rate_limited ||
           "⏳ GitHub API rate limit reached — try again in a minute or two."
         : execDef.reply_error || "⚠️ GitHub query failed: {{error}}";
-      const reply = renderTemplate(template, tplCtx(action, ctx, { error: err.message }));
+      const reply = renderTemplate(
+        template,
+        tplCtx(action, ctx, { error: (err as Error).message }),
+      );
       return {
         reply: appendReply(action.reply, reply),
         actionTaken: `github: ${queryType} ${isRateLimit ? "rate_limited" : "failed"}`,
@@ -525,11 +530,11 @@ async function executeGithubQuery(
         actionTaken: `github: ${queryType} job ${job.task_id}`,
         taskId: job.task_id,
       };
-    } catch (err: any) {
-      log.error("GitHub summary job creation failed", { queryType, error: err.message });
+    } catch (err: unknown) {
+      log.error("GitHub summary job creation failed", { queryType, error: (err as Error).message });
       const reply = renderTemplate(
         execDef.reply_error || "⚠️ Failed to queue recap: {{error}}",
-        tplCtx(action, ctx, { error: err.message }),
+        tplCtx(action, ctx, { error: (err as Error).message }),
       );
       return {
         reply: appendReply(action.reply, reply),
@@ -561,10 +566,10 @@ async function executeShell(
   return new Promise((resolve) => {
     execFile("sh", ["-c", command], { timeout }, (err, stdout, stderr) => {
       if (err) {
-        log.error("Shell execution failed", { command, error: err.message });
+        log.error("Shell execution failed", { command, error: (err as Error).message });
         const reply = renderTemplate(
           execDef.reply_error || "⚠️ Command failed: {{error}}",
-          tplCtx(action, ctx, { error: err.message, stderr }),
+          tplCtx(action, ctx, { error: (err as Error).message, stderr }),
         );
         resolve({
           reply: appendReply(action.reply, reply),
@@ -633,11 +638,11 @@ async function executeWebhook(
       tplCtx(action, ctx, { response_status: res.status }),
     );
     return { reply: appendReply(action.reply, reply), actionTaken: "webhook: ok" };
-  } catch (err: any) {
-    log.error("Webhook execution failed", { error: err.message });
+  } catch (err: unknown) {
+    log.error("Webhook execution failed", { error: (err as Error).message });
     const reply = renderTemplate(
       execDef.reply_error || "⚠️ Webhook failed: {{error}}",
-      tplCtx(action, ctx, { error: err.message }),
+      tplCtx(action, ctx, { error: (err as Error).message }),
     );
     return { reply: appendReply(action.reply, reply), actionTaken: "webhook: failed" };
   }
@@ -670,6 +675,7 @@ async function executeAgentTask(
               thread_ts: ctx.slack.threadTs,
               message_ts: ctx.slack.messageTs,
               repo_hint: repoHint,
+              // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
               test_level: (execDef.test_level || action.args.test_level) as any,
               reviewers: execDef.reviewers || action.args.reviewers,
               attachments: ctx.attachments,
@@ -680,6 +686,7 @@ async function executeAgentTask(
             requested_by: ctx.ownerId,
             task_text: taskText,
             repo_hint: repoHint,
+            // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
             test_level: (execDef.test_level || action.args.test_level) as any,
             reviewers: execDef.reviewers || action.args.reviewers,
             custom_instructions: instructions,
@@ -694,11 +701,11 @@ async function executeAgentTask(
       actionTaken: `agent_task: ${job.task_id}`,
       taskId: job.task_id,
     };
-  } catch (err: any) {
-    log.error("Failed to create agent task", { error: err.message });
+  } catch (err: unknown) {
+    log.error("Failed to create agent task", { error: (err as Error).message });
     const reply = renderTemplate(
       execDef.reply_error || "⚠️ Failed: {{error}}",
-      tplCtx(action, ctx, { error: err.message }),
+      tplCtx(action, ctx, { error: (err as Error).message }),
     );
     return { reply: appendReply(action.reply, reply), actionTaken: "agent_task: failed" };
   }
@@ -736,11 +743,14 @@ async function executeLeaveChannel(
       reply: appendReply(action.reply, reply),
       actionTaken: `leave_channel: ${ctx.slack.channelId}`,
     };
-  } catch (err: any) {
-    log.error("Failed to leave channel", { error: err.message, channel: ctx.slack.channelId });
+  } catch (err: unknown) {
+    log.error("Failed to leave channel", {
+      error: (err as Error).message,
+      channel: ctx.slack.channelId,
+    });
     const reply = renderTemplate(
       execDef.reply_error || "Couldn't leave the channel: {{error}}",
-      tplCtx(action, ctx, { error: err.message }),
+      tplCtx(action, ctx, { error: (err as Error).message }),
     );
     return { reply: appendReply(action.reply, reply), actionTaken: "leave_channel: failed" };
   }
@@ -811,6 +821,7 @@ export async function executeAction(
     case "dispatch":
       return executeDispatch(action, ctx, execDef);
     default:
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
       log.warn("Unknown execution type", { type: (execDef as any).type });
       return { reply: action.reply, actionTaken: "unknown_execution_type" };
   }

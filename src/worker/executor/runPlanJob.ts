@@ -102,6 +102,7 @@ export async function runPlanJob(
         const messages = await api.fetchSlackThread(job.slack.channel_id, job.slack.thread_ts);
         if (messages.length > 0) {
           threadContext = messages
+            // biome-ignore lint/suspicious/noExplicitAny: dynamic type
             .map((m: any) => `[${m.user}]: ${m.text}`)
             .join("\n")
             .slice(0, 5000);
@@ -153,7 +154,7 @@ export async function runPlanJob(
     });
 
     log.info("Plan submitted, job awaiting confirmation", { task_id: job.task_id });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof LeaseAbortedError) {
       log.warn("Planning job aborted due to lease loss", { task_id: job.task_id });
       return;
@@ -163,6 +164,7 @@ export async function runPlanJob(
       log.info("Requeuing planning job", { task_id: job.task_id, reason: err.reason });
       try {
         await api.requeue(job.task_id, workerId, err.reason);
+        // biome-ignore lint/suspicious/noExplicitAny: error handling
       } catch (reqErr: any) {
         log.error("Failed to requeue planning job", {
           task_id: job.task_id,
@@ -172,9 +174,9 @@ export async function runPlanJob(
       return;
     }
 
-    log.error("Planning job failed", { task_id: job.task_id, error: err.message });
+    log.error("Planning job failed", { task_id: job.task_id, error: (err as Error).message });
     try {
-      await events.emit("FAILED", { error: err.message });
+      await events.emit("FAILED", { error: (err as Error).message });
     } catch {
       /* best-effort */
     }
@@ -182,11 +184,12 @@ export async function runPlanJob(
     try {
       await api.fail(job.task_id, workerId, {
         error: {
-          code: err.code || "PLANNING_ERROR",
-          message: err.message,
-          details: err.stack?.slice(0, 2000),
+          code: (err as { code?: string }).code || "PLANNING_ERROR",
+          message: (err as Error).message,
+          details: (err as Error).stack?.slice(0, 2000),
         },
       });
+      // biome-ignore lint/suspicious/noExplicitAny: error handling
     } catch (failErr: any) {
       log.error("Failed to report planning failure", {
         task_id: job.task_id,

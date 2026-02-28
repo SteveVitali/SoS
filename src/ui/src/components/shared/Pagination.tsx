@@ -22,10 +22,15 @@ export function Pagination({ offset, limit, total, onPrev, onNext }: PaginationP
         Showing {offset + 1}–{Math.min(offset + limit, total)} of {total}
       </span>
       <div style={{ display: "flex", gap: 8 }}>
-        <button style={css.btnSmall} disabled={offset === 0} onClick={onPrev}>
+        <button type="button" style={css.btnSmall} disabled={offset === 0} onClick={onPrev}>
           ← Prev
         </button>
-        <button style={css.btnSmall} disabled={offset + limit >= total} onClick={onNext}>
+        <button
+          type="button"
+          style={css.btnSmall}
+          disabled={offset + limit >= total}
+          onClick={onNext}
+        >
           Next →
         </button>
       </div>

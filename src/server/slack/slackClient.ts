@@ -35,6 +35,7 @@ export interface SlackPoster {
   postFailed(job: JobDoc): Promise<void>;
   postCanceled(job: JobDoc): Promise<void>;
   postPlan(job: JobDoc): Promise<void>;
+  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   postEvent(job: JobDoc, type: string, payload?: any): Promise<void>;
   fetchThread(channelId: string, threadTs: string, limit?: number): Promise<SlackThreadMessage[]>;
   downloadFile(urlPrivate: string): Promise<Buffer>;
@@ -55,8 +56,11 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
         thread_ts: threadTs,
         text,
       });
-    } catch (err: any) {
-      log.error("Failed to post Slack message", { error: err.message, channel: channelId });
+    } catch (err: unknown) {
+      log.error("Failed to post Slack message", {
+        error: (err as Error).message,
+        channel: channelId,
+      });
     }
   }
 
@@ -91,6 +95,7 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
       await postToThread(job.slack.channel_id, job.slack.thread_ts, fmtPlan(job));
     },
 
+    // biome-ignore lint/suspicious/noExplicitAny: Slack API type
     async postEvent(job: JobDoc, type: string, payload?: any) {
       if (!job.slack?.channel_id || !job.slack?.thread_ts) return;
       const text = fmtEvent(job, type, payload);
@@ -108,11 +113,13 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
           ts: threadTs,
           limit,
         });
+        // biome-ignore lint/suspicious/noExplicitAny: Slack API type
         return (result.messages || []).map((m: any) => ({
           user: m.user,
           text: m.text?.slice(0, 2000) || "",
           ts: m.ts,
           files: (m.files || [])
+            // biome-ignore lint/suspicious/noExplicitAny: Slack API type
             .map((f: any) => ({
               id: f.id,
               name: f.name || "unknown",
@@ -122,8 +129,8 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
             }))
             .filter((f: SlackFileInfo) => f.url_private),
         }));
-      } catch (err: any) {
-        log.error("Failed to fetch Slack thread", { error: err.message });
+      } catch (err: unknown) {
+        log.error("Failed to fetch Slack thread", { error: (err as Error).message });
         return [];
       }
     },
@@ -143,8 +150,8 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
       try {
         await client.users.setPresence({ presence: "auto" });
         log.info("Slack presence set to active");
-      } catch (err: any) {
-        log.error("Failed to set Slack presence to active", { error: err.message });
+      } catch (err: unknown) {
+        log.error("Failed to set Slack presence to active", { error: (err as Error).message });
       }
     },
 
@@ -152,8 +159,8 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
       try {
         await client.users.setPresence({ presence: "away" });
         log.info("Slack presence set to away");
-      } catch (err: any) {
-        log.error("Failed to set Slack presence to away", { error: err.message });
+      } catch (err: unknown) {
+        log.error("Failed to set Slack presence to away", { error: (err as Error).message });
       }
     },
   };

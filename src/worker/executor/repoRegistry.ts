@@ -98,6 +98,7 @@ function interpolateRecord(rec: Record<string, string>): Record<string, string> 
 function parseMcpServers(raw: unknown): Record<string, McpServerConfig> | undefined {
   if (!raw || typeof raw !== "object") return undefined;
   const servers: Record<string, McpServerConfig> = {};
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic type
   for (const [name, cfg] of Object.entries(raw as Record<string, any>)) {
     const transport: McpTransport =
       cfg.transport === "http" ? "http" : cfg.transport === "sse" ? "sse" : "stdio";
@@ -133,6 +134,7 @@ export function loadRegistry(path: string): RepoRegistry {
 
     if (data?.repos) {
       for (const [id, entry] of Object.entries(data.repos)) {
+        // biome-ignore lint/suspicious/noExplicitAny: dynamic type
         const e = entry as any;
         const repoMcp = parseMcpServers(e.mcp_servers);
         repos.set(id, {
@@ -158,8 +160,8 @@ export function loadRegistry(path: string): RepoRegistry {
     const mcpCount = [...repos.values()].filter((r) => r.mcp_servers).length;
     log.info("Repo registry loaded", { count: repos.size, mcpCount, path });
     return { repos };
-  } catch (err: any) {
-    log.error("Failed to load repo registry", { path, error: err.message });
+  } catch (err: unknown) {
+    log.error("Failed to load repo registry", { path, error: (err as Error).message });
     return { repos: new Map() };
   }
 }

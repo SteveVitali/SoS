@@ -27,6 +27,7 @@ const ctx = {
 beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await connectMongo(mongod.getUri(), "test-cmd-executor");
+  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   setSlackPoster(null as any);
 
   // Initialize routing config with defaults so YAML-driven executor works
@@ -94,11 +95,12 @@ describe("executeCommand", () => {
 
       // Extract task_id from the reply
       const match = createResult.actionTaken.match(/created job (.+)/);
-      const taskId = match![1];
+      const taskId = match?.[1];
+      expect(taskId).toBeDefined();
 
       const statusAction: RoutedAction = {
         command: "job_status",
-        args: { task_id: taskId.slice(0, 8) }, // partial match
+        args: { task_id: taskId?.slice(0, 8) }, // partial match
         reply: "Here's what I found:",
       };
 
@@ -131,7 +133,7 @@ describe("executeCommand", () => {
         ...ctx,
         eventId: "evt_cancel_1",
       });
-      const taskId = createResult.actionTaken.match(/created job (.+)/)![1];
+      const taskId = createResult.actionTaken.match(/created job (.+)/)?.[1];
 
       const cancelAction: RoutedAction = {
         command: "cancel_job",
@@ -180,6 +182,7 @@ describe("executeCommand", () => {
   describe("chat (default)", () => {
     it("returns the LLM reply as-is", async () => {
       const result = await executeCommand(
+        // biome-ignore lint/suspicious/noExplicitAny: Slack API type
         { command: "chat" as any, args: {}, reply: "Hey there!" },
         ctx,
       );

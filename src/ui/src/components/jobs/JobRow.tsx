@@ -63,12 +63,20 @@ export function JobRow({ job, prStats, onAction }: JobRowProps) {
             onClick={(e) => e.stopPropagation()}
           >
             {["QUEUED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(job.status) && (
-              <button style={css.btnSmall} onClick={() => onAction("cancel", job.task_id)}>
+              <button
+                type="button"
+                style={css.btnSmall}
+                onClick={() => onAction("cancel", job.task_id)}
+              >
                 Cancel
               </button>
             )}
             {["FAILED", "CANCELED"].includes(job.status) && (
-              <button style={css.btnSmall} onClick={() => onAction("retry", job.task_id)}>
+              <button
+                type="button"
+                style={css.btnSmall}
+                onClick={() => onAction("retry", job.task_id)}
+              >
                 Retry
               </button>
             )}

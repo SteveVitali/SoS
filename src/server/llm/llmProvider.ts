@@ -10,6 +10,7 @@ export interface ToolDefinition {
 
 export interface ToolCall {
   name: string;
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic type
   input: Record<string, any>;
 }
 

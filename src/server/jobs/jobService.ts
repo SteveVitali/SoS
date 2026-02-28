@@ -106,9 +106,9 @@ export async function createJobFromSlack(
     generateTitle(taskId, input.task_text).catch(() => {});
 
     return { job, created: true };
-  } catch (err: any) {
+  } catch (err: unknown) {
     // Handle duplicate key error (race condition on event_id)
-    if (err.code === 11000) {
+    if ((err as { code?: number }).code === 11000) {
       const existing = await checkIdempotent(input.event_id);
       if (existing) return { job: existing, created: false };
     }
@@ -270,6 +270,7 @@ export async function handleWorkerEvent(
   taskId: string,
   nodeId: string,
   type: string,
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic payload type
   payload?: any,
 ) {
   const now = nowDate();

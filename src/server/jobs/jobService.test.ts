@@ -1,6 +1,5 @@
 import { MongoMemoryServer } from "mongodb-memory-server";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
-import type { JobDoc } from "../../shared/types.js";
+import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it } from "vitest";
 import { closeMongo, connectMongo, getJobsCollection } from "../mongo.js";
 import {
   cancel,
@@ -23,6 +22,7 @@ beforeAll(async () => {
   mongod = await MongoMemoryServer.create();
   await connectMongo(mongod.getUri(), "test-jobservice");
   // Ensure no Slack poster is set for most tests
+  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   setSlackPoster(null as any);
 });
 
@@ -86,7 +86,7 @@ describe("createJobFromSlack", () => {
       ],
     });
     expect(job.attachments).toHaveLength(1);
-    expect(job.attachments![0].filename).toBe("test.png");
+    expect(job.attachments?.[0].filename).toBe("test.png");
   });
 });
 
@@ -128,7 +128,7 @@ describe("handleWorkerEvent", () => {
     });
 
     const job = await findJobByTaskId(jobId);
-    expect(job!.pr_urls).toEqual(["https://github.com/pull/1", "https://github.com/pull/2"]);
+    expect(job?.pr_urls).toEqual(["https://github.com/pull/1", "https://github.com/pull/2"]);
   });
 
   it("sets status to FIXING_CI on CI_FIX_STARTED", async () => {
@@ -139,7 +139,7 @@ describe("handleWorkerEvent", () => {
     await handleWorkerEvent(jobId, "w1", "CI_FIX_STARTED", {});
 
     const job = await findJobByTaskId(jobId);
-    expect(job!.status).toBe("FIXING_CI");
+    expect(job?.status).toBe("FIXING_CI");
   });
 
   it("sets branch_name and worktree_slot on WORKTREE_READY", async () => {
@@ -149,8 +149,8 @@ describe("handleWorkerEvent", () => {
     });
 
     const job = await findJobByTaskId(jobId);
-    expect(job!.branch_name).toBe("sos/fix-bug-abc123");
-    expect(job!.worktree_slot).toBe("my-repo-n-1");
+    expect(job?.branch_name).toBe("sos/fix-bug-abc123");
+    expect(job?.worktree_slot).toBe("my-repo-n-1");
   });
 
   it("appends to repos_resolved without duplicates on REPO_RESOLVED", async () => {
@@ -158,7 +158,7 @@ describe("handleWorkerEvent", () => {
     await handleWorkerEvent(jobId, "w1", "REPO_RESOLVED", { repoId: "frontend" });
 
     const job = await findJobByTaskId(jobId);
-    expect(job!.repos_resolved).toEqual(["frontend"]);
+    expect(job?.repos_resolved).toEqual(["frontend"]);
   });
 });
 
@@ -180,12 +180,12 @@ describe("retry", () => {
 
     const retried = await retry(original.task_id);
     expect(retried).not.toBeNull();
-    expect(retried!.task_id).not.toBe(original.task_id);
-    expect(retried!.parent_task_id).toBe(original.task_id);
-    expect(retried!.status).toBe("QUEUED");
-    expect(retried!.task_text).toBe("fix it");
-    expect(retried!.repo_hint).toBe("my-repo");
-    expect(retried!.test_level).toBe("fast");
+    expect(retried?.task_id).not.toBe(original.task_id);
+    expect(retried?.parent_task_id).toBe(original.task_id);
+    expect(retried?.status).toBe("QUEUED");
+    expect(retried?.task_text).toBe("fix it");
+    expect(retried?.repo_hint).toBe("my-repo");
+    expect(retried?.test_level).toBe("fast");
   });
 
   it("strips event_id from source to avoid idempotency collision", async () => {
@@ -202,7 +202,7 @@ describe("retry", () => {
 
     const retried = await retry(original.task_id);
     // Should not have event_id (would cause unique index collision on retry)
-    expect(retried!.source.event_id).toBeUndefined();
+    expect(retried?.source.event_id).toBeUndefined();
   });
 
   it("returns null for non-existent job", async () => {
@@ -236,7 +236,7 @@ describe("retry", () => {
 
     const retried = await retry(job.task_id);
     expect(retried).not.toBeNull();
-    expect(retried!.status).toBe("QUEUED");
+    expect(retried?.status).toBe("QUEUED");
   });
 });
 
@@ -245,7 +245,7 @@ describe("cancel", () => {
     const job = await createJobFromWeb({ requested_by: "u1", task_text: "test" });
     const result = await cancel(job.task_id);
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("CANCELED");
+    expect(result?.status).toBe("CANCELED");
   });
 
   it("returns null for already-terminal job", async () => {
@@ -271,11 +271,12 @@ describe("complete / fail", () => {
       pr_urls: ["https://pr"],
     });
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("DONE");
+    expect(result?.status).toBe("DONE");
 
     // Verify DONE event was appended
     const updated = await findJobByTaskId(job.task_id);
-    const doneEvent = updated!.events!.find((e: any) => e.type === "DONE");
+    // biome-ignore lint/suspicious/noExplicitAny: test mock type
+    const doneEvent = updated?.events?.find((e: any) => e.type === "DONE");
     expect(doneEvent).toBeDefined();
   });
 
@@ -291,7 +292,7 @@ describe("complete / fail", () => {
       error: { message: "oops" },
     });
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("FAILED");
+    expect(result?.status).toBe("FAILED");
   });
 });
 
@@ -306,13 +307,14 @@ describe("requeue", () => {
 
     const result = await requeue(job.task_id, "w1", "no worktree available");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("QUEUED");
+    expect(result?.status).toBe("QUEUED");
 
     // Verify REQUEUED event was appended
     const updated = await findJobByTaskId(job.task_id);
-    const rqEvent = updated!.events!.find((e: any) => e.type === "REQUEUED");
+    // biome-ignore lint/suspicious/noExplicitAny: test mock type
+    const rqEvent = updated?.events?.find((e: any) => e.type === "REQUEUED");
     expect(rqEvent).toBeDefined();
-    expect(rqEvent!.payload.reason).toBe("no worktree available");
+    expect(rqEvent?.payload.reason).toBe("no worktree available");
   });
 });
 
@@ -366,14 +368,15 @@ describe("submitPlan", () => {
 
     const result = await submitPlan(job.task_id, "w1", "1. Modify foo.ts\n2. Add bar.ts");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("PENDING_CONFIRMATION");
-    expect(result!.plan?.summary).toBe("1. Modify foo.ts\n2. Add bar.ts");
-    expect(result!.plan?.generated_at).toBeDefined();
-    expect(result!.claimed_by).toBeUndefined();
+    expect(result?.status).toBe("PENDING_CONFIRMATION");
+    expect(result?.plan?.summary).toBe("1. Modify foo.ts\n2. Add bar.ts");
+    expect(result?.plan?.generated_at).toBeDefined();
+    expect(result?.claimed_by).toBeUndefined();
 
     // Verify PLAN_GENERATED event was appended
     const updated = await findJobByTaskId(job.task_id);
-    const planEvent = updated!.events!.find((e: any) => e.type === "PLAN_GENERATED");
+    // biome-ignore lint/suspicious/noExplicitAny: test mock type
+    const planEvent = updated?.events?.find((e: any) => e.type === "PLAN_GENERATED");
     expect(planEvent).toBeDefined();
   });
 
@@ -409,14 +412,15 @@ describe("confirmJob", () => {
 
     const result = await confirmJob(job.task_id);
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("QUEUED");
+    expect(result?.status).toBe("QUEUED");
 
     // Plan should still be present
-    expect(result!.plan?.summary).toBe("the plan");
+    expect(result?.plan?.summary).toBe("the plan");
 
     // Verify PLAN_CONFIRMED event
     const updated = await findJobByTaskId(job.task_id);
-    const confirmEvent = updated!.events!.find((e: any) => e.type === "PLAN_CONFIRMED");
+    // biome-ignore lint/suspicious/noExplicitAny: test mock type
+    const confirmEvent = updated?.events?.find((e: any) => e.type === "PLAN_CONFIRMED");
     expect(confirmEvent).toBeDefined();
   });
 
@@ -440,8 +444,8 @@ describe("confirmJob", () => {
 
     const result = await confirmJob(job.task_id, "revised task with extra details");
     expect(result).not.toBeNull();
-    expect(result!.task_text).toBe("revised task with extra details");
-    expect(result!.status).toBe("QUEUED");
+    expect(result?.task_text).toBe("revised task with extra details");
+    expect(result?.status).toBe("QUEUED");
   });
 
   it("returns null if job is not PENDING_CONFIRMATION", async () => {
@@ -464,6 +468,6 @@ describe("cancel PENDING_CONFIRMATION", () => {
 
     const result = await cancel(job.task_id);
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("CANCELED");
+    expect(result?.status).toBe("CANCELED");
   });
 });

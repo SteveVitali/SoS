@@ -190,7 +190,7 @@ export function ChatDetail() {
           lastPollRef.current = res.conversation.created_at;
         }
       })
-      .catch((err) => setError(err instanceof Error ? err.message : String(err)))
+      .catch((err) => setError(err instanceof Error ? (err as Error).message : String(err)))
       .finally(() => setLoading(false));
   }, [id]);
 
@@ -284,7 +284,7 @@ export function ChatDetail() {
           ? { ...prev, messages: prev.messages.filter((m) => m.id !== optimisticUserMsg.id) }
           : prev,
       );
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setSending(false);
       inputRef.current?.focus();
@@ -305,7 +305,7 @@ export function ChatDetail() {
       await deleteConversation(id);
       navigate("/chats");
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 

@@ -36,6 +36,7 @@ describe("WorktreePool", () => {
   beforeEach(() => {
     // Re-init pool for each test with a clean workspace root
     // Access the private slots map to reset state between tests
+    // biome-ignore lint/suspicious/noExplicitAny: test mock type
     (worktreePool as any).slots = new Map();
     worktreePool.init("/tmp/test-workspace");
 
@@ -55,10 +56,10 @@ describe("WorktreePool", () => {
       const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/fix-bug");
 
       expect(slot).not.toBeNull();
-      expect(slot!.slotName).toBe("my-repo-n-1");
-      expect(slot!.slotIndex).toBe(1);
-      expect(slot!.repoId).toBe("my-repo");
-      expect(slot!.worktreePath).toContain("worktrees/my-repo-n-1");
+      expect(slot?.slotName as string).toBe("my-repo-n-1");
+      expect(slot?.slotIndex).toBe(1);
+      expect(slot?.repoId).toBe("my-repo");
+      expect(slot?.worktreePath).toContain("worktrees/my-repo-n-1");
     });
 
     it("creates a second slot when first is in use", () => {
@@ -67,8 +68,8 @@ describe("WorktreePool", () => {
       const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
 
       expect(slot2).not.toBeNull();
-      expect(slot2!.slotName).toBe("my-repo-n-2");
-      expect(slot2!.slotIndex).toBe(2);
+      expect(slot2?.slotName as string).toBe("my-repo-n-2");
+      expect(slot2?.slotIndex).toBe(2);
     });
 
     it("returns null when all slots are occupied and at max", () => {
@@ -84,11 +85,11 @@ describe("WorktreePool", () => {
       const slot1 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
       expect(slot1).not.toBeNull();
 
-      worktreePool.release("my-repo", slot1!.slotName);
+      worktreePool.release("my-repo", slot1?.slotName as string);
 
       const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
       expect(slot2).not.toBeNull();
-      expect(slot2!.slotName).toBe(slot1!.slotName); // same slot reused
+      expect(slot2?.slotName as string).toBe(slot1?.slotName as string); // same slot reused
     });
   });
 
@@ -96,10 +97,10 @@ describe("WorktreePool", () => {
     it("marks a slot as available", () => {
       const repo = makeRepo({ max_worktrees: 1 });
       const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
-      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(true);
+      expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(true);
 
-      worktreePool.release("my-repo", slot!.slotName);
-      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(false);
+      worktreePool.release("my-repo", slot?.slotName as string);
+      expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(false);
     });
 
     it("is a no-op for unknown repo", () => {
@@ -113,7 +114,7 @@ describe("WorktreePool", () => {
       expect(slot).not.toBeNull();
 
       vi.mocked(execSync).mockClear();
-      worktreePool.release("my-repo", slot!.slotName);
+      worktreePool.release("my-repo", slot?.slotName as string);
 
       const calls = vi.mocked(execSync).mock.calls.map((c) => c[0]);
       // Should fetch origin main
@@ -137,8 +138,8 @@ describe("WorktreePool", () => {
       });
 
       // Should not throw — park is best-effort
-      expect(() => worktreePool.release("my-repo", slot!.slotName)).not.toThrow();
-      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(false);
+      expect(() => worktreePool.release("my-repo", slot?.slotName as string)).not.toThrow();
+      expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(false);
     });
   });
 
@@ -151,14 +152,15 @@ describe("WorktreePool", () => {
       const repo = makeRepo();
       const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
 
-      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(true);
-      worktreePool.release("my-repo", slot!.slotName);
-      expect(worktreePool.isInUse("my-repo", slot!.slotName)).toBe(false);
+      expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(true);
+      worktreePool.release("my-repo", slot?.slotName as string);
+      expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(false);
     });
   });
 
   describe("discovery of existing worktrees", () => {
     it("picks up existing worktree directories on first access", () => {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any, "my-repo-n-2" as any]);
 
       const repo = makeRepo({ max_worktrees: 3 });
@@ -166,10 +168,11 @@ describe("WorktreePool", () => {
       const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
 
       expect(slot).not.toBeNull();
-      expect(slot!.slotName).toBe("my-repo-n-1"); // reuses first discovered
+      expect(slot?.slotName as string).toBe("my-repo-n-1"); // reuses first discovered
     });
 
     it("respects max_worktrees even with discovered slots", () => {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any, "my-repo-n-2" as any]);
 
       const repo = makeRepo({ max_worktrees: 2 });
@@ -193,14 +196,15 @@ describe("WorktreePool", () => {
 
       expect(slot1).not.toBeNull();
       expect(slot2).not.toBeNull();
-      expect(slot1!.repoId).toBe("repo-a");
-      expect(slot2!.repoId).toBe("repo-b");
+      expect(slot1?.repoId).toBe("repo-a");
+      expect(slot2?.repoId).toBe("repo-b");
     });
   });
 
   describe("file-based locking", () => {
     it("denies acquire when lockfile held by a live process", () => {
       // Discover one existing slot on disk
+      // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
 
       // Simulate a lockfile from another live process (use our own PID + 1 won't work
@@ -218,6 +222,7 @@ describe("WorktreePool", () => {
     });
 
     it("reclaims slot when lockfile held by a dead process", () => {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
 
       // Use a PID that is almost certainly dead (very high number)
@@ -234,10 +239,11 @@ describe("WorktreePool", () => {
 
       // Dead PID → stale lock removed → slot available
       expect(slot).not.toBeNull();
-      expect(slot!.slotName).toBe("my-repo-n-1");
+      expect(slot?.slotName as string).toBe("my-repo-n-1");
     });
 
     it("allows acquire when lockfile is from our own process", () => {
+      // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
 
       // Lockfile from our own PID — should trust in-memory state (which is free)
@@ -253,7 +259,7 @@ describe("WorktreePool", () => {
       const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
 
       expect(slot).not.toBeNull();
-      expect(slot!.slotName).toBe("my-repo-n-1");
+      expect(slot?.slotName as string).toBe("my-repo-n-1");
     });
   });
 });

@@ -89,6 +89,7 @@ export function fetchUnresolvedThreads(prUrl: string): ReviewThread[] {
   const unresolved: ReviewThread[] = [];
   for (const t of threads) {
     if (t.isResolved) continue;
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic type
     const comments: ReviewComment[] = (t.comments?.nodes || []).map((c: any) => ({
       id: c.id,
       body: c.body,
@@ -114,7 +115,8 @@ export function fetchUnresolvedThreads(prUrl: string): ReviewThread[] {
 
 /** Reply to a review thread on GitHub. Uses the last comment's ID to post a reply. */
 export function replyToThread(prUrl: string, thread: ReviewThread, body: string): void {
-  const { owner, repo, number } = parsePrUrl(prUrl);
+  // biome-ignore lint/correctness/noUnusedVariables: lint suppression
+  const { owner: _owner, repo: _repo, number: _number } = parsePrUrl(prUrl);
   const lastComment = thread.comments[thread.comments.length - 1];
   if (!lastComment) return;
 
@@ -142,10 +144,10 @@ export function replyToThread(prUrl: string, thread: ReviewThread, body: string)
       path: thread.path,
       line: thread.line,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.warn("Failed to reply to review thread", {
       threadId: thread.id,
-      error: err.message,
+      error: (err as Error).message,
     });
   }
 }

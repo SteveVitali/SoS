@@ -19,8 +19,8 @@ export function getAuthenticatedUser(): string {
     cachedUsername = raw;
     log.info("Resolved GitHub username", { username: raw });
     return raw;
-  } catch (err: any) {
-    log.warn("Failed to resolve GitHub username via gh api", { error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to resolve GitHub username via gh api", { error: (err as Error).message });
     throw new Error(
       "Could not determine GitHub username. Set SOS_GITHUB_USERNAME or run `gh auth login`.",
     );
@@ -40,8 +40,8 @@ export function getTeamMembers(org: string, teamSlug: string): string[] {
 
       log.info("Fetched team members", { org, teamSlug, count: members.length });
       return members;
-    } catch (err: any) {
-      log.error("Failed to fetch team members", { org, teamSlug, error: err.message });
+    } catch (err: unknown) {
+      log.error("Failed to fetch team members", { org, teamSlug, error: (err as Error).message });
       throw new Error(
         `Could not fetch team members for ${org}/${teamSlug}. ` +
           "Ensure you have org access and SOS_GITHUB_ORG / SOS_GITHUB_TEAM_SLUG are correct.",

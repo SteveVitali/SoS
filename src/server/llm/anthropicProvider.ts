@@ -68,6 +68,7 @@ export class AnthropicProvider implements LLMProvider {
       } else if (block.type === "tool_use") {
         toolCalls.push({
           name: block.name,
+          // biome-ignore lint/suspicious/noExplicitAny: dynamic type
           input: (block.input as Record<string, any>) || {},
         });
       }

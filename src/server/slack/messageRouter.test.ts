@@ -42,6 +42,7 @@ vi.mock("../routing/index.js", () => ({
   buildActionsPromptSection: vi.fn().mockReturnValue("## Available Actions"),
 }));
 
+// biome-ignore lint/suspicious/noExplicitAny: Slack API type
 function makeMockProvider(toolCalls: any[] = [], text = ""): LLMProvider {
   return {
     chat: vi.fn().mockResolvedValue({ text, toolCalls }),

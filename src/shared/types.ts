@@ -148,6 +148,7 @@ export interface JobAttachment {
 
 // --- Job Document ---
 export interface JobDoc {
+  // biome-ignore lint/suspicious/noExplicitAny: shared type definition
   _id?: any;
   task_id: string;
   job_type?: JobType;
@@ -275,6 +276,7 @@ export interface HeartbeatRequest {
 export interface WorkerEventRequest {
   node_id: string;
   type: WorkerEventType;
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic payload type
   payload?: any;
 }
 

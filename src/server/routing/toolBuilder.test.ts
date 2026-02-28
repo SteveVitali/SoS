@@ -64,6 +64,7 @@ describe("buildToolsFromConfig", () => {
 
   it("converts parameters to JSON schema", () => {
     const tools = buildToolsFromConfig(makeConfig());
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const createJob = tools.find((t) => t.name === "create_job")!;
     expect(createJob.parameters.type).toBe("object");
     expect(createJob.parameters.properties).toHaveProperty("task_text");
@@ -73,14 +74,18 @@ describe("buildToolsFromConfig", () => {
 
   it("includes enum in parameter schema", () => {
     const tools = buildToolsFromConfig(makeConfig());
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const createJob = tools.find((t) => t.name === "create_job")!;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock type
     const testLevel = createJob.parameters.properties.test_level as any;
     expect(testLevel.enum).toEqual(["fast", "full", "none"]);
   });
 
   it("includes items for array parameters", () => {
     const tools = buildToolsFromConfig(makeConfig());
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const createJob = tools.find((t) => t.name === "create_job")!;
+    // biome-ignore lint/suspicious/noExplicitAny: test mock type
     const reviewers = createJob.parameters.properties.reviewers as any;
     expect(reviewers.type).toBe("array");
     expect(reviewers.items).toEqual({ type: "string" });
@@ -88,6 +93,7 @@ describe("buildToolsFromConfig", () => {
 
   it("appends routing_hint to description", () => {
     const tools = buildToolsFromConfig(makeConfig());
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const createJob = tools.find((t) => t.name === "create_job")!;
     expect(createJob.description).toContain("Create a new coding task");
     expect(createJob.description).toContain("The user wants code written.");
@@ -95,6 +101,7 @@ describe("buildToolsFromConfig", () => {
 
   it("includes custom actions", () => {
     const tools = buildToolsFromConfig(makeConfig());
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const deploy = tools.find((t) => t.name === "deploy")!;
     expect(deploy).toBeDefined();
     expect(deploy.parameters.required).toEqual(["service"]);

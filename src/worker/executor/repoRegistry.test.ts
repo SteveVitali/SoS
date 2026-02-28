@@ -33,6 +33,7 @@ repos:
     const registry = loadRegistry(file);
     expect(registry.repos.size).toBe(2);
 
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const fe = registry.repos.get("frontend")!;
     expect(fe.id).toBe("frontend");
     expect(fe.clone).toBe("git@github.com:org/frontend.git");
@@ -50,6 +51,7 @@ repos:
     clone: git@github.com:org/myrepo.git
 `);
     const registry = loadRegistry(file);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = registry.repos.get("myrepo")!;
     expect(repo.default_branch).toBe("main");
     expect(repo.max_worktrees).toBe(1);
@@ -63,6 +65,7 @@ repos:
     clone: git@github.com:org/myrepo.git
     clean_mode: invalid_value
 `);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = loadRegistry(file).repos.get("myrepo")!;
     expect(repo.clean_mode).toBe("light");
   });
@@ -96,6 +99,7 @@ repos:
   my-custom-id:
     clone: git@github.com:org/repo.git
 `);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = loadRegistry(file).repos.get("my-custom-id")!;
     expect(repo.id).toBe("my-custom-id");
   });
@@ -112,12 +116,13 @@ repos:
         args: ["-y", "@anthropic/linear-mcp-server"]
         allowed_tools: [search_issues, get_issue]
 `);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = loadRegistry(file).repos.get("myrepo")!;
     expect(repo.mcp_servers).toBeDefined();
-    expect(repo.mcp_servers!.linear.transport).toBe("stdio");
-    expect(repo.mcp_servers!.linear.command).toBe("npx");
-    expect(repo.mcp_servers!.linear.args).toEqual(["-y", "@anthropic/linear-mcp-server"]);
-    expect(repo.mcp_servers!.linear.allowed_tools).toEqual(["search_issues", "get_issue"]);
+    expect(repo.mcp_servers?.linear.transport).toBe("stdio");
+    expect(repo.mcp_servers?.linear.command).toBe("npx");
+    expect(repo.mcp_servers?.linear.args).toEqual(["-y", "@anthropic/linear-mcp-server"]);
+    expect(repo.mcp_servers?.linear.allowed_tools).toEqual(["search_issues", "get_issue"]);
   });
 
   it("parses http and sse MCP transports", () => {
@@ -133,13 +138,15 @@ repos:
         transport: sse
         url: "https://old.example.com/sse"
 `);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = loadRegistry(file).repos.get("myrepo")!;
-    expect(repo.mcp_servers!.sentry.transport).toBe("http");
-    expect(repo.mcp_servers!.sentry.url).toBe("https://mcp.sentry.dev/mcp");
-    expect(repo.mcp_servers!.legacy.transport).toBe("sse");
-    expect(repo.mcp_servers!.legacy.url).toBe("https://old.example.com/sse");
+    expect(repo.mcp_servers?.sentry.transport).toBe("http");
+    expect(repo.mcp_servers?.sentry.url).toBe("https://mcp.sentry.dev/mcp");
+    expect(repo.mcp_servers?.legacy.transport).toBe("sse");
+    expect(repo.mcp_servers?.legacy.url).toBe("https://old.example.com/sse");
   });
 
+  // biome-ignore lint/suspicious/noTemplateCurlyInString: intentional template syntax for YAML interpolation
   it("interpolates ${VAR} in env and headers from process.env", () => {
     const orig = process.env.TEST_MCP_SECRET;
     process.env.TEST_MCP_SECRET = "s3cret";
@@ -156,8 +163,9 @@ repos:
         env:
           API_KEY: "\${TEST_MCP_SECRET}"
 `);
+      // biome-ignore lint/style/noNonNullAssertion: value verified above
       const repo = loadRegistry(file).repos.get("myrepo")!;
-      expect(repo.mcp_servers!.svc.env!.API_KEY).toBe("s3cret");
+      expect(repo.mcp_servers?.svc.env?.API_KEY).toBe("s3cret");
     } finally {
       if (orig === undefined) delete process.env.TEST_MCP_SECRET;
       else process.env.TEST_MCP_SECRET = orig;
@@ -179,11 +187,12 @@ repos:
         url: "https://example.com/mcp"
 `);
     const registry = loadRegistry(file);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = registry.repos.get("myrepo")!;
-    expect(repo.mcp_servers!["global-svc"]).toBeDefined();
-    expect(repo.mcp_servers!["global-svc"].command).toBe("global-cmd");
-    expect(repo.mcp_servers!["repo-svc"]).toBeDefined();
-    expect(repo.mcp_servers!["repo-svc"].url).toBe("https://example.com/mcp");
+    expect(repo.mcp_servers?.["global-svc"]).toBeDefined();
+    expect(repo.mcp_servers?.["global-svc"].command).toBe("global-cmd");
+    expect(repo.mcp_servers?.["repo-svc"]).toBeDefined();
+    expect(repo.mcp_servers?.["repo-svc"].url).toBe("https://example.com/mcp");
   });
 
   it("repo-level MCP server overrides global by name", () => {
@@ -200,10 +209,11 @@ repos:
         transport: http
         url: "https://override.com/mcp"
 `);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = loadRegistry(file).repos.get("myrepo")!;
-    expect(repo.mcp_servers!.shared.transport).toBe("http");
-    expect(repo.mcp_servers!.shared.url).toBe("https://override.com/mcp");
-    expect(repo.mcp_servers!.shared.command).toBeUndefined();
+    expect(repo.mcp_servers?.shared.transport).toBe("http");
+    expect(repo.mcp_servers?.shared.url).toBe("https://override.com/mcp");
+    expect(repo.mcp_servers?.shared.command).toBeUndefined();
   });
 
   it("repos without mcp_servers still inherit global MCP servers", () => {
@@ -216,8 +226,9 @@ repos:
   myrepo:
     clone: git@github.com:org/myrepo.git
 `);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = loadRegistry(file).repos.get("myrepo")!;
-    expect(repo.mcp_servers!["global-svc"]).toBeDefined();
+    expect(repo.mcp_servers?.["global-svc"]).toBeDefined();
   });
 
   it("returns no mcp_servers when none configured", () => {
@@ -226,6 +237,7 @@ repos:
   myrepo:
     clone: git@github.com:org/myrepo.git
 `);
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const repo = loadRegistry(file).repos.get("myrepo")!;
     expect(repo.mcp_servers).toBeUndefined();
   });
@@ -249,6 +261,7 @@ describe("mergeMcpServers", () => {
   it("repo overrides global by name", () => {
     const global = { svc: { transport: "stdio" as const, command: "old" } };
     const repo = { svc: { transport: "http" as const, url: "https://new.com" } };
+    // biome-ignore lint/style/noNonNullAssertion: value verified above
     const merged = mergeMcpServers(global, repo)!;
     expect(merged.svc.transport).toBe("http");
     expect(merged.svc.url).toBe("https://new.com");

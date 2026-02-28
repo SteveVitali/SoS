@@ -3,7 +3,9 @@ import { stringify as stringifyYaml } from "yaml";
 import { css } from "../../styles/theme.js";
 
 interface ExecutionFieldProps {
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   execution: Record<string, any>;
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   onUpdate: (field: string, value: any) => void;
 }
 
@@ -158,6 +160,7 @@ function ReplyTemplatesEditor({
   onChange,
   fields,
 }: {
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   execution: Record<string, any>;
   onChange: (field: string, value: string) => void;
   fields: Array<{ key: string; label: string; multiline?: boolean }>;
@@ -413,7 +416,9 @@ function JsonTextarea({
   placeholder,
   minHeight,
 }: {
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   value: any;
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   onChange: (v: any) => void;
   placeholder?: string;
   minHeight?: number;
@@ -595,11 +600,14 @@ export function ExecutionEditor({
   execution,
   onChange,
 }: {
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   execution: Record<string, any>;
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   onChange: (updated: Record<string, any>) => void;
 }) {
   const execType = execution?.type || "";
 
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   const onUpdate = (field: string, value: any) => {
     onChange({ ...execution, [field]: value });
   };

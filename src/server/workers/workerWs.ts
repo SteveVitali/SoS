@@ -74,7 +74,7 @@ export function attachWorkerWs(httpServer: HttpServer, apiToken: string): void {
     });
 
     ws.on("error", (err) => {
-      log.warn("Worker WebSocket error", { worker_id: workerId, error: err.message });
+      log.warn("Worker WebSocket error", { worker_id: workerId, error: (err as Error).message });
     });
   });
 }

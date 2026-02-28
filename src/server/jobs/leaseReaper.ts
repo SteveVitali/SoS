@@ -59,6 +59,7 @@ async function reapStaleJobs() {
           },
           $push: {
             events: { at: now, type: "REAPED", payload: { reason: "lease_expired" } },
+            // biome-ignore lint/suspicious/noExplicitAny: dynamic type
           } as any,
           $unset: { claimed_by: "", lease_expires_at: "" },
         },
@@ -85,7 +86,7 @@ async function reapStaleJobs() {
     if (staleJobs.length > 0) {
       log.info("Lease reaper cycle complete", { reaped: staleJobs.length });
     }
-  } catch (err: any) {
-    log.error("Lease reaper error", { error: err.message });
+  } catch (err: unknown) {
+    log.error("Lease reaper error", { error: (err as Error).message });
   }
 }

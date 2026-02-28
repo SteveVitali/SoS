@@ -18,7 +18,7 @@ export function SpawnWorkerModal({ onClose, onSpawned }: SpawnWorkerModalProps) 
       await spawnWorker();
       onSpawned();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setLoading(false);
     }

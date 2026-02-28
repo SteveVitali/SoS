@@ -38,7 +38,7 @@ export function PrsList() {
       refreshJobs();
       navigate(`/jobs/${res.job.task_id}`);
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setResponding(null);
     }

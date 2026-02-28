@@ -11,11 +11,16 @@ export class EventEmitter {
     private taskId: string,
   ) {}
 
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic payload type
   async emit(type: WorkerEventType, payload?: any): Promise<void> {
     try {
       await this.api.sendEvent(this.taskId, this.nodeId, type, payload);
-    } catch (err: any) {
-      log.error("Failed to emit event", { task_id: this.taskId, type, error: err.message });
+    } catch (err: unknown) {
+      log.error("Failed to emit event", {
+        task_id: this.taskId,
+        type,
+        error: (err as Error).message,
+      });
     }
   }
 }

@@ -17,7 +17,7 @@ export class GithubRateLimitError extends Error {
 
 function isRateLimitError(err: unknown): boolean {
   if (!(err instanceof Error)) return false;
-  const msg = err.message;
+  const msg = (err as Error).message;
   return msg.includes("API rate limit exceeded") || msg.includes("secondary rate limit");
 }
 
@@ -29,11 +29,11 @@ const GH_MAX_RETRIES = 3;
 const GH_INITIAL_BACKOFF_MS = 4_000;
 
 function gh(cmd: string): string {
-  let lastErr: Error | undefined;
+  let lastErr: unknown;
   for (let attempt = 0; attempt <= GH_MAX_RETRIES; attempt++) {
     try {
       return execSync(`gh ${cmd}`, { encoding: "utf-8", timeout: 60_000 }).trim();
-    } catch (err: any) {
+    } catch (err: unknown) {
       lastErr = err;
       if (!isRateLimitError(err) || attempt === GH_MAX_RETRIES) break;
       const backoff = GH_INITIAL_BACKOFF_MS * 2 ** attempt;
@@ -130,6 +130,7 @@ function parseRestApiSearchResults(raw: string): PrResult[] {
     const response = JSON.parse(raw);
     const items = response.items || response;
     if (!Array.isArray(items)) return [];
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic type
     return items.map((item: Record<string, any>) => {
       const repoUrl: string = item.repository_url || "";
       const repo = repoUrl.replace("https://api.github.com/repos/", "");
@@ -142,13 +143,14 @@ function parseRestApiSearchResults(raw: string): PrResult[] {
         state: item.state || "",
         createdAt: item.created_at || "",
         updatedAt: item.updated_at || "",
+        // biome-ignore lint/suspicious/noExplicitAny: dynamic type
         labels: (item.labels || []).map((l: any) => (typeof l === "string" ? l : l.name || "")),
         mergedAt: item.pull_request?.merged_at || undefined,
         isDraft: item.draft || false,
       };
     });
-  } catch (err: any) {
-    log.warn("Failed to parse REST API search results", { error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to parse REST API search results", { error: (err as Error).message });
     return [];
   }
 }
@@ -169,9 +171,9 @@ function enrichPrDetails(prs: PrResult[]): PrResult[] {
       pr.deletions = details.deletions;
       pr.mergedAt = details.mergedAt || pr.mergedAt;
       pr.reviewDecision = details.reviewDecision || pr.reviewDecision;
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof GithubRateLimitError) throw err;
-      log.warn("Failed to enrich PR details", { url: pr.url, error: err.message });
+      log.warn("Failed to enrich PR details", { url: pr.url, error: (err as Error).message });
     }
   }
   return prs;
@@ -221,9 +223,13 @@ function memberSearch(
           allPrs.push(pr);
         }
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof GithubRateLimitError) throw err;
-      log.warn("Member search failed", { member, qualifier: qualifierPrefix, error: err.message });
+      log.warn("Member search failed", {
+        member,
+        qualifier: qualifierPrefix,
+        error: (err as Error).message,
+      });
     }
   }
 
@@ -283,9 +289,12 @@ export function fetchRecapData(githubUsername: string, timeRange?: string): Reca
     reviewsCompleted = searchPrsViaApi(
       `reviewed-by:${githubUsername} type:pr is:merged merged:>=${since}`,
     ).filter((pr) => pr.author !== githubUsername);
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof GithubRateLimitError) throw err;
-    log.warn("Failed to fetch reviews completed", { user: githubUsername, error: err.message });
+    log.warn("Failed to fetch reviews completed", {
+      user: githubUsername,
+      error: (err as Error).message,
+    });
   }
 
   const totalAdditions = mergedPrs.reduce((s, pr) => s + (pr.additions || 0), 0);
@@ -317,9 +326,9 @@ export function fetchTeamRecapData(
       if (recap.mergedPrs.length > 0 || recap.reviewsCompleted.length > 0) {
         memberRecaps.push({ username: member, recap });
       }
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (err instanceof GithubRateLimitError) throw err;
-      log.warn("Failed to fetch recap for team member", { member, error: err.message });
+      log.warn("Failed to fetch recap for team member", { member, error: (err as Error).message });
     }
   }
 

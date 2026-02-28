@@ -32,8 +32,8 @@ export function createChatRoutes(config: ServerConfig): Router {
     try {
       const conversation = await createConversation(config.slackJobOwner);
       res.json({ conversation });
-    } catch (err: any) {
-      log.error("Create conversation error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Create conversation error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -45,8 +45,8 @@ export function createChatRoutes(config: ServerConfig): Router {
       const offset = parseInt(String(req.query.offset || "0"), 10);
       const { conversations, total } = await listConversations(config.slackJobOwner, limit, offset);
       res.json({ conversations, total });
-    } catch (err: any) {
-      log.error("List conversations error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("List conversations error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -60,8 +60,8 @@ export function createChatRoutes(config: ServerConfig): Router {
         return;
       }
       res.json({ conversation });
-    } catch (err: any) {
-      log.error("Get conversation error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Get conversation error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -155,8 +155,11 @@ export function createChatRoutes(config: ServerConfig): Router {
         assistantMessage,
         action: { command: action.command, taskId: result.taskId },
       });
-    } catch (err: any) {
-      log.error("Send message error", { error: err.message, stack: err.stack });
+    } catch (err: unknown) {
+      log.error("Send message error", {
+        error: (err as Error).message,
+        stack: (err as Error).stack,
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -172,8 +175,8 @@ export function createChatRoutes(config: ServerConfig): Router {
       const since = req.query.since ? new Date(String(req.query.since)) : new Date(0);
       const newMessages = conversation.messages.filter((m) => new Date(m.at) > since);
       res.json({ messages: newMessages, linked_task_ids: conversation.linked_task_ids });
-    } catch (err: any) {
-      log.error("Poll updates error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Poll updates error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -187,8 +190,8 @@ export function createChatRoutes(config: ServerConfig): Router {
         return;
       }
       res.json({ ok: true });
-    } catch (err: any) {
-      log.error("Delete conversation error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Delete conversation error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });

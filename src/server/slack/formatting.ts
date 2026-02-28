@@ -16,12 +16,14 @@ export function fmtPrCreated(job: JobDoc, url: string): string {
   return `PR Created 🔗 \`task_id=${job.task_id}\`\n${url}`;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Slack API type
 export function fmtCiFailed(job: JobDoc, payload: any): string {
   const attempt = payload?.attempt ?? "?";
   const summary = payload?.summary ? `\n\`\`\`${truncate(payload.summary, 500)}\`\`\`` : "";
   return `CI Failed ❌ \`task_id=${job.task_id}\` (attempt ${attempt})${summary}`;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Slack API type
 export function fmtCiGreen(job: JobDoc, payload: any): string {
   const url = payload?.url ? `\n${payload.url}` : "";
   return `CI Green ✅ \`task_id=${job.task_id}\`${url}`;
@@ -40,6 +42,7 @@ export function fmtFailed(job: JobDoc): string {
   return `Failed ❌ \`task_id=${job.task_id}\`${errMsg}${prs}`;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Slack API type
 export function fmtAwaitingApproval(job: JobDoc, payload: any): string {
   const msg = payload?.message;
   if (msg) return msg;
@@ -47,6 +50,7 @@ export function fmtAwaitingApproval(job: JobDoc, payload: any): string {
   return `Awaiting approval ⏳ \`task_id=${job.task_id}\`${prs}\nReply here to promote, or use the web dashboard.`;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Slack API type
 export function fmtPrPromoted(job: JobDoc, payload: any): string {
   const msg = payload?.message;
   if (msg) return msg;
@@ -63,6 +67,7 @@ export function fmtCanceled(job: JobDoc): string {
   return `Canceled ⛔ \`task_id=${job.task_id}\``;
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: Slack API type
 export function fmtEvent(job: JobDoc, type: string, payload: any): string {
   switch (type) {
     case "PR_CREATED":

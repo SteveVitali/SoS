@@ -1,6 +1,5 @@
 import { existsSync, readdirSync, readFileSync, writeFileSync } from "node:fs";
 import path from "node:path";
-import { fileURLToPath } from "node:url";
 import { type Request, type Response, Router } from "express";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { createLogger } from "../../shared/logger.js";
@@ -50,8 +49,8 @@ export function createWebRoutes(config: ServerConfig): Router {
         sort_order: qstr(req.query.sort_order) as "asc" | "desc" | undefined,
       });
       res.json({ jobs, total });
-    } catch (err: any) {
-      log.error("List jobs error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("List jobs error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -65,8 +64,11 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Get job error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Get job error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -81,8 +83,8 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       const job = await jobService.createJobFromWeb(parsed.data);
       res.status(201).json({ job });
-    } catch (err: any) {
-      log.error("Create job error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Create job error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -97,8 +99,8 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       const job = await jobService.createRespondToCommentsJob(parsed.data);
       res.status(201).json({ job });
-    } catch (err: any) {
-      log.error("Create respond-to-comments job error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Create respond-to-comments job error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -122,9 +124,9 @@ export function createWebRoutes(config: ServerConfig): Router {
         parent_task_id: taskId,
       });
       res.status(201).json({ job });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error("Create respond-to-comments from job error", {
-        error: err.message,
+        error: (err as Error).message,
         task_id: pstr(req.params.task_id),
       });
       res.status(500).json({ error: "Internal error" });
@@ -140,8 +142,11 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Cancel job error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Cancel job error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -178,9 +183,12 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Promote PR error", { error: err.message, task_id: pstr(req.params.task_id) });
-      res.status(500).json({ error: err.message || "Internal error" });
+    } catch (err: unknown) {
+      log.error("Promote PR error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
+      res.status(500).json({ error: (err as Error).message || "Internal error" });
     }
   });
 
@@ -204,8 +212,11 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Confirm plan error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Confirm plan error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -219,8 +230,11 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
       res.status(201).json({ job });
-    } catch (err: any) {
-      log.error("Retry job error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Retry job error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -234,8 +248,11 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Delete job error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Delete job error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -276,14 +293,15 @@ export function createWebRoutes(config: ServerConfig): Router {
           for (const pr of prs) {
             pr.linkedJobTaskId = urlToTaskId.get(pr.url);
           }
+          // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
         } catch (linkErr: any) {
           log.warn("Failed to cross-link PRs with jobs", { error: linkErr.message });
         }
       }
 
       res.json({ prs });
-    } catch (err: any) {
-      log.error("List PRs error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("List PRs error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -300,8 +318,8 @@ export function createWebRoutes(config: ServerConfig): Router {
       const capped = urls.slice(0, 20);
       const stats = await fetchBatchPrStats(capped);
       res.json({ stats });
-    } catch (err: any) {
-      log.error("Batch PR stats error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Batch PR stats error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -316,8 +334,8 @@ export function createWebRoutes(config: ServerConfig): Router {
     try {
       const users = await jobService.getDistinctRequestedBy();
       res.json({ users });
-    } catch (err: any) {
-      log.error("Get users error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Get users error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -327,8 +345,8 @@ export function createWebRoutes(config: ServerConfig): Router {
     try {
       const user = await resolveSlackUser(pstr(req.params.user_id));
       res.json({ user });
-    } catch (err: any) {
-      log.error("Resolve Slack user error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Resolve Slack user error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -337,6 +355,7 @@ export function createWebRoutes(config: ServerConfig): Router {
   router.post("/slack/users", async (req: Request, res: Response) => {
     try {
       const ids: string[] = req.body?.user_ids || [];
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
       const results: Record<string, any> = {};
       await Promise.all(
         ids.map(async (id) => {
@@ -344,8 +363,8 @@ export function createWebRoutes(config: ServerConfig): Router {
         }),
       );
       res.json({ users: results });
-    } catch (err: any) {
-      log.error("Batch resolve Slack users error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Batch resolve Slack users error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -360,13 +379,13 @@ export function createWebRoutes(config: ServerConfig): Router {
       const raw = readFileSync(config.repoRegistryPath, "utf-8");
       const data = parseYaml(raw);
       res.json({ registry: data, path: config.repoRegistryPath });
-    } catch (err: any) {
-      if (err.code === "ENOENT") {
+    } catch (err: unknown) {
+      if ((err as { code?: string }).code === "ENOENT") {
         res.json({ registry: { repos: {} }, path: config.repoRegistryPath });
         return;
       }
-      log.error("Read registry error", { error: err.message });
-      res.status(500).json({ error: err.message });
+      log.error("Read registry error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 
@@ -386,9 +405,9 @@ export function createWebRoutes(config: ServerConfig): Router {
       writeFileSync(config.repoRegistryPath, yaml, "utf-8");
       log.info("Registry saved", { path: config.repoRegistryPath });
       res.json({ ok: true });
-    } catch (err: any) {
-      log.error("Write registry error", { error: err.message });
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      log.error("Write registry error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 
@@ -437,6 +456,7 @@ export function createWebRoutes(config: ServerConfig): Router {
               inUse = true;
               taskId = lock.taskId;
               acquiredAt = lock.acquiredAt;
+              // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
             } catch (pidErr: any) {
               if (pidErr.code === "EPERM") {
                 inUse = true;
@@ -460,8 +480,8 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
 
       res.json({ worktrees });
-    } catch (err: any) {
-      log.error("Get worktrees error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Get worktrees error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -489,7 +509,7 @@ export function createWebRoutes(config: ServerConfig): Router {
       const pid = spawnWorkerProcess();
       res.json({ ok: true, pid });
     } catch (err: unknown) {
-      const msg = err instanceof Error ? err.message : String(err);
+      const msg = err instanceof Error ? (err as Error).message : String(err);
       log.error("Failed to spawn worker", { error: msg });
       res.status(500).json({ error: msg });
     }
@@ -516,13 +536,15 @@ export function createWebRoutes(config: ServerConfig): Router {
       process.kill(worker.pid, "SIGTERM");
       log.info("Sent SIGTERM to worker", { worker_id: workerId, pid: worker.pid });
       res.json({ ok: true, method: "sigterm" });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn("Failed to kill worker process", {
         worker_id: workerId,
         pid: worker.pid,
-        error: err.message,
+        error: (err as Error).message,
       });
-      res.status(500).json({ error: `Failed to signal PID ${worker.pid}: ${err.message}` });
+      res
+        .status(500)
+        .json({ error: `Failed to signal PID ${worker.pid}: ${(err as Error).message}` });
     }
   });
 
@@ -585,9 +607,9 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       const data = getRoutingConfigRaw();
       res.json({ config: data, path: configPath });
-    } catch (err: any) {
-      log.error("Read routing config error", { error: err.message });
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      log.error("Read routing config error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 
@@ -606,9 +628,9 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       saveRoutingConfig(data);
       res.json({ ok: true });
-    } catch (err: any) {
-      log.error("Write routing config error", { error: err.message });
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      log.error("Write routing config error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 
@@ -617,9 +639,9 @@ export function createWebRoutes(config: ServerConfig): Router {
     try {
       reloadRoutingConfig();
       res.json({ ok: true });
-    } catch (err: any) {
-      log.error("Reload routing config error", { error: err.message });
-      res.status(500).json({ error: err.message });
+    } catch (err: unknown) {
+      log.error("Reload routing config error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
     }
   });
 

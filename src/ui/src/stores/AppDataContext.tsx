@@ -130,7 +130,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setJobsState((prev) => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: err instanceof Error ? (err as Error).message : String(err),
       }));
     }
   }, []);
@@ -168,7 +168,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setPrsState((prev) => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: err instanceof Error ? (err as Error).message : String(err),
       }));
     }
   }, []);
@@ -190,7 +190,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setRegistryState((prev) => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: err instanceof Error ? (err as Error).message : String(err),
       }));
     }
   }, []);
@@ -220,7 +220,7 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
       setWorkerNodesState((prev) => ({
         ...prev,
         loading: false,
-        error: err instanceof Error ? err.message : String(err),
+        error: err instanceof Error ? (err as Error).message : String(err),
       }));
     }
   }, []);

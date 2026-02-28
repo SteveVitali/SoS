@@ -46,9 +46,9 @@ export async function executeCommand(
     }
 
     return await executeAction(action, ctx, actionDef.execution);
-  } catch (err: any) {
+  } catch (err: unknown) {
     // If routing config is not initialized, fall back to chat
-    log.error("Command execution failed", { command, error: err.message });
+    log.error("Command execution failed", { command, error: (err as Error).message });
     return { reply: action.reply, actionTaken: `${command}: error` };
   }
 }

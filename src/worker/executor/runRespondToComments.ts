@@ -266,14 +266,17 @@ export async function runRespondToComments(
       pr_urls: [prUrl],
       metrics,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof CanceledError) {
       log.info("Job canceled during execution", { task_id: job.task_id });
       return;
     }
 
     if (err instanceof LeaseAbortedError) {
-      log.warn("Job aborted due to lease loss", { task_id: job.task_id, reason: err.message });
+      log.warn("Job aborted due to lease loss", {
+        task_id: job.task_id,
+        reason: (err as Error).message,
+      });
       return;
     }
 
@@ -281,15 +284,16 @@ export async function runRespondToComments(
       log.info("Requeuing job", { task_id: job.task_id, reason: err.reason });
       try {
         await api.requeue(job.task_id, workerId, err.reason);
+        // biome-ignore lint/suspicious/noExplicitAny: error handling
       } catch (reqErr: any) {
         log.error("Failed to requeue job", { task_id: job.task_id, error: reqErr.message });
       }
       return;
     }
 
-    log.error("Job failed", { task_id: job.task_id, error: err.message });
+    log.error("Job failed", { task_id: job.task_id, error: (err as Error).message });
     try {
-      await events.emit("FAILED", { error: err.message });
+      await events.emit("FAILED", { error: (err as Error).message });
     } catch {
       /* best-effort */
     }
@@ -298,12 +302,13 @@ export async function runRespondToComments(
       const metrics = buildMetrics();
       await api.fail(job.task_id, workerId, {
         error: {
-          code: err.code || "EXECUTION_ERROR",
-          message: err.message,
-          details: err.stack?.slice(0, 2000),
+          code: (err as { code?: string }).code || "EXECUTION_ERROR",
+          message: (err as Error).message,
+          details: (err as Error).stack?.slice(0, 2000),
         },
         metrics,
       });
+      // biome-ignore lint/suspicious/noExplicitAny: error handling
     } catch (failErr: any) {
       log.error("Failed to report job failure to server", {
         task_id: job.task_id,

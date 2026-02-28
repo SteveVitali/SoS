@@ -48,6 +48,7 @@ function ViewModeToggle({
 }
 
 export function RoutingConfigEditor() {
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   const [config, setConfig] = useState<any>(null);
   const [configPath, setConfigPath] = useState("");
   const [loading, setLoading] = useState(true);
@@ -70,7 +71,7 @@ export function RoutingConfigEditor() {
       setYamlText(stringifyYaml(res.config, { lineWidth: 120 }));
       setDirty(false);
     } catch (err: unknown) {
-      setLoadError(err instanceof Error ? err.message : String(err));
+      setLoadError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setLoading(false);
     }
@@ -95,7 +96,7 @@ export function RoutingConfigEditor() {
       setYamlText(stringifyYaml(res.config, { lineWidth: 120 }));
       setTimeout(() => setSaveMsg(""), 3000);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setSaving(false);
     }
@@ -106,11 +107,13 @@ export function RoutingConfigEditor() {
       await reloadRoutingConfig();
       await fetchConfig();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   const updateConfig = (fn: (prev: any) => any) => {
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
     setConfig((prev: any) => {
       const next = fn(prev);
       setYamlText(stringifyYaml(next, { lineWidth: 120 }));
@@ -133,6 +136,7 @@ export function RoutingConfigEditor() {
   };
 
   const toggleAction = (name: string) => {
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
     updateConfig((prev: any) => {
       const section = prev.actions?.[name] != null ? "actions" : "custom_actions";
       return {
@@ -239,6 +243,7 @@ export function RoutingConfigEditor() {
               style={{ ...css.textarea, minHeight: 200, fontSize: 13 }}
               value={config?.system_prompt || ""}
               onChange={(e) =>
+                // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
                 updateConfig((prev: any) => ({ ...prev, system_prompt: e.target.value }))
               }
               spellCheck={false}
@@ -251,6 +256,7 @@ export function RoutingConfigEditor() {
             <input
               style={{ ...css.input, maxWidth: 400 }}
               value={config?.model || ""}
+              // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
               onChange={(e) => updateConfig((prev: any) => ({ ...prev, model: e.target.value }))}
               placeholder="claude-sonnet-4-20250514"
             />
@@ -327,6 +333,7 @@ export function RoutingConfigEditor() {
                         action={action}
                         onChange={(updated) => {
                           const section = custom ? "custom_actions" : "actions";
+                          // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
                           updateConfig((prev: any) => ({
                             ...prev,
                             [section]: { ...prev[section], [name]: updated },
@@ -345,7 +352,9 @@ export function RoutingConfigEditor() {
   );
 }
 
+// biome-ignore lint/suspicious/noExplicitAny: dynamic config type
 function ActionEditor({ action, onChange }: { action: any; onChange: (updated: any) => void }) {
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
   const update = (field: string, value: any) => {
     onChange({ ...action, [field]: value });
   };

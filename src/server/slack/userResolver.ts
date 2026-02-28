@@ -27,6 +27,7 @@ export async function resolveSlackUser(userId: string): Promise<SlackUser> {
 
   try {
     const result = await webClient.users.info({ user: userId });
+    // biome-ignore lint/suspicious/noExplicitAny: Slack API type
     const u = result.user as any;
     // display_name can be "" for users who haven't set one — fall through
     const displayName =
@@ -44,12 +45,12 @@ export async function resolveSlackUser(userId: string): Promise<SlackUser> {
     cache.set(userId, resolved);
     log.info("Resolved Slack user", { userId, displayName: resolved.displayName });
     return resolved;
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.warn("Failed to resolve Slack user (not caching)", {
       userId,
-      error: err.message,
-      code: err.code,
-      data: err.data,
+      error: (err as Error).message,
+      code: (err as { code?: string }).code,
+      data: (err as { data?: unknown }).data,
     });
     // Don't cache failures — allow retries on next request
     return { id: userId, displayName: userId, realName: userId };

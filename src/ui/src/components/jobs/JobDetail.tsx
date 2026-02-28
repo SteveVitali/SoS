@@ -38,7 +38,7 @@ export function JobDetail() {
       const res = await getJob(taskId);
       setJob(res.job);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setLoading(false);
     }
@@ -80,7 +80,7 @@ export function JobDetail() {
         refreshJobs();
       }
     } catch (err: unknown) {
-      setActionError(err instanceof Error ? err.message : String(err));
+      setActionError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 
@@ -94,7 +94,9 @@ export function JobDetail() {
   return (
     <div>
       <Link to="/" style={{ textDecoration: "none" }}>
-        <button style={{ ...css.btn, marginBottom: 16 }}>← Back to Jobs</button>
+        <button type="button" style={{ ...css.btn, marginBottom: 16 }}>
+          ← Back to Jobs
+        </button>
       </Link>
 
       {/* Header */}
@@ -131,7 +133,7 @@ export function JobDetail() {
             </div>
           </div>
           <div style={{ display: "flex", gap: 8 }}>
-            <button style={css.btn} onClick={load}>
+            <button type="button" style={css.btn} onClick={load}>
               ↻
             </button>
             {[
@@ -141,32 +143,40 @@ export function JobDetail() {
               "WAITING_FOR_APPROVAL",
               "PENDING_CONFIRMATION",
             ].includes(job.status) && (
-              <button style={css.btnDanger} onClick={() => handleAction("cancel")}>
+              <button type="button" style={css.btnDanger} onClick={() => handleAction("cancel")}>
                 Cancel
               </button>
             )}
             {job.status === "PENDING_CONFIRMATION" && (
-              <button style={css.btnPrimary} onClick={() => handleAction("confirm_plan")}>
+              <button
+                type="button"
+                style={css.btnPrimary}
+                onClick={() => handleAction("confirm_plan")}
+              >
                 ✅ Confirm Plan
               </button>
             )}
             {job.status === "WAITING_FOR_APPROVAL" && (
-              <button style={css.btnPrimary} onClick={() => handleAction("promote")}>
+              <button type="button" style={css.btnPrimary} onClick={() => handleAction("promote")}>
                 Promote PR
               </button>
             )}
             {["FAILED", "CANCELED"].includes(job.status) && (
-              <button style={css.btnPrimary} onClick={() => handleAction("retry")}>
+              <button type="button" style={css.btnPrimary} onClick={() => handleAction("retry")}>
                 Retry
               </button>
             )}
             {job.pr_urls?.length && ["DONE", "WAITING_FOR_APPROVAL"].includes(job.status) && (
-              <button style={css.btnPrimary} onClick={() => handleAction("respond_comments")}>
+              <button
+                type="button"
+                style={css.btnPrimary}
+                onClick={() => handleAction("respond_comments")}
+              >
                 Respond to Comments
               </button>
             )}
             {!["RUNNING", "FIXING_CI"].includes(job.status) && (
-              <button style={css.btnDanger} onClick={() => handleAction("delete")}>
+              <button type="button" style={css.btnDanger} onClick={() => handleAction("delete")}>
                 Delete
               </button>
             )}

@@ -40,7 +40,9 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
       });
       res.json({ worker: info });
     } catch (err: unknown) {
-      log.error("Register error", { error: err instanceof Error ? err.message : String(err) });
+      log.error("Register error", {
+        error: err instanceof Error ? (err as Error).message : String(err),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -60,7 +62,9 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
       }
       res.json({ ok: true });
     } catch (err: unknown) {
-      log.error("Status update error", { error: err instanceof Error ? err.message : String(err) });
+      log.error("Status update error", {
+        error: err instanceof Error ? (err as Error).message : String(err),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -76,7 +80,9 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
       deregisterWorker(worker_id);
       res.json({ ok: true });
     } catch (err: unknown) {
-      log.error("Deregister error", { error: err instanceof Error ? err.message : String(err) });
+      log.error("Deregister error", {
+        error: err instanceof Error ? (err as Error).message : String(err),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -92,8 +98,8 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
       const limit = Math.min(parseInt(qstr(req.query.limit), 10) || 10, 50);
       const jobs = await jobService.pollJobs(requestedBy, limit);
       res.json({ jobs });
-    } catch (err: any) {
-      log.error("Poll error", { error: err.message });
+    } catch (err: unknown) {
+      log.error("Poll error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -107,8 +113,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ status: job.status });
-    } catch (err: any) {
-      log.error("Status check error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Status check error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -133,8 +142,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Claim error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Claim error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -154,8 +166,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ ok: true, lease_expires_at: job.lease_expires_at });
-    } catch (err: any) {
-      log.error("Heartbeat error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Heartbeat error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -171,8 +186,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
       const { node_id, type, payload } = parsed.data;
       await jobService.handleWorkerEvent(pstr(req.params.task_id), node_id, type, payload);
       res.json({ ok: true });
-    } catch (err: any) {
-      log.error("Event error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Event error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -197,8 +215,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Await approval error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Await approval error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -223,8 +244,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Submit plan error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Submit plan error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -249,8 +273,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Complete error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Complete error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -270,8 +297,11 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Requeue error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Requeue error", {
+        error: (err as Error).message,
+        task_id: pstr(req.params.task_id),
+      });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -296,8 +326,8 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         return;
       }
       res.json({ job });
-    } catch (err: any) {
-      log.error("Fail error", { error: err.message, task_id: pstr(req.params.task_id) });
+    } catch (err: unknown) {
+      log.error("Fail error", { error: (err as Error).message, task_id: pstr(req.params.task_id) });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -314,8 +344,8 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         }
         const messages = await slackPoster.fetchThread(channelId, threadTs);
         res.json({ messages });
-      } catch (err: any) {
-        log.error("Thread fetch error", { error: err.message });
+      } catch (err: unknown) {
+        log.error("Thread fetch error", { error: (err as Error).message });
         res.status(500).json({ error: "Internal error" });
       }
     });

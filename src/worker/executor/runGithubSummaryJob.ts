@@ -114,9 +114,9 @@ export async function runGithubSummaryJob(
         timeout: 120_000, // 2 minute timeout
         cwd: tmpDir,
       }).trim();
-    } catch (err: any) {
-      log.error("Claude CLI failed for summary generation", { error: err.message });
-      throw new Error(`Failed to generate summary: ${err.message?.slice(0, 500)}`);
+    } catch (err: unknown) {
+      log.error("Claude CLI failed for summary generation", { error: (err as Error).message });
+      throw new Error(`Failed to generate summary: ${(err as Error).message?.slice(0, 500)}`);
     }
     const claudeDurationMs = Date.now() - claudeStart;
 
@@ -160,15 +160,15 @@ export async function runGithubSummaryJob(
 
     cleanupTmpDir(tmpDir);
     log.info("GitHub summary job completed", { task_id: job.task_id, query_type });
-  } catch (err: any) {
+  } catch (err: unknown) {
     if (err instanceof LeaseAbortedError) {
       log.warn("GitHub summary job aborted due to lease loss", { task_id: job.task_id });
       return;
     }
 
-    log.error("GitHub summary job failed", { task_id: job.task_id, error: err.message });
+    log.error("GitHub summary job failed", { task_id: job.task_id, error: (err as Error).message });
     try {
-      await events.emit("FAILED", { error: err.message });
+      await events.emit("FAILED", { error: (err as Error).message });
     } catch {
       /* best-effort */
     }
@@ -180,12 +180,13 @@ export async function runGithubSummaryJob(
       };
       await api.fail(job.task_id, workerId, {
         error: {
-          code: err.code || "GITHUB_SUMMARY_ERROR",
-          message: err.message,
-          details: err.stack?.slice(0, 2000),
+          code: (err as { code?: string }).code || "GITHUB_SUMMARY_ERROR",
+          message: (err as Error).message,
+          details: (err as Error).stack?.slice(0, 2000),
         },
         metrics,
       });
+      // biome-ignore lint/suspicious/noExplicitAny: error handling
     } catch (failErr: any) {
       log.error("Failed to report github summary failure", {
         task_id: job.task_id,

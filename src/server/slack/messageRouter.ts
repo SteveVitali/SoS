@@ -12,6 +12,7 @@ const log = createLogger("server:slack:router");
 
 export interface RoutedAction {
   command: string;
+  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   args: Record<string, any>;
   reply: string;
 }
@@ -73,8 +74,8 @@ async function buildJobsContext(): Promise<string> {
         return `- ${j.task_id.slice(0, 8)}… | ${j.status} | "${j.task_text?.slice(0, 80)}"${prs}${err}${plan}`;
       })
       .join("\n");
-  } catch (err: any) {
-    log.warn("Failed to fetch jobs context", { error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to fetch jobs context", { error: (err as Error).message });
     return "(Could not fetch recent jobs)";
   }
 }
@@ -173,6 +174,7 @@ export async function routeMessage(
 
     let reply = response.text;
     let command = "chat";
+    // biome-ignore lint/suspicious/noExplicitAny: Slack API type
     let args: Record<string, any> = {};
 
     if (response.toolCalls.length > 0) {
@@ -217,8 +219,8 @@ export async function routeMessage(
     });
 
     return { command, reply, args };
-  } catch (err: any) {
-    log.error("LLM routing failed, falling back to create_job", { error: err.message });
+  } catch (err: unknown) {
+    log.error("LLM routing failed, falling back to create_job", { error: (err as Error).message });
     return {
       command: "create_job",
       args: { task_text: userMessage },

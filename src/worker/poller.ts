@@ -126,9 +126,9 @@ export async function startWorkerLoop(
       busySince = undefined;
 
       log.info("Job execution finished", { workerId, task_id: claimed.task_id });
-    } catch (err: any) {
+    } catch (err: unknown) {
       if (signal.aborted) break;
-      log.error("Worker loop error", { workerId, error: err.message });
+      log.error("Worker loop error", { workerId, error: (err as Error).message });
       await sleep(5000, signal);
     }
   }

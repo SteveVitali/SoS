@@ -26,6 +26,7 @@ export function parseModifiers(text: string): {
   ci_fix_enabled?: boolean;
   reviewers?: string[];
 } {
+  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   const result: any = {};
 
   const repoMatch = text.match(/\brepo=(\S+)/i);
@@ -68,8 +69,8 @@ async function fetchThreadContext(
       isBot: m.user === botUserId,
     }));
     return { messages, rawMessages };
-  } catch (err: any) {
-    log.warn("Failed to fetch thread context", { error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to fetch thread context", { error: (err as Error).message });
     return { messages: [], rawMessages: [] };
   }
 }
@@ -125,11 +126,11 @@ async function downloadThreadAttachments(
         size: buffer.length,
         totalSize,
       });
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.warn("Failed to download attachment, skipping", {
         file_id: file.id,
         filename: file.name,
-        error: err.message,
+        error: (err as Error).message,
       });
     }
   }
@@ -233,9 +234,9 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
       log.info("Command executed", { action: result.actionTaken, event_id: eventId });
 
       return result.reply;
-    } catch (err: any) {
+    } catch (err: unknown) {
       log.error("Message routing failed, falling back to direct job creation", {
-        error: err.message,
+        error: (err as Error).message,
         event_id: eventId,
       });
 
@@ -263,6 +264,7 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
           ...modifiers,
         });
         return `Got it — queued as \`${job.task_id.slice(0, 8)}…\`. _(LLM routing was unavailable)_`;
+        // biome-ignore lint/suspicious/noExplicitAny: Slack API type
       } catch (fallbackErr: any) {
         log.error("Fallback job creation also failed", { error: fallbackErr.message });
         return "Something went wrong — I couldn't process that. Try again?";

@@ -35,7 +35,7 @@ export async function generateTitle(taskId: string, taskText: string): Promise<v
       await updateJobFields(taskId, { title });
       log.info("Title generated", { task_id: taskId, title });
     }
-  } catch (err: any) {
-    log.warn("Failed to generate title", { task_id: taskId, error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to generate title", { task_id: taskId, error: (err as Error).message });
   }
 }

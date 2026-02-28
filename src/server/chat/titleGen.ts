@@ -39,10 +39,10 @@ export async function generateConversationTitle(
       await setTitle(conversationId, title);
       log.info("Chat title generated", { conversation_id: conversationId, title });
     }
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.warn("Failed to generate chat title", {
       conversation_id: conversationId,
-      error: err.message,
+      error: (err as Error).message,
     });
     // Fallback
     const fallback = firstMessage.slice(0, 40).trim() + (firstMessage.length > 40 ? "…" : "");

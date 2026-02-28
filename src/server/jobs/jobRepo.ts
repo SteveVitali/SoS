@@ -15,6 +15,7 @@ const _log = createLogger("server:jobRepo");
 
 export async function insertJob(doc: JobDoc): Promise<JobDoc> {
   const col = getJobsCollection();
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic type
   await col.insertOne(doc as any);
   return doc;
 }
@@ -136,6 +137,7 @@ export async function updateHeartbeat(
 
 export async function appendEvent(
   taskId: string,
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic payload type
   event: { at: Date; node_id?: string; type: string; payload?: any },
 ): Promise<void> {
   const col = getJobsCollection();
@@ -156,6 +158,7 @@ export async function appendEvent(
   await col.updateOne(
     { task_id: taskId },
     {
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic payload type
       $push: { events: { ...event, payload } } as any,
       $set: { updated_at: nowDate() },
     },
@@ -341,8 +344,10 @@ export async function queryJobs(query: WebJobsQuery): Promise<{ jobs: JobDoc[]; 
 
   // Exclude DELETED by default
   if (query.status) {
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic type
     filter.status = query.status as any;
   } else {
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic type
     filter.status = { $ne: "DELETED" } as any;
   }
 
@@ -360,7 +365,8 @@ export async function queryJobs(query: WebJobsQuery): Promise<{ jobs: JobDoc[]; 
 
   const ALLOWED_SORT_FIELDS = ["created_at", "updated_at", "status", "requested_by"];
   const sortField = ALLOWED_SORT_FIELDS.includes(query.sort_by || "")
-    ? query.sort_by!
+    ? // biome-ignore lint/style/noNonNullAssertion: value verified above
+      query.sort_by!
     : "created_at";
   const sortOrder = query.sort_order === "asc" ? 1 : -1;
   const sort: Sort = { [sortField]: sortOrder };
@@ -413,6 +419,7 @@ export async function confirmJobPlan(
 ): Promise<JobDoc | null> {
   const col = getJobsCollection();
   const now = nowDate();
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic type
   const setFields: Record<string, any> = {
     status: "QUEUED" as JobStatus,
     updated_at: now,

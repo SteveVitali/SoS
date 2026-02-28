@@ -23,6 +23,7 @@ function requestSlackResolve(ids: string[]) {
         for (const [id, user] of Object.entries(resolved)) {
           slackNameCache.set(id, user);
         }
+        // biome-ignore lint/suspicious/useIterableCallbackReturn: forEach used for side effects
         subscribers.forEach((cb) => cb());
       } catch (err) {
         console.error("Slack user resolution failed:", err);

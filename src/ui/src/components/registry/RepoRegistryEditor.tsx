@@ -46,7 +46,7 @@ export function RepoRegistryEditor() {
       setDirty(false);
       setTimeout(() => setSaveMsg(""), 3000);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setSaving(false);
     }
@@ -159,7 +159,7 @@ export function RepoRegistryEditor() {
           <RepoCard
             key={id}
             id={id}
-            repo={registry!.repos[id]}
+            repo={registry?.repos[id]}
             slots={worktrees[id] || []}
             expanded={expandedId === id}
             onToggle={() => setExpandedId(expandedId === id ? null : id)}

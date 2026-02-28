@@ -20,8 +20,10 @@ export async function startSlackSocketMode(
 
   app.event("app_mention", async ({ event, context, say }) => {
     const eventId = context.eventId || `${event.channel}-${event.ts}`;
+    // biome-ignore lint/suspicious/noExplicitAny: Slack API type
     const reply = await handleMention(event as any, eventId);
     if (reply) {
+      // biome-ignore lint/suspicious/noExplicitAny: Slack API type
       const threadTs = (event as any).thread_ts ?? event.ts;
       await say({ text: reply, thread_ts: threadTs });
     }

@@ -16,6 +16,7 @@ export interface ConversationMessage {
 }
 
 export interface ConversationDoc {
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic type
   _id?: any;
   conversation_id: string;
   owner: string;
@@ -56,6 +57,7 @@ export async function createConversation(owner: string): Promise<ConversationDoc
     messages: [],
     linked_task_ids: [],
   };
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic type
   await getCollection().insertOne(doc as any);
   log.info("Conversation created", { conversation_id: doc.conversation_id, owner });
   return doc;
@@ -88,6 +90,7 @@ export async function appendMessage(
   await getCollection().updateOne(
     { conversation_id: conversationId },
     {
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic type
       $push: { messages: message as any },
       $set: { updated_at: new Date() },
     },

@@ -20,10 +20,12 @@ let suppressNextWatch = false;
 /**
  * Parse a raw YAML action definition into a typed ActionDef.
  */
+// biome-ignore lint/suspicious/noExplicitAny: dynamic config type
 function parseActionDef(raw: any): ActionDef {
   const params: Record<string, ParamDef> = {};
   if (raw.parameters && typeof raw.parameters === "object") {
     for (const [name, pRaw] of Object.entries(raw.parameters)) {
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
       const p = pRaw as any;
       params[name] = {
         type: p.type || "string",
@@ -48,6 +50,7 @@ function parseActionDef(raw: any): ActionDef {
 /**
  * Parse raw YAML data into a typed RoutingConfig.
  */
+// biome-ignore lint/suspicious/noExplicitAny: dynamic config type
 function parseRoutingConfig(data: any): RoutingConfig {
   const actions: Record<string, ActionDef> = {};
   if (data?.actions && typeof data.actions === "object") {
@@ -87,8 +90,8 @@ function loadFromFile(filePath: string): RoutingConfig {
       custom: customCount,
     });
     return config;
-  } catch (err: any) {
-    log.error("Failed to load routing config", { path: filePath, error: err.message });
+  } catch (err: unknown) {
+    log.error("Failed to load routing config", { path: filePath, error: (err as Error).message });
     throw err;
   }
 }
@@ -160,9 +163,9 @@ export function initRoutingConfig(filePath: string): RoutingConfig {
           log.info("Routing config file changed, reloading");
           try {
             cachedConfig = loadFromFile(filePath);
-          } catch (err: any) {
+          } catch (err: unknown) {
             log.error("Failed to reload routing config, keeping previous", {
-              error: err.message,
+              error: (err as Error).message,
             });
           }
         }
@@ -208,6 +211,7 @@ export function reloadRoutingConfig(): RoutingConfig {
 /**
  * Save routing config data to disk as YAML.
  */
+// biome-ignore lint/suspicious/noExplicitAny: dynamic config type
 export function saveRoutingConfig(data: any): void {
   if (!configPath) {
     throw new Error("Routing config not initialized.");
@@ -223,6 +227,7 @@ export function saveRoutingConfig(data: any): void {
 /**
  * Get the raw YAML data (for API responses).
  */
+// biome-ignore lint/suspicious/noExplicitAny: dynamic config type
 export function getRoutingConfigRaw(): any {
   if (!configPath) {
     throw new Error("Routing config not initialized.");

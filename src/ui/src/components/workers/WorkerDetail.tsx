@@ -18,7 +18,7 @@ export function WorkerDetail() {
       const res = await getWorkerNode(id);
       setWorker(res.worker);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
       setLoading(false);
     }
@@ -36,7 +36,7 @@ export function WorkerDetail() {
       await shutdownWorker(id);
       loadWorker();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(err instanceof Error ? (err as Error).message : String(err));
     }
   };
 

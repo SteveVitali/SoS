@@ -66,6 +66,6 @@ async function main() {
 }
 
 main().catch((err) => {
-  log.error("Fatal worker error", { error: err.message, stack: err.stack });
+  log.error("Fatal worker error", { error: (err as Error).message, stack: (err as Error).stack });
   process.exit(1);
 });

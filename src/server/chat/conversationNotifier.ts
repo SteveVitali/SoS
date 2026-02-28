@@ -70,11 +70,11 @@ export async function notifyConversations(job: JobDoc, eventType: string): Promi
       event: eventType,
       count: conversations.length,
     });
-  } catch (err: any) {
+  } catch (err: unknown) {
     log.warn("Failed to notify conversations", {
       task_id: job.task_id,
       event: eventType,
-      error: err.message,
+      error: (err as Error).message,
     });
   }
 }

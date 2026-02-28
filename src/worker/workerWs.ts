@@ -55,7 +55,7 @@ export function connectWorkerWs(baseUrl: string, token: string, workerId: string
   });
 
   ws.on("error", (err) => {
-    log.warn("WebSocket error", { error: err.message });
+    log.warn("WebSocket error", { error: (err as Error).message });
     // 'close' event will fire after this
   });
 }

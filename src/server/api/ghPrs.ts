@@ -1,11 +1,7 @@
 import { exec as execCb } from "node:child_process";
 import { promisify } from "node:util";
 import { createLogger } from "../../shared/logger.js";
-import {
-  loadRegistry,
-  type RepoEntry,
-  type RepoRegistry,
-} from "../../worker/executor/repoRegistry.js";
+import { loadRegistry } from "../../worker/executor/repoRegistry.js";
 
 const exec = promisify(execCb);
 const log = createLogger("server:ghPrs");
@@ -22,8 +18,8 @@ export async function getCurrentGitHubUser(): Promise<string> {
     cachedGhUser = stdout.trim().toLowerCase();
     log.info("Resolved current GitHub user", { login: cachedGhUser });
     return cachedGhUser;
-  } catch (err: any) {
-    log.warn("Failed to resolve current GitHub user", { error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to resolve current GitHub user", { error: (err as Error).message });
     return "";
   }
 }
@@ -76,6 +72,7 @@ async function listPrsForRepo(
   state: "open" | "closed" | "merged" | "all",
   limit: number,
   authorFilter?: string,
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
 ): Promise<any[]> {
   const stateFlag = state === "all" ? "--state=all" : `--state=${state}`;
   const authorFlag = authorFilter ? ` --author "${authorFilter}"` : "";
@@ -83,8 +80,8 @@ async function listPrsForRepo(
   try {
     const { stdout } = await exec(cmd, { timeout: 30_000 });
     return JSON.parse(stdout);
-  } catch (err: any) {
-    log.warn("Failed to list PRs for repo", { owner, repo, error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to list PRs for repo", { owner, repo, error: (err as Error).message });
     return [];
   }
 }
@@ -183,8 +180,13 @@ async function fetchPrCommentStats(
     };
     setCachedStats(cacheKey, stats);
     return stats;
-  } catch (err: any) {
-    log.warn("Failed to fetch comment stats", { owner, repo, prNumber, error: err.message });
+  } catch (err: unknown) {
+    log.warn("Failed to fetch comment stats", {
+      owner,
+      repo,
+      prNumber,
+      error: (err as Error).message,
+    });
     return { total_comments: 0, total_threads: 0, unresolved_threads: 0, unaddressed_threads: 0 };
   }
 }
@@ -268,6 +270,7 @@ export async function listPrs(opts: ListPrsOptions): Promise<GitHubPr[]> {
   );
 
   // Collect all raw PRs with their repo metadata
+  // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
   const rawPrsWithMeta: Array<{ pr: any; repoId: string; owner: string; repo: string }> = [];
   for (let i = 0; i < repoEntries.length; i++) {
     const r = repoEntries[i];

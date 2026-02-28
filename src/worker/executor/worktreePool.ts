@@ -25,9 +25,9 @@ function isProcessAlive(pid: number): boolean {
   try {
     process.kill(pid, 0); // signal 0 = existence check, no actual signal sent
     return true;
-  } catch (err: any) {
+  } catch (err: unknown) {
     // EPERM = process exists but we lack permission to signal it → still alive
-    if (err.code === "EPERM") return true;
+    if ((err as { code?: string }).code === "EPERM") return true;
     // ESRCH = no such process → dead
     return false;
   }
@@ -243,10 +243,10 @@ class WorktreePoolImpl {
     if (state.repo && state.clonePath) {
       try {
         this.parkOnBaseBranch(state.slot, state.repo, state.clonePath, state.currentBranch);
-      } catch (err: any) {
+      } catch (err: unknown) {
         log.warn("Failed to park worktree on base branch during release", {
           slot: slotName,
-          error: err.message,
+          error: (err as Error).message,
         });
       }
     }

@@ -18,7 +18,7 @@ export interface PrCreateResult {
 export function detectExistingPr(worktreePath: string, branch: string): string | null {
   try {
     const url = exec(`gh pr view ${branch} --json url -q .url`, worktreePath);
-    if (url && url.startsWith("http")) {
+    if (url?.startsWith("http")) {
       log.info("Detected existing PR for branch", { branch, url });
       return url;
     }
@@ -93,8 +93,8 @@ export function createPr(
       try {
         exec(`gh pr edit "${prUrl}" --add-reviewer ${uniqueReviewers.join(",")}`, worktreePath);
         log.info("Reviewers added", { reviewers: uniqueReviewers });
-      } catch (err: any) {
-        log.warn("Failed to add reviewers", { error: err.message });
+      } catch (err: unknown) {
+        log.warn("Failed to add reviewers", { error: (err as Error).message });
       }
     }
   }
@@ -115,8 +115,8 @@ export function promotePr(prUrl: string, reviewers?: string[]): void {
         timeout: 30_000,
       });
       log.info("Reviewers added on promote", { reviewers: unique });
-    } catch (err: any) {
-      log.warn("Failed to add reviewers on promote", { error: err.message });
+    } catch (err: unknown) {
+      log.warn("Failed to add reviewers on promote", { error: (err as Error).message });
     }
   }
 }

@@ -60,8 +60,8 @@ describe("insertJob / findJobByTaskId", () => {
     await insertJob(job);
     const found = await findJobByTaskId("test-insert-1");
     expect(found).not.toBeNull();
-    expect(found!.task_id).toBe("test-insert-1");
-    expect(found!.task_text).toBe("fix the bug");
+    expect(found?.task_id).toBe("test-insert-1");
+    expect(found?.task_text).toBe("fix the bug");
   });
 });
 
@@ -70,7 +70,7 @@ describe("findJobByEventId", () => {
     await insertJob(makeJob({ source: { type: "slack_app_mention", event_id: "evt_abc" } }));
     const found = await findJobByEventId("evt_abc");
     expect(found).not.toBeNull();
-    expect(found!.source.event_id).toBe("evt_abc");
+    expect(found?.source.event_id).toBe("evt_abc");
   });
 
   it("returns null for non-existent event_id", async () => {
@@ -85,11 +85,11 @@ describe("atomicClaim", () => {
 
     const claimed = await atomicClaim("claim-1", "U_OWNER", "worker-1", 120);
     expect(claimed).not.toBeNull();
-    expect(claimed!.status).toBe("RUNNING");
-    expect(claimed!.claimed_by).toBe("worker-1");
-    expect(claimed!.attempt).toBe(1);
-    expect(claimed!.lease_expires_at).toBeDefined();
-    expect(claimed!.run_started_at).toBeDefined();
+    expect(claimed?.status).toBe("RUNNING");
+    expect(claimed?.claimed_by).toBe("worker-1");
+    expect(claimed?.attempt).toBe(1);
+    expect(claimed?.lease_expires_at).toBeDefined();
+    expect(claimed?.run_started_at).toBeDefined();
   });
 
   it("rejects claim when already RUNNING with valid lease", async () => {
@@ -121,8 +121,8 @@ describe("atomicClaim", () => {
 
     const claimed = await atomicClaim("claim-3", "U_OWNER", "worker-2", 120);
     expect(claimed).not.toBeNull();
-    expect(claimed!.claimed_by).toBe("worker-2");
-    expect(claimed!.attempt).toBe(2);
+    expect(claimed?.claimed_by).toBe("worker-2");
+    expect(claimed?.attempt).toBe(2);
   });
 
   it("rejects claim with wrong requested_by", async () => {
@@ -136,7 +136,7 @@ describe("atomicClaim", () => {
     await insertJob(makeJob({ task_id: "claim-5", attempt: 3, status: "QUEUED" }));
 
     const claimed = await atomicClaim("claim-5", "U_OWNER", "worker-1", 120);
-    expect(claimed!.attempt).toBe(4);
+    expect(claimed?.attempt).toBe(4);
   });
 
   it("exactly one of two concurrent claims succeeds", async () => {
@@ -149,7 +149,7 @@ describe("atomicClaim", () => {
 
     const winners = [result1, result2].filter(Boolean);
     expect(winners).toHaveLength(1);
-    expect(winners[0]!.claimed_by).toMatch(/^worker-[AB]$/);
+    expect(winners[0]?.claimed_by).toMatch(/^worker-[AB]$/);
   });
 
   it("reclaims a FIXING_CI job with expired lease", async () => {
@@ -166,8 +166,8 @@ describe("atomicClaim", () => {
 
     const claimed = await atomicClaim("claim-fixci", "U_OWNER", "worker-2", 120);
     expect(claimed).not.toBeNull();
-    expect(claimed!.claimed_by).toBe("worker-2");
-    expect(claimed!.status).toBe("RUNNING");
+    expect(claimed?.claimed_by).toBe("worker-2");
+    expect(claimed?.status).toBe("RUNNING");
   });
 });
 
@@ -184,7 +184,7 @@ describe("updateHeartbeat", () => {
 
     const result = await updateHeartbeat("hb-1", "worker-1", 120);
     expect(result).not.toBeNull();
-    expect(result!.lease_expires_at!.getTime()).toBeGreaterThan(Date.now() + 100_000);
+    expect(result?.lease_expires_at?.getTime()).toBeGreaterThan(Date.now() + 100_000);
   });
 
   it("rejects heartbeat from non-owning worker", async () => {
@@ -218,11 +218,11 @@ describe("completeJob", () => {
       pr_urls: ["https://github.com/pull/1"],
     });
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("DONE");
-    expect(result!.result_summary).toBe("all good");
-    expect(result!.pr_urls).toEqual(["https://github.com/pull/1"]);
-    expect(result!.run_ended_at).toBeDefined();
-    expect(result!.claimed_by).toBeUndefined();
+    expect(result?.status).toBe("DONE");
+    expect(result?.result_summary).toBe("all good");
+    expect(result?.pr_urls).toEqual(["https://github.com/pull/1"]);
+    expect(result?.run_ended_at).toBeDefined();
+    expect(result?.claimed_by).toBeUndefined();
   });
 
   it("rejects completion by non-owner", async () => {
@@ -242,11 +242,11 @@ describe("awaitApprovalJob", () => {
       pr_urls: ["https://github.com/pull/99"],
     });
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("WAITING_FOR_APPROVAL");
-    expect(result!.result_summary).toBe("draft PR ready");
-    expect(result!.pr_urls).toEqual(["https://github.com/pull/99"]);
-    expect(result!.run_ended_at).toBeDefined();
-    expect(result!.claimed_by).toBeUndefined();
+    expect(result?.status).toBe("WAITING_FOR_APPROVAL");
+    expect(result?.result_summary).toBe("draft PR ready");
+    expect(result?.pr_urls).toEqual(["https://github.com/pull/99"]);
+    expect(result?.run_ended_at).toBeDefined();
+    expect(result?.claimed_by).toBeUndefined();
   });
 
   it("rejects from non-owner", async () => {
@@ -278,9 +278,9 @@ describe("awaitApprovalJob", () => {
       result_summary: "with metrics",
       metrics,
     });
-    expect(result!.metrics).toBeDefined();
-    expect(result!.metrics!.durations!.total_ms).toBe(5000);
-    expect(result!.metrics!.claude!.total_cost_usd).toBe(0.05);
+    expect(result?.metrics).toBeDefined();
+    expect(result?.metrics?.durations?.total_ms).toBe(5000);
+    expect(result?.metrics?.claude?.total_cost_usd).toBe(0.05);
   });
 });
 
@@ -296,8 +296,8 @@ describe("promoteJob", () => {
 
     const result = await promoteJob("promo-1");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("DONE");
-    expect(result!.pr_urls).toEqual(["https://github.com/pull/99"]);
+    expect(result?.status).toBe("DONE");
+    expect(result?.pr_urls).toEqual(["https://github.com/pull/99"]);
   });
 
   it("rejects for non-WAITING_FOR_APPROVAL job", async () => {
@@ -319,9 +319,9 @@ describe("failJob", () => {
       error: { message: "something broke" },
     });
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("FAILED");
-    expect(result!.error?.message).toBe("something broke");
-    expect(result!.claimed_by).toBeUndefined();
+    expect(result?.status).toBe("FAILED");
+    expect(result?.error?.message).toBe("something broke");
+    expect(result?.claimed_by).toBeUndefined();
   });
 
   it("rejects fail for terminal job", async () => {
@@ -338,9 +338,9 @@ describe("requeueJob", () => {
 
     const result = await requeueJob("rq-1", "worker-1");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("QUEUED");
-    expect(result!.claimed_by).toBeUndefined();
-    expect(result!.lease_expires_at).toBeUndefined();
+    expect(result?.status).toBe("QUEUED");
+    expect(result?.claimed_by).toBeUndefined();
+    expect(result?.lease_expires_at).toBeUndefined();
   });
 
   it("rejects requeue from non-owner", async () => {
@@ -356,7 +356,7 @@ describe("cancelJob", () => {
 
     const result = await cancelJob("cx-1");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("CANCELED");
+    expect(result?.status).toBe("CANCELED");
   });
 
   it("cancels a RUNNING job", async () => {
@@ -364,7 +364,7 @@ describe("cancelJob", () => {
 
     const result = await cancelJob("cx-2");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("CANCELED");
+    expect(result?.status).toBe("CANCELED");
   });
 
   it("returns null for already-terminal job", async () => {
@@ -379,7 +379,7 @@ describe("softDeleteJob", () => {
 
     const result = await softDeleteJob("del-1");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("DELETED");
+    expect(result?.status).toBe("DELETED");
   });
 
   it("refuses to delete a RUNNING job", async () => {
@@ -543,8 +543,8 @@ describe("appendEvent", () => {
     });
 
     const job = await findJobByTaskId("evt-1");
-    expect(job!.events).toHaveLength(1);
-    expect(job!.events![0].type).toBe("PHASE_STARTED");
+    expect(job?.events).toHaveLength(1);
+    expect(job?.events?.[0].type).toBe("PHASE_STARTED");
   });
 
   it("truncates oversized payloads", async () => {
@@ -553,9 +553,9 @@ describe("appendEvent", () => {
     await appendEvent("evt-2", { at: new Date(), type: "BIG", payload: bigPayload });
 
     const job = await findJobByTaskId("evt-2");
-    const evt = job!.events![job!.events!.length - 1];
-    expect(evt.payload._truncated).toBe(true);
-    expect(evt.payload.preview.length).toBeLessThanOrEqual(2001);
+    const evt = job?.events?.[job?.events?.length - 1];
+    expect(evt?.payload._truncated).toBe(true);
+    expect(evt?.payload.preview.length).toBeLessThanOrEqual(2001);
   });
 });
 
@@ -565,8 +565,8 @@ describe("atomicClaim with needs_plan", () => {
 
     const claimed = await atomicClaim("plan-claim-1", "U_OWNER", "worker-1", 120);
     expect(claimed).not.toBeNull();
-    expect(claimed!.status).toBe("PLANNING");
-    expect(claimed!.claimed_by).toBe("worker-1");
+    expect(claimed?.status).toBe("PLANNING");
+    expect(claimed?.claimed_by).toBe("worker-1");
   });
 
   it("claims a normal job as RUNNING", async () => {
@@ -574,7 +574,7 @@ describe("atomicClaim with needs_plan", () => {
 
     const claimed = await atomicClaim("normal-claim-1", "U_OWNER", "worker-1", 120);
     expect(claimed).not.toBeNull();
-    expect(claimed!.status).toBe("RUNNING");
+    expect(claimed?.status).toBe("RUNNING");
   });
 
   it("claims a needs_plan job with existing plan as RUNNING (confirmed re-execution)", async () => {
@@ -588,7 +588,7 @@ describe("atomicClaim with needs_plan", () => {
 
     const claimed = await atomicClaim("plan-claim-2", "U_OWNER", "worker-1", 120);
     expect(claimed).not.toBeNull();
-    expect(claimed!.status).toBe("RUNNING");
+    expect(claimed?.status).toBe("RUNNING");
   });
 });
 
@@ -605,9 +605,9 @@ describe("submitPlanJob", () => {
 
     const result = await submitPlanJob("sp-1", "w1", { summary: "Plan: do X then Y" });
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("PENDING_CONFIRMATION");
-    expect(result!.plan?.summary).toBe("Plan: do X then Y");
-    expect(result!.claimed_by).toBeUndefined();
+    expect(result?.status).toBe("PENDING_CONFIRMATION");
+    expect(result?.plan?.summary).toBe("Plan: do X then Y");
+    expect(result?.claimed_by).toBeUndefined();
   });
 
   it("returns null if wrong node_id", async () => {
@@ -639,8 +639,8 @@ describe("confirmJobPlan", () => {
 
     const result = await confirmJobPlan("cp-1");
     expect(result).not.toBeNull();
-    expect(result!.status).toBe("QUEUED");
-    expect(result!.plan?.summary).toBe("the plan");
+    expect(result?.status).toBe("QUEUED");
+    expect(result?.plan?.summary).toBe("the plan");
   });
 
   it("updates task_text when revised_task_text provided", async () => {
@@ -654,8 +654,8 @@ describe("confirmJobPlan", () => {
 
     const result = await confirmJobPlan("cp-2", "revised task");
     expect(result).not.toBeNull();
-    expect(result!.task_text).toBe("revised task");
-    expect(result!.status).toBe("QUEUED");
+    expect(result?.task_text).toBe("revised task");
+    expect(result?.status).toBe("QUEUED");
   });
 
   it("returns null if not PENDING_CONFIRMATION", async () => {

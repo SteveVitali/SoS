@@ -123,7 +123,7 @@ export function JobsList() {
       else if (action === "retry") await retryJob(taskId);
       else if (action === "delete") await deleteJob(taskId);
       refreshJobs();
-    } catch (err: unknown) {
+    } catch (_err: unknown) {
       // Error will show on next refresh
     }
   };
