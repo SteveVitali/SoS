@@ -28,7 +28,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.76.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "@lancedb/lancedb": "^0.26.2",
     "@slack/bolt": "^4.1.0",
     "adm-zip": "^0.5.16",
