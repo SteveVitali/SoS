@@ -23,12 +23,10 @@ import {
   listKBs,
   removeDocumentRecord,
   updateKB,
-  updateKBStats,
 } from "./kbRepo.js";
 import {
   addToKBTable,
   countDocumentRows,
-  countKBTableRows,
   deleteDocumentFromKBTable,
   dropKBTable,
   searchKBTable,

@@ -16,6 +16,7 @@ Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your re
 - **Multi-repo** — a repo registry with per-repo commands, CI providers, and keyword-based detection
 - **Enterprise-ready** — worktree pooling with build cache preservation for large monorepos (Bazel, etc.)
 - **Worker management** — spawn, monitor, and shut down worker processes from the web UI with live log streaming
+- **Knowledge bases** — upload documents (text, PDF, archives), chunk and embed them locally, and inject relevant context into LLM calls via semantic search
 - **Observable** — web dashboard with job timeline, PR stats, worker health, live Claude output, and Slack thread updates
 - **Crash-safe** — lease-based job claims with automatic recovery when workers crash
 - **Cost tracking** — per-session token counts and estimated USD cost from Claude API pricing
@@ -175,6 +176,7 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack app creation, LLM routi
    - **PRs** — view open PRs across registered repos with comment/review thread stats
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
    - **Repos** — edit the repo registry (YAML) directly from the browser
+   - **Knowledge** — create knowledge bases, upload documents, test semantic search, configure scopes and chunking
    - **Routing** — visual editor for LLM action routing config (parameters, execution types, reply templates) with raw YAML fallback
 
 ---

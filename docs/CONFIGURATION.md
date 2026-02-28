@@ -34,6 +34,16 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `WEB_BASIC_AUTH_USER` | No | Optional basic auth for web UI |
 | `WEB_BASIC_AUTH_PASS` | No | Optional basic auth for web UI |
 
+## Knowledge Base (Embeddings)
+
+| Variable | Required | Description |
+|---|---|---|
+| `SOS_EMBEDDING_PROVIDER` | No (default: `openai`) | Embedding provider. Currently supports `openai` (works with any OpenAI-compatible API). |
+| `SOS_EMBEDDING_MODEL` | No (default: `text-embedding-3-small`) | Embedding model name |
+| `SOS_EMBEDDING_API_KEY` | Only if KB is used | API key for the embedding provider. Falls back to `OPENAI_API_KEY` if not set. |
+| `SOS_EMBEDDING_BASE_URL` | No | Custom base URL for the embedding API (e.g., a LiteLLM proxy). Defaults to `https://api.openai.com/v1`. |
+| `SOS_KB_STORAGE_DIR` | No | Directory for LanceDB vector data. Defaults to `$SOS_WORKSPACE_ROOT/kb` or `.sos-kb` in the project root. |
+
 ## Worker
 
 The worker reads from the same `.env` file.

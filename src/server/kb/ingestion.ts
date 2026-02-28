@@ -91,7 +91,7 @@ const TEXT_EXTENSIONS = new Set([
   ".rmd",
 ]);
 
-const ARCHIVE_EXTENSIONS = new Set([".zip", ".tar", ".gz", ".tgz"]);
+const ARCHIVE_EXTENSIONS = new Set([".zip", ".tar", ".tgz"]);
 
 export interface IngestedFile {
   name: string;
