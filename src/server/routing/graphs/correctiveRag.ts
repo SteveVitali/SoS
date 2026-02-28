@@ -3,13 +3,13 @@
  *
  * Graph topology:
  *
- *   retrieve → grade_relevance → ─┬─ sufficient ──→ answer
+ *   retrieve → grade_relevance → ─┬─ sufficient ──→ synthesize → END
  *                                  │
- *                                  ├─ empty ───────→ answer_without_context
+ *                                  ├─ empty ───────→ synthesize → END
  *                                  │
  *                                  └─ insufficient ─→ reformulate_query ──→ retrieve
  *                                       (if under max_retrievals,          (loop)
- *                                        else → answer)
+ *                                        else → synthesize)
  *
  * This graph reuses the existing KB search infrastructure (kbService.ts)
  * and LLM provider (llmProvider.ts) — no LangChain model wrappers needed.
@@ -23,6 +23,19 @@ import type { LLMProvider } from "../../llm/llmProvider.js";
 import type { RAGGraphConfig, RAGGraphState } from "./types.js";
 
 const log = createLogger("server:routing:graphs:corrective-rag");
+
+// ---------------------------------------------------------------------------
+// Shared helpers
+// ---------------------------------------------------------------------------
+
+function formatChunksForLLM(chunks: KBSearchResult[]): string {
+  return chunks
+    .map(
+      (c, i) =>
+        `[${i + 1}] (${c.kb_name} > ${c.source_file}, score: ${c.score.toFixed(2)})\n${c.content}`,
+    )
+    .join("\n\n---\n\n");
+}
 
 // ---------------------------------------------------------------------------
 // LangGraph Annotation (defines how state channels merge across nodes)
@@ -98,13 +111,7 @@ function makeGradeNode(provider: LLMProvider, model: string) {
       };
     }
 
-    const chunksText = state.retrieved_chunks
-      .map(
-        (c, i) =>
-          `[${i + 1}] (${c.kb_name} > ${c.source_file}, score: ${c.score.toFixed(2)})\n${c.content}`,
-      )
-      .join("\n\n---\n\n");
-
+    const chunksText = formatChunksForLLM(state.retrieved_chunks);
     const userMessage = `Question: ${state.query}\n\nRetrieved chunks:\n${chunksText}`;
 
     const response = await provider.chat({
@@ -190,12 +197,7 @@ function makeAnswerNode(provider: LLMProvider, model: string, maxTokens: number)
   return async (state: RAGGraphState): Promise<Partial<RAGGraphState>> => {
     const chunksText =
       state.retrieved_chunks.length > 0
-        ? state.retrieved_chunks
-            .map(
-              (c, i) =>
-                `[${i + 1}] (${c.kb_name} > ${c.source_file}, score: ${c.score.toFixed(2)})\n${c.content}`,
-            )
-            .join("\n\n---\n\n")
+        ? formatChunksForLLM(state.retrieved_chunks)
         : "(No relevant context was found in the knowledge bases)";
 
     const response = await provider.chat({

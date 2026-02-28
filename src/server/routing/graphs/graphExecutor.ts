@@ -121,10 +121,18 @@ export async function executeLangGraph(
     // Run graph with optional timeout
     let result: GraphResult;
     if (Number.isFinite(timeoutMs)) {
-      const timeout = new Promise<never>((_, reject) =>
-        setTimeout(() => reject(new Error(`Graph timed out after ${timeoutMs}ms`)), timeoutMs),
-      );
-      result = await Promise.race([runGraph(execDef.graph, query, graphConfig), timeout]);
+      let timer: ReturnType<typeof setTimeout> | undefined;
+      const timeout = new Promise<never>((_, reject) => {
+        timer = setTimeout(
+          () => reject(new Error(`Graph timed out after ${timeoutMs}ms`)),
+          timeoutMs,
+        );
+      });
+      try {
+        result = await Promise.race([runGraph(execDef.graph, query, graphConfig), timeout]);
+      } finally {
+        if (timer) clearTimeout(timer);
+      }
     } else {
       result = await runGraph(execDef.graph, query, graphConfig);
     }

@@ -1,89 +1,35 @@
-# Corrective RAG — YAML Configuration Example
+# Corrective RAG — LangGraph Execution Type
 
-To enable the corrective RAG graph, add a `kb_search` action to `routing-config.yaml`
-under `actions:`. This replaces the single-shot KB context injection with an iterative
-retrieve → grade → reformulate loop.
+The `langgraph` execution type runs a LangGraph state machine as an action handler.
+Currently supports the `corrective_rag` graph, which iteratively retrieves from
+knowledge bases, grades relevance, reformulates queries, and synthesizes answers.
 
-## Option A: Replace the `chat` action's execution
+See `routing-config.yaml` for the active `kb_search` action definition.
 
-Change the `chat` action to use the graph instead of a plain reply:
+## Graph: `corrective_rag`
 
-```yaml
-  chat:
-    enabled: true
-    description: |
-      Respond conversationally using knowledge base context when relevant.
-      Put your full response in the 'response' field.
-    routing_hint: >
-      The user is asking a question, having a conversation, or their message doesn't
-      map to any other action. Use the knowledge bases to find relevant context and
-      answer thoroughly.
-    parameters:
-      response:
-        type: string
-        description: Your conversational response to the user
-        required: true
-      query:
-        type: string
-        description: The user's question or topic to search knowledge bases for
-        required: true
-    execution:
-      type: langgraph
-      graph: corrective_rag
-      graph_config:
-        scopes:
-          - chat
-          - all
-        max_retrievals: 3
-        max_chunks: 8
-        min_score: 0.3
-        max_answer_tokens: 1024
-      reply_error: "⚠️ I had trouble searching the knowledge bases: {{error}}"
+```
+retrieve → grade_relevance → ─┬─ sufficient ──→ synthesize → END
+                               ├─ empty ───────→ synthesize → END
+                               └─ insufficient ─→ reformulate_query → retrieve (loop)
+                                    (capped at max_retrievals)
 ```
 
-## Option B: Add a dedicated `kb_search` action alongside `chat`
-
-This keeps `chat` as a lightweight conversational reply and adds a separate action
-for deep KB-powered answers:
-
-```yaml
-  kb_search:
-    enabled: true
-    description: |
-      Search the knowledge bases to answer a question using stored documentation,
-      design docs, or other indexed content. Use this when the user asks a factual
-      question that might be answered by the knowledge bases.
-    routing_hint: >
-      The user is asking a question that could be answered by searching the knowledge
-      bases — e.g. "how does X work?", "what's our policy on Y?", "where is the docs
-      for Z?". Prefer this over chat when the question is about something that might
-      be documented.
-    parameters:
-      query:
-        type: string
-        description: The search query / question to answer from knowledge bases
-        required: true
-    execution:
-      type: langgraph
-      graph: corrective_rag
-      graph_config:
-        scopes:
-          - chat
-          - all
-        max_retrievals: 3
-        max_chunks: 8
-        min_score: 0.25
-        max_answer_tokens: 1024
-      reply_error: "⚠️ Knowledge base search failed: {{error}}"
-```
-
-## Configuration Options
+## Configuration Options (`graph_config`)
 
 | Field | Default | Description |
 |-------|---------|-------------|
-| `graph_config.scopes` | `["chat", "all"]` | Which KB scopes to search |
-| `graph_config.max_retrievals` | `3` | Max retrieve→grade→reformulate loops |
-| `graph_config.max_chunks` | `8` | Chunks per retrieval pass |
-| `graph_config.min_score` | `0.3` | Minimum similarity score |
-| `graph_config.model` | Server's configured model | LLM for grading + answering |
-| `graph_config.max_answer_tokens` | `1024` | Max tokens for the final answer |
+| `scopes` | `["chat", "all"]` | Which KB scopes to search |
+| `max_retrievals` | `3` | Max retrieve→grade→reformulate loops |
+| `max_chunks` | `8` | Chunks per retrieval pass |
+| `min_score` | `0.3` | Minimum similarity score |
+| `model` | Server's configured model | LLM for grading + answering |
+| `max_answer_tokens` | `1024` | Max tokens for the final answer |
+| `show_trace` | `true` | Append a trace summary footer to the Slack reply |
+| `timeout_ms` | `Infinity` | Total timeout for the graph execution |
+
+## Adding New Graphs
+
+1. Create `src/server/routing/graphs/myGraph.ts` with a `runMyGraph()` function
+2. Add a `case "my_graph"` to the switch in `graphExecutor.ts → runGraph()`
+3. Use `execution.graph: my_graph` in the YAML action definition
