@@ -183,22 +183,23 @@ export async function executeLangGraph(
       actionTaken: result.actionTaken,
     };
   } catch (err: unknown) {
+    const errorMessage = err instanceof Error ? err.message : String(err);
+
     log.error("LangGraph execution failed", {
       graph: execDef.graph,
-      error: (err as Error).message,
+      error: errorMessage,
     });
 
-    const reply = execDef.reply_error
-      ? renderTemplate(
-          execDef.reply_error,
-          tplCtx(action, ctx, {
-            error: (err as Error).message,
-          }),
-        )
-      : `⚠️ Knowledge base search failed: ${(err as Error).message}`;
+    const errorReply = execDef.reply_error
+      ? renderTemplate(execDef.reply_error, tplCtx(action, ctx, { error: errorMessage }))
+      : `⚠️ Knowledge base search failed: ${errorMessage}`;
+
+    // Apply the same "On it." filter as the success path
+    const finalErrorReply =
+      action.reply && action.reply !== "On it." ? `${action.reply}\n\n${errorReply}` : errorReply;
 
     return {
-      reply: action.reply ? `${action.reply}\n\n${reply}` : reply,
+      reply: finalErrorReply,
       actionTaken: `langgraph: ${execDef.graph} failed`,
     };
   }

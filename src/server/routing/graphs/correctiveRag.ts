@@ -182,7 +182,7 @@ function makeReformulateNode(provider: LLMProvider, model: string) {
 }
 
 // ---------------------------------------------------------------------------
-// Node: answer (with context)
+// Node: synthesize (generate final answer from retrieved context)
 // ---------------------------------------------------------------------------
 
 const ANSWER_SYSTEM_PROMPT = `You are a helpful assistant answering questions using the provided knowledge base context. 
