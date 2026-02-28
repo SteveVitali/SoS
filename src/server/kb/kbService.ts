@@ -230,8 +230,11 @@ export async function removeDocument(kbId: string, docName: string): Promise<boo
   const kb = await findKB(kbId);
   if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
 
-  // Get the chunk count before deletion for stats update
+  // Get stats before deletion
   const chunkCount = await countDocumentRows(kbId, docName);
+  const docs = await listDocuments(kbId);
+  const docRecord = docs.find((d) => d.name === docName);
+  const sizeBytes = docRecord?.size_bytes || 0;
 
   // Remove from vector store
   await deleteDocumentFromKBTable(kbId, docName);
@@ -240,11 +243,7 @@ export async function removeDocument(kbId: string, docName: string): Promise<boo
   const removed = await removeDocumentRecord(kbId, docName);
   if (!removed) return false;
 
-  // Update stats
-  const docs = await listDocuments(kbId);
-  const docToRemove = docs.find((d) => d.name === docName);
-  const sizeBytes = docToRemove?.size_bytes || 0;
-
+  // Update stats (decrement)
   await incrementKBStats(kbId, {
     chunk_count: -chunkCount,
     document_count: -1,
