@@ -135,6 +135,24 @@ export interface DispatchExecution {
   reply_unknown?: string;
 }
 
+/** Run a LangGraph graph (e.g. corrective_rag). */
+export interface LangGraphExecution {
+  type: "langgraph";
+  graph: string;
+  graph_config?: {
+    scopes?: string[];
+    max_retrievals?: number;
+    max_chunks?: number;
+    min_score?: number;
+    model?: string;
+    max_answer_tokens?: number;
+    show_trace?: boolean;
+    timeout_ms?: number;
+  };
+  reply_template?: string;
+  reply_error?: string;
+}
+
 export type ExecutionDef =
   | ReplyExecution
   | CreateJobExecution
@@ -147,7 +165,8 @@ export type ExecutionDef =
   | WebhookExecution
   | AgentTaskExecution
   | LeaveChannelExecution
-  | DispatchExecution;
+  | DispatchExecution
+  | LangGraphExecution;
 
 // --- Knowledge Base Config (per-action) ---
 

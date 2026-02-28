@@ -1,4 +1,5 @@
 export { executeAction } from "./executors.js";
+export { initGraphExecutor } from "./graphs/graphExecutor.js";
 export {
   getRoutingConfig,
   getRoutingConfigPath,
@@ -10,6 +11,7 @@ export {
 export type {
   ActionDef,
   ExecutionDef,
+  LangGraphExecution,
   ParamDef,
   RoutingConfig,
 } from "./routingTypes.js";
