@@ -149,6 +149,14 @@ export type ExecutionDef =
   | LeaveChannelExecution
   | DispatchExecution;
 
+// --- Knowledge Base Config (per-action) ---
+
+export interface ActionKBConfig {
+  scopes?: string[];
+  max_chunks?: number;
+  min_score?: number;
+}
+
 // --- Action Definition ---
 
 export interface ActionDef {
@@ -158,6 +166,7 @@ export interface ActionDef {
   parameters: Record<string, ParamDef>;
   execution: ExecutionDef;
   defaults?: Record<string, unknown>;
+  knowledge_bases?: ActionKBConfig;
 }
 
 // --- Top-level Routing Config ---
@@ -167,4 +176,5 @@ export interface RoutingConfig {
   system_prompt: string;
   actions: Record<string, ActionDef>;
   custom_actions: Record<string, ActionDef>;
+  kb_context_max_tokens?: number;
 }

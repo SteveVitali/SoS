@@ -9,6 +9,12 @@ import { loadServerConfig } from "./config.js";
 import { setSlackPoster } from "./jobs/jobService.js";
 import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
 import { initTitleGenerator } from "./jobs/titleGenerator.js";
+import {
+  closeVectorStore,
+  ensureKBDocumentIndexes,
+  ensureKBIndexes,
+  initVectorStore,
+} from "./kb/index.js";
 import { createLLMProvider } from "./llm/index.js";
 import { closeMongo, connectMongo } from "./mongo.js";
 import { initRoutingConfig } from "./routing/index.js";
@@ -27,6 +33,21 @@ async function main() {
 
   // Connect to MongoDB
   await connectMongo(config.mongoUri, config.mongoDb);
+
+  // Initialize knowledge base subsystem
+  try {
+    const kbStoragePath =
+      process.env.SOS_KB_STORAGE_DIR ||
+      (config.workspaceRoot
+        ? path.join(config.workspaceRoot, "kb")
+        : path.join(process.cwd(), ".sos-kb"));
+    await initVectorStore(kbStoragePath);
+    await ensureKBIndexes();
+    await ensureKBDocumentIndexes();
+    log.info("Knowledge base subsystem initialized", { storagePath: kbStoragePath });
+  } catch (err: any) {
+    log.warn("Failed to initialize knowledge base subsystem (non-fatal)", { error: err.message });
+  }
 
   // Create Slack poster (only if real tokens are configured, not placeholders)
   const slackEnabled = config.slackBotToken.length > 20 && config.slackAppToken.length > 20;
@@ -145,6 +166,7 @@ async function main() {
       await slackPoster.setPresenceAway();
     }
     stopLeaseReaper();
+    await closeVectorStore();
     await closeMongo();
     process.exit(0);
   };

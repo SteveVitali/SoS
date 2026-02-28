@@ -254,7 +254,25 @@ export async function runJob(
       }
     }
 
-    // 4) Run Claude Code CLI
+    // 4) Fetch KB context (non-fatal)
+    let kbContext: string | undefined;
+    try {
+      const scope = job.plan?.summary ? "create_job" : "agent_task";
+      const kbResults = await api.searchKnowledgeBases(job.task_text, [scope, "all"]);
+      if (kbResults.length > 0) {
+        kbContext = kbResults
+          .map(
+            (r) =>
+              `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
+          )
+          .join("\n\n---\n\n");
+        log.info("KB context fetched for job", { task_id: job.task_id, chunks: kbResults.length });
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    // 5) Run Claude Code CLI
     await checkCanceled();
     t0 = Date.now();
     await events.emit("CLAUDE_STARTED", {});
@@ -266,6 +284,7 @@ export async function runJob(
       job.attachments,
       leaseSignal,
       job.plan?.summary,
+      kbContext,
     );
     durations.claude_code_ms = Date.now() - t0;
     claudeSessions.push(toClaudeSession(claudeResult, "code"));

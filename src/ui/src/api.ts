@@ -429,3 +429,127 @@ export async function pollConversationUpdates(
 export async function deleteConversation(id: string): Promise<{ ok: boolean }> {
   return request("DELETE", `/chats/${id}`);
 }
+
+// --- Knowledge Bases ---
+
+export type KBScope = "chat" | "create_job" | "plan_job" | "agent_task" | "all";
+
+export interface KnowledgeBase {
+  kb_id: string;
+  name: string;
+  description: string;
+  enabled: boolean;
+  owner: string;
+  created_at: string;
+  updated_at: string;
+  scopes: KBScope[];
+  chunk_count: number;
+  document_count: number;
+  total_size_bytes: number;
+  embedding_model: string;
+  chunk_size: number;
+  chunk_overlap: number;
+  max_chunks_per_query: number;
+  min_similarity_score: number;
+}
+
+export interface KBDocument {
+  name: string;
+  size_bytes: number;
+  chunk_count: number;
+  ingested_at: string;
+}
+
+export interface KBSearchResult {
+  content: string;
+  source_file: string;
+  kb_name: string;
+  kb_id: string;
+  score: number;
+  metadata: { section?: string; page?: number };
+}
+
+export async function listKBs(): Promise<{ kbs: KnowledgeBase[] }> {
+  return request("GET", "/kb");
+}
+
+export async function getKB(id: string): Promise<{ kb: KnowledgeBase; documents: KBDocument[] }> {
+  return request("GET", `/kb/${id}`);
+}
+
+export async function createKB(data: {
+  name: string;
+  description?: string;
+  scopes?: KBScope[];
+  chunk_size?: number;
+  chunk_overlap?: number;
+  max_chunks_per_query?: number;
+  min_similarity_score?: number;
+}): Promise<{ kb: KnowledgeBase }> {
+  return request("POST", "/kb", data);
+}
+
+export async function updateKB(
+  id: string,
+  data: Partial<
+    Pick<
+      KnowledgeBase,
+      | "name"
+      | "description"
+      | "enabled"
+      | "scopes"
+      | "chunk_size"
+      | "chunk_overlap"
+      | "max_chunks_per_query"
+      | "min_similarity_score"
+    >
+  >,
+): Promise<{ kb: KnowledgeBase }> {
+  return request("PUT", `/kb/${id}`, data);
+}
+
+export async function deleteKB(id: string): Promise<{ ok: boolean }> {
+  return request("DELETE", `/kb/${id}`);
+}
+
+export async function ingestKBFiles(
+  kbId: string,
+  files: File[],
+): Promise<{
+  documents_added: number;
+  chunks_added: number;
+  skipped: string[];
+  errors: Array<{ file: string; error: string }>;
+}> {
+  const token = localStorage.getItem("sos_token") || "";
+  const formData = new FormData();
+  for (const file of files) {
+    formData.append("files", file);
+  }
+  const res = await fetch(`${BASE}/kb/${kbId}/ingest`, {
+    method: "POST",
+    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json();
+}
+
+export async function searchKB(
+  kbId: string,
+  query: string,
+  limit?: number,
+): Promise<{ results: KBSearchResult[] }> {
+  return request("POST", `/kb/${kbId}/search`, { query, limit });
+}
+
+export async function listKBDocuments(kbId: string): Promise<{ documents: KBDocument[] }> {
+  return request("GET", `/kb/${kbId}/documents`);
+}
+
+export async function deleteKBDocument(kbId: string, docName: string): Promise<{ ok: boolean }> {
+  return request("DELETE", `/kb/${kbId}/documents/${encodeURIComponent(docName)}`);
+}

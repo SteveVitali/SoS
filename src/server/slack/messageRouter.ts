@@ -1,6 +1,8 @@
+import type { KBScope, KBSearchResult } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
 import { queryJobs } from "../jobs/jobService.js";
+import { searchKnowledgeBases } from "../kb/kbService.js";
 import type { ContentBlock, LLMProvider, ToolDefinition } from "../llm/index.js";
 import {
   buildActionsPromptSection,
@@ -87,6 +89,57 @@ export interface ThreadMessage {
   isBot: boolean;
 }
 
+const CHARS_PER_TOKEN = 4;
+const DEFAULT_KB_MAX_TOKENS = 2000;
+
+/**
+ * Build knowledge base context by searching enabled KBs with the user's message.
+ * Returns a formatted string for injection into the system prompt.
+ */
+async function buildKBContext(userMessage: string, scopes: KBScope[]): Promise<string> {
+  try {
+    const results = await searchKnowledgeBases({
+      query: userMessage,
+      scopes,
+    });
+
+    if (!results.length) return "(No knowledge base context available)";
+
+    // Get the max tokens from routing config, or use default
+    let maxTokens = DEFAULT_KB_MAX_TOKENS;
+    try {
+      const config = getRoutingConfig();
+      if (config.kb_context_max_tokens) {
+        maxTokens = config.kb_context_max_tokens;
+      }
+    } catch {}
+
+    const maxChars = maxTokens * CHARS_PER_TOKEN;
+    let totalChars = 0;
+    const entries: string[] = [];
+
+    for (const r of results) {
+      const entry = `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`;
+      if (totalChars + entry.length > maxChars) break;
+      entries.push(entry);
+      totalChars += entry.length;
+    }
+
+    if (!entries.length) return "(No knowledge base context available)";
+
+    log.info("KB context built for routing", {
+      results: results.length,
+      included: entries.length,
+      chars: totalChars,
+    });
+
+    return entries.join("\n\n---\n\n");
+  } catch (err: any) {
+    log.warn("Failed to build KB context", { error: err.message });
+    return "(Knowledge base search unavailable)";
+  }
+}
+
 const IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 export async function routeMessage(
@@ -106,7 +159,9 @@ export async function routeMessage(
 
   const jobsContext = await buildJobsContext();
   const { systemPromptTemplate, tools: configTools, model } = buildSystemPromptAndTools();
-  const systemPrompt = systemPromptTemplate.replace("{JOBS_CONTEXT}", jobsContext);
+  const kbContext = await buildKBContext(userMessage, ["chat", "all"]);
+  let systemPrompt = systemPromptTemplate.replace("{JOBS_CONTEXT}", jobsContext);
+  systemPrompt = systemPrompt.replace("{KB_CONTEXT}", kbContext);
   const activeModel = model || configuredModel;
 
   // Build message history from thread context
