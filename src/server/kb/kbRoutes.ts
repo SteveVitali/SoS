@@ -10,6 +10,7 @@ import { createLogger } from "../../shared/logger.js";
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
+  getDocumentChunks,
   getKBDocuments,
   getKnowledgeBase,
   ingestIntoKB,
@@ -213,6 +214,22 @@ export function createKBWebRoutes(): Router {
     } catch (err: any) {
       log.error("List documents error", { error: err.message });
       res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // GET /api/web/kb/:id/documents/:name/chunks — list chunks with pagination
+  router.get("/:id/documents/:name/chunks", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const docName = decodeURIComponent(pstr(req.params.name));
+      const offset = Math.max(0, Number(req.query.offset) || 0);
+      const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+
+      const result = await getDocumentChunks(kbId, docName, offset, limit);
+      res.json(result);
+    } catch (err: any) {
+      log.error("List chunks error", { error: err.message });
+      res.status(500).json({ error: err.message });
     }
   });
 

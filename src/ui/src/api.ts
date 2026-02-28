@@ -550,6 +550,26 @@ export async function listKBDocuments(kbId: string): Promise<{ documents: KBDocu
   return request("GET", `/kb/${kbId}/documents`);
 }
 
+export interface ChunkRecord {
+  id: string;
+  content: string;
+  section: string;
+  page: number;
+  created_at: string;
+}
+
+export async function listDocumentChunks(
+  kbId: string,
+  docName: string,
+  offset = 0,
+  limit = 20,
+): Promise<{ chunks: ChunkRecord[]; total: number }> {
+  return request(
+    "GET",
+    `/kb/${kbId}/documents/${encodeURIComponent(docName)}/chunks?offset=${offset}&limit=${limit}`,
+  );
+}
+
 export async function deleteKBDocument(kbId: string, docName: string): Promise<{ ok: boolean }> {
   return request("DELETE", `/kb/${kbId}/documents/${encodeURIComponent(docName)}`);
 }

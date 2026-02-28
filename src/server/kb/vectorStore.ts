@@ -199,6 +199,53 @@ export async function countDocumentRows(kbId: string, sourceFile: string): Promi
   return table.countRows(`source_file = '${sourceFile.replace(/'/g, "''")}'`);
 }
 
+export interface ChunkRecord {
+  id: string;
+  content: string;
+  section: string;
+  page: number;
+  created_at: string;
+}
+
+/**
+ * List chunks for a specific document with pagination.
+ */
+export async function listDocumentChunks(
+  kbId: string,
+  sourceFile: string,
+  offset: number,
+  limit: number,
+): Promise<{ chunks: ChunkRecord[]; total: number }> {
+  const conn = getDb();
+  const name = tableName(kbId);
+
+  const existing = await conn.tableNames();
+  if (!existing.includes(name)) return { chunks: [], total: 0 };
+
+  const table = await conn.openTable(name);
+  const filter = `source_file = '${sourceFile.replace(/'/g, "''")}'`;
+
+  const total = await table.countRows(filter);
+
+  const rows = await table
+    .query()
+    .select(["id", "content", "section", "page", "created_at"])
+    .where(filter)
+    .limit(limit + offset)
+    .toArray();
+
+  // LanceDB doesn't support offset natively — slice in memory
+  const chunks = rows.slice(offset, offset + limit).map((r: any) => ({
+    id: r.id,
+    content: r.content,
+    section: r.section || "",
+    page: r.page || 0,
+    created_at: r.created_at || "",
+  }));
+
+  return { chunks, total };
+}
+
 /**
  * Get the storage path for the vector store.
  */

@@ -29,11 +29,20 @@ import {
   countDocumentRows,
   deleteDocumentFromKBTable,
   dropKBTable,
+  listDocumentChunks,
   searchKBTable,
   type VectorRecord,
 } from "./vectorStore.js";
 
 const log = createLogger("server:kb:service");
+
+/**
+ * Convert LanceDB L2 distance to a 0-1 similarity score.
+ * Lower distance = higher similarity. Formula: 1 / (1 + distance)
+ */
+export function distanceToSimilarity(distance: number): number {
+  return 1 / (1 + distance);
+}
 
 /**
  * Create a new knowledge base.
@@ -264,7 +273,10 @@ export async function deleteKnowledgeBase(kbId: string): Promise<boolean> {
 
 /**
  * Search across enabled knowledge bases for a given query.
- * This is the main entry point for KB-augmented context retrieval.
+ *
+ * Uses two-stage routing to avoid expensive full searches on irrelevant KBs:
+ *   Stage 1 — Probe each KB with limit=1 to find which KBs have relevant content.
+ *   Stage 2 — Full search only on KBs whose probe result met the similarity threshold.
  */
 export async function searchKnowledgeBases(
   request: KBSearchRequest,
@@ -288,23 +300,49 @@ export async function searchKnowledgeBases(
     return [];
   }
 
-  // Search each KB and merge results
-  const allResults: KBSearchResult[] = [];
+  // --- Stage 1: Probe each KB with limit=1 ---
+  const probeResults: Array<{ kb: KnowledgeBase; topScore: number }> = [];
 
   for (const kb of kbs) {
+    const minScore_ = min_score ?? kb.min_similarity_score;
+    try {
+      const probe = await searchKBTable(kb.kb_id, queryVector, 1);
+      if (probe.length > 0) {
+        const topScore = distanceToSimilarity(probe[0]._distance);
+        if (topScore >= minScore_) {
+          probeResults.push({ kb, topScore });
+        }
+      }
+    } catch (err: any) {
+      log.warn("KB probe failed, skipping", {
+        kbId: kb.kb_id,
+        name: kb.name,
+        error: err.message,
+      });
+    }
+  }
+
+  log.info("KB routing stage 1 complete", {
+    totalKBs: kbs.length,
+    relevantKBs: probeResults.length,
+    kbScores: probeResults.map((p) => ({ name: p.kb.name, score: p.topScore.toFixed(3) })),
+  });
+
+  if (probeResults.length === 0) return [];
+
+  // --- Stage 2: Full search on relevant KBs only ---
+  const allResults: KBSearchResult[] = [];
+
+  for (const { kb } of probeResults) {
     const perKBLimit = max_chunks ?? kb.max_chunks_per_query;
-    const minScore = min_score ?? kb.min_similarity_score;
+    const minScore_ = min_score ?? kb.min_similarity_score;
 
     try {
       const results = await searchKBTable(kb.kb_id, queryVector, perKBLimit);
 
       for (const r of results) {
-        // LanceDB returns L2 distance; convert to similarity score (0-1)
-        // Lower distance = higher similarity
-        // Using: similarity = 1 / (1 + distance)
-        const similarity = 1 / (1 + r._distance);
-
-        if (similarity >= minScore) {
+        const similarity = distanceToSimilarity(r._distance);
+        if (similarity >= minScore_) {
           allResults.push({
             content: r.content,
             source_file: r.source_file,
@@ -319,7 +357,7 @@ export async function searchKnowledgeBases(
         }
       }
     } catch (err: any) {
-      log.warn("KB search failed, skipping", {
+      log.warn("KB search failed in stage 2, skipping", {
         kbId: kb.kb_id,
         name: kb.name,
         error: err.message,
@@ -338,6 +376,15 @@ export async function searchKnowledgeBases(
  */
 export async function getKBDocuments(kbId: string) {
   return listDocuments(kbId);
+}
+
+/**
+ * Get paginated chunks for a specific document.
+ */
+export async function getDocumentChunks(kbId: string, docName: string, offset = 0, limit = 20) {
+  const kb = await findKB(kbId);
+  if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
+  return listDocumentChunks(kbId, docName, offset, limit);
 }
 
 /**
@@ -360,7 +407,7 @@ export async function searchSingleKB(
     source_file: r.source_file,
     kb_name: kb.name,
     kb_id: kb.kb_id,
-    score: 1 / (1 + r._distance),
+    score: distanceToSimilarity(r._distance),
     metadata: {
       section: r.section || undefined,
       page: r.page || undefined,

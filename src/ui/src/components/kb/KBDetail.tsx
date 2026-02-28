@@ -1,6 +1,7 @@
-import { useCallback, useEffect, useRef, useState } from "react";
+import { Fragment, useCallback, useEffect, useRef, useState } from "react";
 import { Link, useParams } from "react-router-dom";
 import {
+  type ChunkRecord,
   deleteKBDocument,
   getKB,
   ingestKBFiles,
@@ -8,6 +9,7 @@ import {
   type KBScope,
   type KBSearchResult,
   type KnowledgeBase,
+  listDocumentChunks,
   searchKB,
   updateKB,
 } from "../../api.js";
@@ -23,6 +25,16 @@ export function KBDetail() {
   const [ingesting, setIngesting] = useState(false);
   const [ingestResult, setIngestResult] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+
+  // Chunk exploration state
+  const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
+  const [chunkCache, setChunkCache] = useState<
+    Record<string, { chunks: ChunkRecord[]; total: number }>
+  >({});
+  const [chunkLoading, setChunkLoading] = useState(false);
+  const [chunkPage, setChunkPage] = useState(0);
+  const [expandedChunkId, setExpandedChunkId] = useState<string | null>(null);
+  const CHUNKS_PER_PAGE = 20;
 
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
@@ -141,10 +153,53 @@ export function KBDetail() {
     if (!kb || !confirm(`Remove "${docName}" from this KB?`)) return;
     try {
       await deleteKBDocument(kb.kb_id, docName);
+      setExpandedDoc(null);
+      setChunkCache((prev) => {
+        const next = { ...prev };
+        delete next[docName];
+        return next;
+      });
       await refresh();
     } catch (err: any) {
       setError(err.message);
     }
+  };
+
+  const toggleDocExpand = async (docName: string) => {
+    if (expandedDoc === docName) {
+      setExpandedDoc(null);
+      return;
+    }
+    setExpandedDoc(docName);
+    setChunkPage(0);
+    setExpandedChunkId(null);
+    if (!chunkCache[docName]) {
+      await fetchChunks(docName, 0);
+    }
+  };
+
+  const fetchChunks = async (docName: string, page: number) => {
+    if (!kb) return;
+    setChunkLoading(true);
+    try {
+      const data = await listDocumentChunks(
+        kb.kb_id,
+        docName,
+        page * CHUNKS_PER_PAGE,
+        CHUNKS_PER_PAGE,
+      );
+      setChunkCache((prev) => ({ ...prev, [docName]: data }));
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setChunkLoading(false);
+    }
+  };
+
+  const handleChunkPage = async (docName: string, page: number) => {
+    setChunkPage(page);
+    setExpandedChunkId(null);
+    await fetchChunks(docName, page);
   };
 
   const toggleScope = (scope: KBScope) => {
@@ -319,7 +374,8 @@ export function KBDetail() {
             <table style={{ ...css.table, minWidth: 600 }}>
               <thead>
                 <tr>
-                  <th style={{ ...css.th, width: "40%" }}>Name</th>
+                  <th style={{ ...css.th, width: "5%" }} />
+                  <th style={{ ...css.th, width: "35%" }}>Name</th>
                   <th style={{ ...css.th, width: "15%" }}>Size</th>
                   <th style={{ ...css.th, width: "15%" }}>Chunks</th>
                   <th style={{ ...css.th, width: "20%" }}>Ingested</th>
@@ -327,23 +383,249 @@ export function KBDetail() {
                 </tr>
               </thead>
               <tbody>
-                {documents.map((doc) => (
-                  <tr key={doc.name}>
-                    <td style={{ ...css.td, fontFamily: "monospace", fontSize: 12 }}>{doc.name}</td>
-                    <td style={css.td}>{formatBytes(doc.size_bytes)}</td>
-                    <td style={css.td}>{doc.chunk_count}</td>
-                    <td style={css.td}>{new Date(doc.ingested_at).toLocaleDateString()}</td>
-                    <td style={css.td}>
-                      <button
-                        type="button"
-                        style={{ ...css.btnSmall, color: "var(--red)", borderColor: "var(--red)" }}
-                        onClick={() => handleDeleteDoc(doc.name)}
-                      >
-                        Remove
-                      </button>
-                    </td>
-                  </tr>
-                ))}
+                {documents.map((doc) => {
+                  const isExpanded = expandedDoc === doc.name;
+                  const cached = chunkCache[doc.name];
+                  const totalPages = cached ? Math.ceil(cached.total / CHUNKS_PER_PAGE) : 0;
+                  return (
+                    <Fragment key={doc.name}>
+                      <tr style={{ cursor: "pointer" }} onClick={() => toggleDocExpand(doc.name)}>
+                        <td
+                          style={{
+                            ...css.td,
+                            fontSize: 14,
+                            textAlign: "center",
+                            userSelect: "none",
+                          }}
+                        >
+                          {isExpanded ? "▼" : "▶"}
+                        </td>
+                        <td style={{ ...css.td, fontFamily: "monospace", fontSize: 12 }}>
+                          {doc.name}
+                        </td>
+                        <td style={css.td}>{formatBytes(doc.size_bytes)}</td>
+                        <td style={css.td}>{doc.chunk_count}</td>
+                        <td style={css.td}>{new Date(doc.ingested_at).toLocaleDateString()}</td>
+                        <td style={css.td}>
+                          <button
+                            type="button"
+                            style={{
+                              ...css.btnSmall,
+                              color: "var(--red)",
+                              borderColor: "var(--red)",
+                            }}
+                            onClick={(e) => {
+                              e.stopPropagation();
+                              handleDeleteDoc(doc.name);
+                            }}
+                          >
+                            Remove
+                          </button>
+                        </td>
+                      </tr>
+                      {isExpanded && (
+                        <tr key={`${doc.name}-chunks`}>
+                          <td colSpan={6} style={{ padding: 0, border: "none" }}>
+                            <div
+                              style={{
+                                background: "var(--bg)",
+                                borderTop: "1px solid var(--border)",
+                                padding: "12px 16px 12px 40px",
+                              }}
+                            >
+                              {chunkLoading && !cached ? (
+                                <div style={{ fontSize: 13, color: "var(--fg2)" }}>
+                                  Loading chunks...
+                                </div>
+                              ) : cached && cached.chunks.length === 0 ? (
+                                <div style={{ fontSize: 13, color: "var(--fg2)" }}>
+                                  No chunks found.
+                                </div>
+                              ) : cached ? (
+                                <>
+                                  <div
+                                    style={{
+                                      display: "flex",
+                                      justifyContent: "space-between",
+                                      alignItems: "center",
+                                      marginBottom: 10,
+                                    }}
+                                  >
+                                    <span style={{ fontSize: 12, color: "var(--fg2)" }}>
+                                      {cached.total} chunk{cached.total !== 1 ? "s" : ""}
+                                      {totalPages > 1 &&
+                                        ` · page ${chunkPage + 1} of ${totalPages}`}
+                                    </span>
+                                    {totalPages > 1 && (
+                                      <div style={{ display: "flex", gap: 4 }}>
+                                        <button
+                                          type="button"
+                                          style={css.btnSmall}
+                                          disabled={chunkPage === 0 || chunkLoading}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleChunkPage(doc.name, chunkPage - 1);
+                                          }}
+                                        >
+                                          ← Prev
+                                        </button>
+                                        <button
+                                          type="button"
+                                          style={css.btnSmall}
+                                          disabled={chunkPage >= totalPages - 1 || chunkLoading}
+                                          onClick={(e) => {
+                                            e.stopPropagation();
+                                            handleChunkPage(doc.name, chunkPage + 1);
+                                          }}
+                                        >
+                                          Next →
+                                        </button>
+                                      </div>
+                                    )}
+                                  </div>
+                                  <div style={{ display: "flex", flexDirection: "column", gap: 6 }}>
+                                    {cached.chunks.map((chunk, idx) => {
+                                      const chunkNum = chunkPage * CHUNKS_PER_PAGE + idx + 1;
+                                      const isChunkExpanded = expandedChunkId === chunk.id;
+                                      const preview =
+                                        chunk.content.length > 300 && !isChunkExpanded
+                                          ? chunk.content.slice(0, 300)
+                                          : chunk.content;
+                                      return (
+                                        <div
+                                          key={chunk.id}
+                                          style={{
+                                            border: "1px solid var(--border)",
+                                            borderRadius: "var(--radius)",
+                                            padding: "8px 12px",
+                                            background: "var(--bg2)",
+                                          }}
+                                        >
+                                          <div
+                                            style={{
+                                              display: "flex",
+                                              justifyContent: "space-between",
+                                              alignItems: "center",
+                                              marginBottom: 4,
+                                            }}
+                                          >
+                                            <div
+                                              style={{
+                                                display: "flex",
+                                                gap: 8,
+                                                alignItems: "center",
+                                              }}
+                                            >
+                                              <span
+                                                style={{
+                                                  fontSize: 11,
+                                                  fontWeight: 600,
+                                                  color: "var(--fg2)",
+                                                }}
+                                              >
+                                                #{chunkNum}
+                                              </span>
+                                              {chunk.section && (
+                                                <span
+                                                  style={{
+                                                    fontSize: 11,
+                                                    color: "var(--accent)",
+                                                    fontFamily: "monospace",
+                                                  }}
+                                                >
+                                                  {chunk.section}
+                                                </span>
+                                              )}
+                                              {chunk.page > 0 && (
+                                                <span style={{ fontSize: 11, color: "var(--fg2)" }}>
+                                                  p.{chunk.page}
+                                                </span>
+                                              )}
+                                            </div>
+                                          </div>
+                                          <pre
+                                            style={{
+                                              fontSize: 12,
+                                              lineHeight: 1.5,
+                                              whiteSpace: "pre-wrap",
+                                              wordBreak: "break-word",
+                                              margin: 0,
+                                              fontFamily: "monospace",
+                                              color: "var(--fg)",
+                                            }}
+                                          >
+                                            {preview}
+                                            {!isChunkExpanded && chunk.content.length > 300
+                                              ? "..."
+                                              : ""}
+                                          </pre>
+                                          {chunk.content.length > 300 && (
+                                            <button
+                                              type="button"
+                                              onClick={(e) => {
+                                                e.stopPropagation();
+                                                setExpandedChunkId(
+                                                  isChunkExpanded ? null : chunk.id,
+                                                );
+                                              }}
+                                              style={{
+                                                background: "none",
+                                                border: "none",
+                                                color: "var(--accent)",
+                                                cursor: "pointer",
+                                                fontSize: 11,
+                                                padding: "4px 0 0",
+                                              }}
+                                            >
+                                              {isChunkExpanded ? "Show less" : "Show full"}
+                                            </button>
+                                          )}
+                                        </div>
+                                      );
+                                    })}
+                                  </div>
+                                  {totalPages > 1 && (
+                                    <div
+                                      style={{
+                                        display: "flex",
+                                        justifyContent: "center",
+                                        gap: 4,
+                                        marginTop: 10,
+                                      }}
+                                    >
+                                      <button
+                                        type="button"
+                                        style={css.btnSmall}
+                                        disabled={chunkPage === 0 || chunkLoading}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleChunkPage(doc.name, chunkPage - 1);
+                                        }}
+                                      >
+                                        ← Prev
+                                      </button>
+                                      <button
+                                        type="button"
+                                        style={css.btnSmall}
+                                        disabled={chunkPage >= totalPages - 1 || chunkLoading}
+                                        onClick={(e) => {
+                                          e.stopPropagation();
+                                          handleChunkPage(doc.name, chunkPage + 1);
+                                        }}
+                                      >
+                                        Next →
+                                      </button>
+                                    </div>
+                                  )}
+                                </>
+                              ) : null}
+                            </div>
+                          </td>
+                        </tr>
+                      )}
+                    </Fragment>
+                  );
+                })}
               </tbody>
             </table>
           </div>
