@@ -59,6 +59,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 - **`src/shared/`** — code imported by both server and worker (types, utilities)
 - **`src/server/`** — server-only code (never imported by worker)
 - **`src/server/routing/`** — YAML-driven LLM action routing: config loading, type definitions, executors, tool building, and template rendering
+- **`src/server/kb/`** — knowledge base module: vector store, chunker, embeddings, ingestion, MongoDB repo, service, API routes
 - **`src/worker/`** — worker-only code (never imported by server)
 - **`src/ui/`** — React SPA with its own `tsconfig.json` (excluded from server compilation)
 

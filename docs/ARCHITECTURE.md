@@ -26,6 +26,11 @@ Son of Steve is a **local-first coding agent orchestrator**. It receives coding 
 │  │   MongoDB     │ (local or Atlas)                             │
 │  │  • jobs col   │
 │  │  • convos col │                                              │
+│  │  • kb cols    │                                              │
+│  └──────────────┘                                               │
+│                                                                 │
+│  ┌──────────────┐                                               │
+│  │  LanceDB      │ (local vector store for KB embeddings)       │
 │  └──────────────┘                                               │
 │                                                                 │
 │  ┌──────────────┐                                               │
@@ -48,9 +53,10 @@ The server is the **single source of truth** for job state. It:
 6. **Manages an in-memory worker registry** (register, deregister, status, stale detection)
 7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
 8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
-9. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
-10. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
-11. **Serves the React SPA** as static files (production build)
+9. **Manages knowledge bases** with vector-indexed document storage, semantic search, and context injection into LLM calls
+10. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
+11. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
+12. **Serves the React SPA** as static files (production build)
 
 The server **holds all Slack credentials**. Workers never touch Slack directly.
 
@@ -75,16 +81,20 @@ Workers are **stateless** — all persistent state lives in MongoDB via the serv
 
 ### MongoDB
 
-Two collections:
+Four collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
+- **`knowledge_bases`** — Knowledge base metadata (name, scopes, embedding config, stats).
+- **`kb_documents`** — Per-document metadata for ingested files (name, size, chunk count).
 
 **Key indexes:**
 - `source.event_id` — unique partial (idempotency for Slack events)
 - `task_id` — unique (primary lookup key)
 - `{ requested_by, status, created_at }` — compound (poll queries)
 - `{ status, lease_expires_at }` — compound (reclaim expired leases)
+- `kb_id` — unique (knowledge base lookup)
+- `{ kb_id, name }` — compound unique (document dedup within a KB)
 
 ### Web UI (`src/ui/`)
 
@@ -95,6 +105,7 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 - **PRs** — open PRs across registered repos with review thread / unresolved comment stats
 - **Workers** — live worker health dashboard with per-loop status, spawn new workers, shutdown, live log terminal with Claude output streaming via SSE
 - **Repos** — in-browser YAML editor for the repo registry
+- **Knowledge** — create/manage knowledge bases, upload documents (text, PDF, archives), test semantic search, configure scopes and chunking parameters
 - **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 11 execution types, reply template management, with a raw YAML fallback view
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
@@ -258,7 +269,7 @@ actions:
 custom_actions: {}  # user-defined actions (same schema as actions)
 ```
 
-The system prompt supports two placeholders: `{ACTIONS}` (replaced with the auto-generated action list) and `{JOBS_CONTEXT}` (replaced with recent jobs for status awareness).
+The system prompt supports three placeholders: `{ACTIONS}` (replaced with the auto-generated action list), `{JOBS_CONTEXT}` (replaced with recent jobs for status awareness), and `{KB_CONTEXT}` (replaced with relevant knowledge base context from semantic search).
 
 ### Execution Types
 
@@ -345,6 +356,7 @@ son-of-steve/
 ├── src/
 │   ├── shared/                # Shared between server and worker
 │   │   ├── types.ts           # Zod schemas, JobDoc, event types, worker registry types
+│   │   ├── kbTypes.ts         # Knowledge base shared types (KnowledgeBase, KBDocument, KBSearchResult)
 │   │   ├── modelPricing.ts    # Claude model pricing for cost estimation
 │   │   ├── cache.ts           # Generic TTL cache with getOrSet
 │   │   ├── time.ts            # Date helpers (nowDate, addSeconds, isExpired)
@@ -401,8 +413,17 @@ son-of-steve/
 │   │   │   ├── slackClient.ts     # Slack Web API posting + thread fetching
 │   │   │   ├── userResolver.ts    # Resolve Slack user IDs to display names
 │   │   │   └── formatting.ts      # Slack message templates
+│   │   ├── kb/
+│   │   │   ├── vectorStore.ts     # LanceDB wrapper (init, create/add/search/delete tables)
+│   │   │   ├── chunker.ts         # Markdown-aware text chunking (headings → paragraphs → sentences)
+│   │   │   ├── embeddings.ts      # OpenAI/LiteLLM embedding provider with batching
+│   │   │   ├── ingestion.ts       # File ingestion pipeline (text, PDF, archives)
+│   │   │   ├── kbRepo.ts          # MongoDB CRUD for KB + document metadata
+│   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion, embedding, search
+│   │   │   ├── kbRoutes.ts        # Express routes: web (/api/web/kb) + worker (/api/worker/kb)
+│   │   │   └── index.ts           # Barrel export
 │   │   └── api/
-│   │       ├── router.ts        # Mount worker + web + chat routes with auth
+│   │       ├── router.ts        # Mount worker + web + chat + KB routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)
 │   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, routing, worktrees)
 │   │       └── ghPrs.ts         # GitHub PR listing + comment stats (with TTL cache)
@@ -410,7 +431,7 @@ son-of-steve/
 │   ├── worker/                # sos-worker process
 │   │   ├── index.ts           # Entry point: register, start loops, connect WS
 │   │   ├── config.ts          # Environment variable parsing
-│   │   ├── apiClient.ts       # Typed HTTP client for server API
+│   │   ├── apiClient.ts       # Typed HTTP client for server API (incl. KB search)
 │   │   ├── poller.ts          # Poll → claim → report status → execute → repeat
 │   │   ├── heartbeat.ts       # Interval-based lease extension manager
 │   │   ├── events.ts          # Event emission helper
@@ -424,7 +445,7 @@ son-of-steve/
 │   │       ├── repoResolver.ts        # Hint/keyword-based repo resolution
 │   │       ├── workspace.ts           # Git clone management (ensureClone)
 │   │       ├── worktreePool.ts        # Reusable worktree slot pool (singleton)
-│   │       ├── claude.ts              # Claude Code CLI + stream-json output + WS tee
+│   │       ├── claude.ts              # Claude Code CLI + stream-json output + WS tee + KB context
 │   │       ├── ghComments.ts          # GitHub PR thread fetching + replying
 │   │       ├── git.ts                 # Git operations (commit, push, diff)
 │   │       ├── pr.ts                  # GitHub PR creation via gh CLI
@@ -447,6 +468,7 @@ son-of-steve/
 │           └── components/
 │               ├── chat/          # ChatsList, ChatDetail
 │               ├── jobs/          # JobsList, JobDetail, JobRow, etc.
+│               ├── kb/            # KBList, KBDetail (upload, search, settings)
 │               ├── prs/           # PrsList, PrRow
 │               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal
 │               ├── registry/      # RepoRegistryEditor
@@ -511,3 +533,11 @@ Responding to PR review comments is fundamentally different from creating new co
 ### Why split GitHub queries into instant vs. async?
 
 GitHub queries like "my open PRs" or "team review requests" are fast `gh search prs` calls that return in seconds — these execute synchronously on the server and return results directly in the Slack reply. Recap summaries ("my weekly recap", "team recap") require fetching data for potentially many team members, enriching PRs with per-PR detail calls, then running Claude to generate a narrative — this can take minutes, so they're queued as `github_summary` worker jobs. A single polymorphic `github` tool in the LLM router handles both; the `commandExecutor` dispatches to the right path based on the `query_type`.
+
+### Why a local vector database for knowledge bases?
+
+LanceDB is embedded (no external service), stores data on the local filesystem alongside the rest of Son of Steve, and supports efficient vector similarity search. This aligns with the local-first philosophy — no data leaves the machine. The alternative (Pinecone, Weaviate, etc.) would add an external dependency and potentially send embeddings to a cloud service. LanceDB tables are per-KB, so creating/dropping a KB is just creating/dropping a table.
+
+### Why scope-based KB filtering?
+
+Different knowledge bases contain different types of context (design docs, coding standards, incident history). Not all KB content is relevant to all actions — injecting irrelevant context wastes tokens and can confuse the LLM. Scopes (`chat`, `create_job`, `plan_job`, `agent_task`, `all`) let users control which KBs are queried for which action types. A KB scoped to `chat` will be searched when answering questions but not when generating code.

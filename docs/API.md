@@ -266,6 +266,40 @@ Server fetches the Slack thread on behalf of the worker (workers don't hold Slac
 }
 ```
 
+### Search Knowledge Bases
+
+```
+POST /api/worker/kb/search
+```
+
+Searches enabled knowledge bases by scope. Used by workers to fetch KB context before Claude sessions.
+
+**Body:**
+```json
+{
+  "query": "how does the auth module work",
+  "scopes": ["create_job", "all"],
+  "max_chunks": 10,
+  "min_score": 0.3
+}
+```
+
+**Response:**
+```json
+{
+  "results": [
+    {
+      "content": "The auth module uses JWT tokens...",
+      "source_file": "design-docs/auth.md",
+      "kb_name": "Design Docs",
+      "kb_id": "uuid",
+      "score": 0.87,
+      "metadata": { "section": "Authentication Flow" }
+    }
+  ]
+}
+```
+
 ---
 
 ## Web Endpoints (`/api/web`)
@@ -688,6 +722,161 @@ POST /api/web/routing-config/reload
 Force-reloads the routing config from disk (useful after manual edits).
 
 **Response (200):** `{ "ok": true }`
+
+---
+
+## Knowledge Base Endpoints (`/api/web/kb`)
+
+### Create Knowledge Base
+
+```
+POST /api/web/kb
+```
+
+**Body:**
+```json
+{
+  "name": "Design Docs",
+  "description": "Company design documents and architecture guides",
+  "scopes": ["chat", "create_job"],
+  "chunk_size": 512,
+  "chunk_overlap": 50,
+  "max_chunks_per_query": 5,
+  "min_similarity_score": 0.3
+}
+```
+
+**Response (201):** `{ "kb": { ... } }`
+
+### List Knowledge Bases
+
+```
+GET /api/web/kb?owner=default
+```
+
+**Response:** `{ "kbs": [{ "kb_id": "...", "name": "...", ... }] }`
+
+### Get Knowledge Base
+
+```
+GET /api/web/kb/:id
+```
+
+Returns the KB metadata and its list of ingested documents.
+
+**Response:** `{ "kb": { ... }, "documents": [{ "name": "auth.md", "size_bytes": 1024, "chunk_count": 5, "ingested_at": "..." }] }`
+
+### Update Knowledge Base
+
+```
+PUT /api/web/kb/:id
+```
+
+**Body:** Partial update — any of: `name`, `description`, `enabled`, `scopes`, `chunk_size`, `chunk_overlap`, `max_chunks_per_query`, `min_similarity_score`.
+
+**Response:** `{ "kb": { ... } }`
+
+### Delete Knowledge Base
+
+```
+DELETE /api/web/kb/:id
+```
+
+Drops the vector table and removes all metadata.
+
+**Response:** `{ "ok": true }`
+
+### Ingest Files
+
+```
+POST /api/web/kb/:id/ingest
+Content-Type: multipart/form-data
+```
+
+Upload files for ingestion. Supports text files (`.md`, `.txt`, `.py`, `.ts`, etc.), PDFs, and archives (`.zip`, `.tar`, `.tar.gz`). Archives are auto-extracted. Max 50 files, 100MB each.
+
+**Response:**
+```json
+{
+  "documents_added": 3,
+  "chunks_added": 47,
+  "skipped": ["image.png"],
+  "errors": []
+}
+```
+
+### Cross-KB Search (with routing metadata)
+
+```
+POST /api/web/kb/search
+```
+
+Search across all enabled knowledge bases using two-stage routing. Returns results plus routing metadata showing which KBs were probed and which passed the similarity threshold.
+
+**Body:**
+```json
+{
+  "query": "auth flow",
+  "scopes": ["chat", "create_job"],
+  "max_chunks": 10,
+  "min_score": 0.3
+}
+```
+
+**Response:**
+```json
+{
+  "results": [{ "content": "...", "source_file": "...", "kb_name": "...", "kb_id": "...", "score": 0.87, "metadata": {} }],
+  "routing": {
+    "total_kbs": 3,
+    "relevant_kbs": 2,
+    "probes": [
+      { "kb_id": "...", "kb_name": "Design Docs", "probe_score": 0.91, "passed": true },
+      { "kb_id": "...", "kb_name": "Slack History", "probe_score": 0.12, "passed": false }
+    ]
+  }
+}
+```
+
+### Search Single KB
+
+```
+POST /api/web/kb/:id/search
+```
+
+Search within a specific KB (for testing/debugging).
+
+**Body:** `{ "query": "auth flow", "limit": 5 }`
+
+**Response:** `{ "results": [{ "content": "...", "source_file": "...", "score": 0.87, ... }] }`
+
+### List Document Chunks
+
+```
+GET /api/web/kb/:id/documents/:name/chunks?offset=0&limit=20
+```
+
+Paginated list of chunks for a specific document. Limit is capped at 100.
+
+**Response:** `{ "chunks": [{ "id": "...", "content": "...", "section": "...", "page": 0, "created_at": "..." }], "total": 47 }`
+
+### List Documents
+
+```
+GET /api/web/kb/:id/documents
+```
+
+**Response:** `{ "documents": [{ "name": "...", "size_bytes": ..., "chunk_count": ..., "ingested_at": "..." }] }`
+
+### Delete Document
+
+```
+DELETE /api/web/kb/:id/documents/:name
+```
+
+Removes a document and its chunks from both the vector store and MongoDB.
+
+**Response:** `{ "ok": true }`
 
 ---
 

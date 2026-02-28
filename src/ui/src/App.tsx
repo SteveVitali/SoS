@@ -5,6 +5,8 @@ import { ChatDetail } from "./components/chat/ChatDetail.js";
 import { ChatsList } from "./components/chat/ChatsList.js";
 import { JobDetail } from "./components/jobs/JobDetail.js";
 import { JobsList } from "./components/jobs/JobsList.js";
+import { KBDetail } from "./components/kb/KBDetail.js";
+import { KBList } from "./components/kb/KBList.js";
 import { PrsList } from "./components/prs/PrsList.js";
 import { RepoRegistryEditor } from "./components/registry/RepoRegistryEditor.js";
 import { RoutingConfigEditor } from "./components/routing/RoutingConfigEditor.js";
@@ -27,6 +29,8 @@ function AppShell() {
   const isJobsTab = path === "/" || path.startsWith("/jobs");
   const isPrsTab = path === "/prs";
   const isReposTab = path === "/repos";
+  const isKnowledgeTab = path === "/knowledge" || path.startsWith("/knowledge/");
+  const showKnowledgeList = path === "/knowledge";
   const isRoutingTab = path === "/routing";
 
   return (
@@ -42,6 +46,7 @@ function AppShell() {
             <NavTab to="/prs" label="PRs" active={isPrsTab} />
             <NavTab to="/workers" label="Workers" active={isWorkersTab} />
             <NavTab to="/repos" label="Repos" active={isReposTab} />
+            <NavTab to="/knowledge" label="Knowledge" active={isKnowledgeTab} />
             <NavTab to="/routing" label="Routing" active={isRoutingTab} />
           </div>
         </div>
@@ -72,12 +77,16 @@ function AppShell() {
       <div style={{ display: showWorkersList ? "block" : "none" }}>
         <WorkersList />
       </div>
+      <div style={{ display: showKnowledgeList ? "block" : "none" }}>
+        <KBList />
+      </div>
 
       {/* Sub-pages rendered via Routes */}
       <Routes>
         <Route path="/workers/:id" element={<WorkerDetail />} />
         <Route path="/chats/:id" element={<ChatDetail />} />
         <Route path="/repos" element={<RepoRegistryEditor />} />
+        <Route path="/knowledge/:id" element={<KBDetail />} />
         <Route path="/routing" element={<RoutingConfigEditor />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />
         <Route path="/jobs/:taskId" element={<JobDetail />} />

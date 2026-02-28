@@ -37,6 +37,14 @@ function parseActionDef(raw: any): ActionDef {
     }
   }
 
+  const knowledge_bases = raw.knowledge_bases
+    ? {
+        scopes: raw.knowledge_bases.scopes,
+        max_chunks: raw.knowledge_bases.max_chunks,
+        min_score: raw.knowledge_bases.min_score,
+      }
+    : undefined;
+
   return {
     enabled: raw.enabled !== false,
     description: raw.description || "",
@@ -44,6 +52,7 @@ function parseActionDef(raw: any): ActionDef {
     parameters: params,
     execution: (raw.execution || { type: "reply" }) as ExecutionDef,
     defaults: raw.defaults,
+    knowledge_bases,
   };
 }
 
@@ -71,6 +80,7 @@ function parseRoutingConfig(data: any): RoutingConfig {
     system_prompt: data?.system_prompt || "",
     actions,
     custom_actions: customActions,
+    kb_context_max_tokens: data?.kb_context_max_tokens,
   };
 }
 

@@ -112,7 +112,27 @@ export async function runPlanJob(
       }
     }
 
-    // 4) Run Claude Code CLI in planning mode (read-only)
+    // 4) Fetch KB context (non-fatal)
+    let kbContext: string | undefined;
+    try {
+      const kbResults = await api.searchKnowledgeBases(job.task_text, ["plan_job", "all"]);
+      if (kbResults.length > 0) {
+        kbContext = kbResults
+          .map(
+            (r) =>
+              `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
+          )
+          .join("\n\n---\n\n");
+        log.info("KB context fetched for plan job", {
+          task_id: job.task_id,
+          chunks: kbResults.length,
+        });
+      }
+    } catch {
+      // Non-fatal
+    }
+
+    // 5) Run Claude Code CLI in planning mode (read-only)
     checkLeaseAborted();
     await events.emit("PLAN_STARTED", {});
     const planResult = await runClaudePlan(
@@ -122,6 +142,7 @@ export async function runPlanJob(
       threadContext,
       job.attachments,
       leaseSignal,
+      kbContext,
     );
 
     const planSession = toClaudeSession(planResult);

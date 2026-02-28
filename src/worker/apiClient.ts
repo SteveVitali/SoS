@@ -253,6 +253,38 @@ export class WorkerApiClient {
     await this.request("POST", "/api/worker/status", { worker_id: workerId, loops });
   }
 
+  // --- Knowledge Base ---
+
+  async searchKnowledgeBases(
+    query: string,
+    scopes: string[],
+    maxChunks?: number,
+  ): Promise<
+    Array<{
+      content: string;
+      source_file: string;
+      kb_name: string;
+      score: number;
+      metadata: { section?: string; page?: number };
+    }>
+  > {
+    try {
+      const data = await this.request<{
+        results: Array<{
+          content: string;
+          source_file: string;
+          kb_name: string;
+          score: number;
+          metadata: { section?: string; page?: number };
+        }>;
+      }>("POST", "/api/worker/kb/search", { query, scopes, max_chunks: maxChunks });
+      return data.results;
+    } catch (err: unknown) {
+      log.warn("KB search failed (non-fatal)", { error: (err as Error).message });
+      return [];
+    }
+  }
+
   // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   async fetchSlackThread(channelId: string, threadTs: string): Promise<any[]> {
     try {

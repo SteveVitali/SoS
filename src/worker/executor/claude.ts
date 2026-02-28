@@ -58,12 +58,13 @@ function writeAttachments(sosDir: string, attachments: JobAttachment[]): string[
 
 type AttachmentPath = { path: string; mimetype: string; size_bytes: number };
 
-/** Shared prompt sections: thread context, attachments, repo info, commands. */
+/** Shared prompt sections: thread context, attachments, repo info, commands, KB context. */
 function buildContextSections(
   repo: RepoEntry,
   headingLevel: "#" | "##",
   threadContext?: string,
   attachmentPaths?: AttachmentPath[],
+  kbContext?: string,
 ): string[] {
   const lines: string[] = [];
 
@@ -85,6 +86,18 @@ function buildContextSections(
     }
     lines.push("");
     lines.push("Review these files for context.");
+    lines.push("");
+  }
+
+  if (kbContext) {
+    lines.push(`${headingLevel} Knowledge Base Context`);
+    lines.push("");
+    lines.push(
+      "The following context was retrieved from the user's knowledge bases via semantic search.",
+    );
+    lines.push("Use it to inform your implementation when relevant.");
+    lines.push("");
+    lines.push(kbContext);
     lines.push("");
   }
 
@@ -112,6 +125,7 @@ function buildPrompt(
   threadContext?: string,
   attachmentPaths?: AttachmentPath[],
   planSummary?: string,
+  kbContext?: string,
 ): string {
   const lines: string[] = [];
   lines.push("# Task");
@@ -132,7 +146,7 @@ function buildPrompt(
     lines.push("");
   }
 
-  lines.push(...buildContextSections(repo, "#", threadContext, attachmentPaths));
+  lines.push(...buildContextSections(repo, "#", threadContext, attachmentPaths, kbContext));
 
   lines.push("# Constraints");
   lines.push("- Keep changes minimal and focused on the task");
@@ -148,6 +162,7 @@ function buildPlanPrompt(
   repo: RepoEntry,
   threadContext?: string,
   attachmentPaths?: AttachmentPath[],
+  kbContext?: string,
 ): string {
   const lines: string[] = [];
   lines.push("# Planning Mode");
@@ -161,7 +176,7 @@ function buildPlanPrompt(
   lines.push(taskText);
   lines.push("");
 
-  lines.push(...buildContextSections(repo, "##", threadContext, attachmentPaths));
+  lines.push(...buildContextSections(repo, "##", threadContext, attachmentPaths, kbContext));
 
   lines.push("## Instructions");
   lines.push("1. Read relevant source files to understand the current architecture");
@@ -186,6 +201,7 @@ export async function runClaude(
   attachments?: JobAttachment[],
   abortSignal?: AbortSignal,
   planSummary?: string,
+  kbContext?: string,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -206,7 +222,14 @@ export async function runClaude(
   const promptPath = path.join(sosDir, "prompt.md");
   const logPath = path.join(sosDir, "claude.log");
 
-  const prompt = buildPrompt(taskText, repo, threadContext, attachmentPaths, planSummary);
+  const prompt = buildPrompt(
+    taskText,
+    repo,
+    threadContext,
+    attachmentPaths,
+    planSummary,
+    kbContext,
+  );
   writeFileSync(promptPath, prompt, "utf-8");
 
   log.info("Running Claude Code CLI", { worktree: worktreePath });
@@ -241,6 +264,7 @@ export async function runClaudePlan(
   threadContext?: string,
   attachments?: JobAttachment[],
   abortSignal?: AbortSignal,
+  kbContext?: string,
 ): Promise<ClaudeResult> {
   const sosDir = path.join(worktreePath, ".sonofsteve");
   if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
@@ -259,7 +283,7 @@ export async function runClaudePlan(
   const promptPath = path.join(sosDir, "plan-prompt.md");
   const logPath = path.join(sosDir, "claude-plan.log");
 
-  const prompt = buildPlanPrompt(taskText, repo, threadContext, attachmentPaths);
+  const prompt = buildPlanPrompt(taskText, repo, threadContext, attachmentPaths, kbContext);
   writeFileSync(promptPath, prompt, "utf-8");
 
   log.info("Running Claude Code CLI for planning", { worktree: worktreePath });

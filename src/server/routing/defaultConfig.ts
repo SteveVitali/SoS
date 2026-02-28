@@ -51,6 +51,10 @@ system_prompt: |
 
   {ACTIONS}
 
+  ## Knowledge Base Context
+  The following context was retrieved from the user's knowledge bases via semantic search. Use it to inform your responses when relevant, but don't mention the knowledge base system explicitly unless asked.
+  {KB_CONTEXT}
+
   ## Recent Jobs Context
   {JOBS_CONTEXT}
 
