@@ -10,8 +10,7 @@
  * ├──────────────────────┼──────────────────────────────┼──────────────────────────────────┤
  * │ routing              │ claude-sonnet-4-20250514     │ SOS_LLM_MODEL                    │
  * │ titleGeneration      │ (inherits routing)           │ SOS_TITLE_MODEL                  │
- * │ correctiveRag        │ (inherits routing)           │ SOS_CORRECTIVE_RAG_MODEL         │
- * │ research             │ bedrock/amazon.nova-pro-v1:0         │ SOS_RESEARCH_LLM_MODEL           │
+ * │ research             │ bedrock/amazon.nova-pro-v1:0 │ SOS_RESEARCH_LLM_MODEL           │
  * │ raptorSummarization  │ (inherits research)          │ SOS_RAPTOR_MODEL                 │
  * │ embedding            │ text-embedding-3-small       │ SOS_EMBEDDING_MODEL              │
  * └──────────────────────┴──────────────────────────────┴──────────────────────────────────┘
@@ -31,7 +30,6 @@ export interface ModelRole {
 export type ModelRoleName =
   | "routing"
   | "titleGeneration"
-  | "correctiveRag"
   | "research"
   | "raptorSummarization"
   | "embedding";
@@ -62,11 +60,6 @@ export function getModelRegistry(): Record<ModelRoleName, ModelRole> {
       model: process.env.SOS_TITLE_MODEL || routing,
       description: "Job and chat conversation title generation",
       envVar: "SOS_TITLE_MODEL",
-    },
-    correctiveRag: {
-      model: process.env.SOS_CORRECTIVE_RAG_MODEL || routing,
-      description: "Corrective RAG grading, query reformulation, and answer synthesis",
-      envVar: "SOS_CORRECTIVE_RAG_MODEL",
     },
     research: {
       model: research,

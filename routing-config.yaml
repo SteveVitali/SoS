@@ -354,18 +354,24 @@ actions:
         type: string
         description: The search query / question to answer from knowledge bases
         required: true
+      strategy:
+        type: string
+        enum:
+          - simple
+          - deep
+          - agent
+        description: >
+          Research depth: "simple" for quick factual lookups (2-4s),
+          "deep" for complex multi-hop questions needing reasoning (5-15s),
+          "agent" for thorough investigation across multiple knowledge bases (10-30s).
+          Default is "simple".
     execution:
-      type: langgraph
-      graph: corrective_rag
-      graph_config:
-        scopes:
-          - chat
-          - all
-        max_retrievals: 3
-        max_chunks: 8
-        min_score: 0.25
-        max_answer_tokens: 1024
-        show_trace: true
+      type: research
+      scopes:
+        - chat
+        - all
+      default_strategy: simple
+      show_trace: true
       reply_error: "⚠️ Knowledge base search failed: {{error}}"
   chat:
     enabled: true

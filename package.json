@@ -30,8 +30,6 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@lancedb/lancedb": "^0.26.2",
-    "@langchain/core": "^1.1.29",
-    "@langchain/langgraph": "^1.2.0",
     "@slack/bolt": "^4.1.0",
     "adm-zip": "^0.5.16",
     "dotenv": "^17.3.1",

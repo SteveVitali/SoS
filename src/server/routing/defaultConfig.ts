@@ -313,6 +313,39 @@ actions:
       item_template: "• \`{{task_id:0:8}}…\` *{{status}}* — {{task_text:0:60}}{{?pr_url}} | {{pr_url}}{{/pr_url}}"
       reply_empty: "_(No jobs found)_"
 
+  kb_search:
+    enabled: true
+    description: |
+      Search the knowledge bases to answer a factual question using stored documentation,
+      design docs, or other indexed content. Use this when the user asks a question that
+      might be answered by the knowledge bases.
+    routing_hint: >
+      The user is asking a question that could be answered by searching the
+      knowledge bases — e.g. "how does X work?", "what's our policy on Y?", "where are the docs
+      for Z?", "what did we decide about X?". Prefer this over chat when the question is
+      about something that might be documented in the knowledge bases.
+    parameters:
+      query:
+        type: string
+        description: "The search query / question to answer from knowledge bases"
+        required: true
+      strategy:
+        type: string
+        enum: [simple, deep, agent]
+        description: >
+          Research depth: "simple" for quick factual lookups (2-4s),
+          "deep" for complex multi-hop questions needing reasoning (5-15s),
+          "agent" for thorough investigation across multiple knowledge bases (10-30s).
+          Default is "simple".
+    execution:
+      type: research
+      scopes:
+        - chat
+        - all
+      default_strategy: simple
+      show_trace: true
+      reply_error: "⚠️ Knowledge base search failed: {{error}}"
+
   leave_channel:
     enabled: true
     description: >
