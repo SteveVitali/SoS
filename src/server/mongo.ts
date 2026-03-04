@@ -4,6 +4,7 @@ import type { JobDoc } from "../shared/types.js";
 import { ensureConversationIndexes } from "./chat/conversationRepo.js";
 import { ensureRaptorIndexes } from "./kb/raptor/raptorRepo.js";
 import { initResearchSessionsCollection } from "./kb/research/auditRepo.js";
+import { ensureUploadJobIndexes } from "./kb/uploadRepo.js";
 
 const log = createLogger("server:mongo");
 
@@ -19,6 +20,7 @@ export async function connectMongo(uri: string, dbName: string): Promise<Db> {
   await ensureConversationIndexes();
   await initResearchSessionsCollection(db);
   await ensureRaptorIndexes();
+  await ensureUploadJobIndexes();
   return db;
 }
 

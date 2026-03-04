@@ -91,10 +91,43 @@ export interface KBSearchWithRoutingResult {
 }
 
 // ---------------------------------------------------------------------------
+// Upload job tracking (persisted in MongoDB for cross-session state)
+// ---------------------------------------------------------------------------
+
+export type UploadFileState = "pending" | "processing" | "done" | "skipped" | "error";
+
+export interface UploadFileStatus {
+  name: string;
+  status: UploadFileState;
+  chunks?: number;
+  error?: string;
+  skip_reason?: string;
+}
+
+export type UploadJobStatus = "processing" | "completed" | "failed";
+
+export interface UploadJob {
+  _id?: any;
+  job_id: string;
+  kb_id: string;
+  status: UploadJobStatus;
+  files: UploadFileStatus[];
+  summary?: {
+    documents_added: number;
+    chunks_added: number;
+    skipped: number;
+    errors: number;
+  };
+  created_at: Date;
+  updated_at: Date;
+}
+
+// ---------------------------------------------------------------------------
 // Ingestion progress events (streamed as NDJSON from the ingest endpoint)
 // ---------------------------------------------------------------------------
 
 export type IngestProgressEvent =
+  | { type: "job_created"; job_id: string }
   | { type: "start"; total_uploads: number }
   | { type: "file_start"; file: string }
   | { type: "file_done"; file: string; chunks: number }

@@ -561,6 +561,7 @@ export async function deleteKB(id: string): Promise<{ ok: boolean }> {
 
 // Mirrors IngestProgressEvent in src/shared/kbTypes.ts (UI build is separate).
 export type IngestProgressEvent =
+  | { type: "job_created"; job_id: string }
   | { type: "start"; total_uploads: number }
   | { type: "file_start"; file: string }
   | { type: "file_done"; file: string; chunks: number }
@@ -574,15 +575,47 @@ export type IngestProgressEvent =
       errors: Array<{ file: string; error: string }>;
     };
 
+// Mirrors UploadJob types in src/shared/kbTypes.ts
+export type UploadFileState = "pending" | "processing" | "done" | "skipped" | "error";
+
+export interface UploadFileStatus {
+  name: string;
+  status: UploadFileState;
+  chunks?: number;
+  error?: string;
+  skip_reason?: string;
+}
+
+export type UploadJobStatus = "processing" | "completed" | "failed";
+
+export interface UploadJob {
+  job_id: string;
+  kb_id: string;
+  status: UploadJobStatus;
+  files: UploadFileStatus[];
+  summary?: {
+    documents_added: number;
+    chunks_added: number;
+    skipped: number;
+    errors: number;
+  };
+  created_at: string;
+  updated_at: string;
+}
+
 /**
  * Upload and ingest files into a KB, streaming NDJSON progress events.
- * Calls `onProgress` for each event; resolves with the final "complete" event.
+ * Calls `onProgress` for each event. Returns `{ job_id, complete }` so the
+ * caller can reconnect via polling if the stream drops.
  */
 export async function ingestKBFiles(
   kbId: string,
   files: File[],
   onProgress?: (event: IngestProgressEvent) => void,
-): Promise<Extract<IngestProgressEvent, { type: "complete" }>> {
+): Promise<{
+  job_id: string;
+  complete: Extract<IngestProgressEvent, { type: "complete" }> | null;
+}> {
   const token = localStorage.getItem("sos_token") || "";
   const formData = new FormData();
   for (const file of files) {
@@ -610,6 +643,7 @@ export async function ingestKBFiles(
   const decoder = new TextDecoder();
   let buffer = "";
   let completeEvent: Extract<IngestProgressEvent, { type: "complete" }> | null = null;
+  let jobId = "";
 
   for (;;) {
     const { done, value } = await reader.read();
@@ -625,6 +659,7 @@ export async function ingestKBFiles(
       if (!line) continue;
       try {
         const event: IngestProgressEvent = JSON.parse(line);
+        if (event.type === "job_created") jobId = event.job_id;
         if (event.type === "complete") completeEvent = event;
         onProgress?.(event);
       } catch {
@@ -633,10 +668,32 @@ export async function ingestKBFiles(
     }
   }
 
-  if (!completeEvent) {
-    throw new Error("Ingestion stream ended without a complete event");
+  return { job_id: jobId, complete: completeEvent };
+}
+
+/**
+ * Start a file upload without streaming (fire-and-forget).
+ * Returns the job_id immediately for polling.
+ */
+export async function ingestKBFilesAsync(kbId: string, files: File[]): Promise<{ job_id: string }> {
+  const token = localStorage.getItem("sos_token") || "";
+  const formData = new FormData();
+  for (const file of files) {
+    const name = file.webkitRelativePath || file.name;
+    formData.append("files", file, name);
   }
-  return completeEvent;
+  const res = await fetch(`${BASE}/kb/${kbId}/ingest`, {
+    method: "POST",
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: formData,
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status}: ${text}`);
+  }
+  return res.json();
 }
 
 export async function searchKB(
@@ -673,6 +730,24 @@ export async function listDocumentChunks(
 
 export async function deleteKBDocument(kbId: string, docName: string): Promise<{ ok: boolean }> {
   return request("DELETE", `/kb/${kbId}/documents/${encodeURIComponent(docName)}`);
+}
+
+// --- Upload Jobs ---
+
+export async function getUploadJob(kbId: string, jobId: string): Promise<{ job: UploadJob }> {
+  return request("GET", `/kb/${kbId}/uploads/${jobId}`);
+}
+
+export async function getActiveUploadsForKB(kbId: string): Promise<{ uploads: UploadJob[] }> {
+  return request("GET", `/kb/${kbId}/uploads?active=true`);
+}
+
+export async function getRecentUploadsForKB(kbId: string): Promise<{ uploads: UploadJob[] }> {
+  return request("GET", `/kb/${kbId}/uploads`);
+}
+
+export async function getAllActiveUploads(): Promise<{ uploads: UploadJob[] }> {
+  return request("GET", "/kb/uploads/active");
 }
 
 // --- RAPTOR ---

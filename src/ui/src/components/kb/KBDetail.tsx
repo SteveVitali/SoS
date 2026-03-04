@@ -3,7 +3,9 @@ import { Link, useParams } from "react-router-dom";
 import {
   type ChunkRecord,
   deleteKBDocument,
+  getActiveUploadsForKB,
   getKB,
+  getUploadJob,
   ingestKBFiles,
   type KBDocument,
   type KBScope,
@@ -11,10 +13,20 @@ import {
   type KnowledgeBase,
   listDocumentChunks,
   searchKB,
+  type UploadJob,
   updateKB,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { formatBytes, ScopeBadge, ScopeToggleButtons, SearchResultCard } from "./kbShared.js";
+import {
+  DropOverlay,
+  formatBytes,
+  ScopeBadge,
+  ScopeToggleButtons,
+  SearchResultCard,
+  UploadDropdown,
+  UploadProgressBadge,
+  useDropZone,
+} from "./kbShared.js";
 import { RaptorStatus } from "./RaptorStatus.js";
 import { RaptorTree } from "./RaptorTree.js";
 
@@ -28,6 +40,22 @@ type FileStatus =
   | { state: "done"; chunks: number }
   | { state: "skipped"; reason: string }
   | { state: "error"; error: string };
+
+/** Convert a server-side UploadFileStatus to the local FileStatus union. */
+function toFileStatus(f: import("../../api.js").UploadFileStatus): FileStatus {
+  switch (f.status) {
+    case "pending":
+      return { state: "pending" };
+    case "processing":
+      return { state: "processing" };
+    case "done":
+      return { state: "done", chunks: f.chunks ?? 0 };
+    case "skipped":
+      return { state: "skipped", reason: f.skip_reason ?? "skipped" };
+    case "error":
+      return { state: "error", error: f.error ?? "unknown error" };
+  }
+}
 
 function FileStatusRow({ name, status }: { name: string; status: FileStatus }) {
   let icon: string;
@@ -101,77 +129,6 @@ function FileStatusRow({ name, status }: { name: string; status: FileStatus }) {
   );
 }
 
-function UploadDropdown({
-  menuRef,
-  open,
-  onToggle,
-  disabled,
-  onSelectFiles,
-  onSelectFolder,
-}: {
-  menuRef: React.RefObject<HTMLDivElement | null>;
-  open: boolean;
-  onToggle: () => void;
-  disabled: boolean;
-  onSelectFiles: () => void;
-  onSelectFolder: () => void;
-}) {
-  const items = [
-    { label: "Select Files", action: onSelectFiles },
-    { label: "Select Folder", action: onSelectFolder },
-  ];
-  return (
-    <div ref={menuRef} style={{ position: "relative", display: "inline-block" }}>
-      <button type="button" style={css.btn} disabled={disabled} onClick={onToggle}>
-        {disabled ? "Uploading…" : "Upload ▾"}
-      </button>
-      {open && (
-        <div
-          style={{
-            position: "absolute",
-            top: "calc(100% + 4px)",
-            left: 0,
-            background: "var(--bg2)",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-            zIndex: 10,
-            minWidth: 160,
-            overflow: "hidden",
-          }}
-        >
-          {items.map(({ label, action }) => (
-            <button
-              key={label}
-              type="button"
-              onClick={action}
-              style={{
-                display: "block",
-                width: "100%",
-                padding: "8px 14px",
-                background: "none",
-                border: "none",
-                color: "var(--fg)",
-                fontSize: 13,
-                textAlign: "left",
-                cursor: "pointer",
-              }}
-              onMouseEnter={(e) =>
-                ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg)")
-              }
-              onMouseLeave={(e) =>
-                ((e.currentTarget as HTMLButtonElement).style.background = "none")
-              }
-            >
-              {label}
-            </button>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
 // ---------------------------------------------------------------------------
 // Main component
 // ---------------------------------------------------------------------------
@@ -190,6 +147,15 @@ export function KBDetail() {
 
   const [fileStatuses, setFileStatuses] = useState<Record<string, FileStatus>>({});
   const [ingestSummary, setIngestSummary] = useState<string>("");
+  const [activeUploadJob, setActiveUploadJob] = useState<UploadJob | null>(null);
+
+  // Drag-and-drop
+  const onDropFiles = useCallback((files: File[]) => {
+    ingestFileListRef.current?.(files);
+  }, []);
+  const { isDragging, dropZoneProps } = useDropZone({ onDrop: onDropFiles, disabled: ingesting });
+  // Ref to break circular dependency: useDropZone needs onDrop, ingestFileList needs kb
+  const ingestFileListRef = useRef<((files: File[]) => Promise<void>) | null>(null);
 
   // Chunk exploration state
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
@@ -233,6 +199,59 @@ export function KBDetail() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Hydrate upload state from server on mount
+  const hydrateUploads = useCallback(async () => {
+    if (!id) return;
+    try {
+      const { uploads } = await getActiveUploadsForKB(id);
+      if (uploads.length > 0) {
+        const job = uploads[0]; // most recent active job
+        setActiveUploadJob(job);
+        setIngesting(true);
+        const restored: Record<string, FileStatus> = {};
+        for (const f of job.files) restored[f.name] = toFileStatus(f);
+        setFileStatuses(restored);
+      }
+    } catch {
+      // Non-critical — upload status just won't be restored
+    }
+  }, [id]);
+
+  useEffect(() => {
+    hydrateUploads();
+  }, [hydrateUploads]);
+
+  // Poll active upload job until complete
+  useEffect(() => {
+    if (!activeUploadJob || activeUploadJob.status !== "processing" || !id) return;
+    const interval = setInterval(async () => {
+      try {
+        const { job } = await getUploadJob(id, activeUploadJob.job_id);
+        setActiveUploadJob(job);
+        const updated: Record<string, FileStatus> = {};
+        for (const f of job.files) updated[f.name] = toFileStatus(f);
+        setFileStatuses(updated);
+        if (job.status !== "processing") {
+          setIngesting(false);
+          if (job.summary) {
+            setIngestSummary(
+              `Done — ${job.summary.documents_added} doc${job.summary.documents_added !== 1 ? "s" : ""}, ` +
+                `${job.summary.chunks_added} chunk${job.summary.chunks_added !== 1 ? "s" : ""}` +
+                (job.summary.skipped ? `, ${job.summary.skipped} skipped` : "") +
+                (job.summary.errors
+                  ? `, ${job.summary.errors} error${job.summary.errors !== 1 ? "s" : ""}`
+                  : ""),
+            );
+          }
+          refresh();
+        }
+      } catch {
+        // Poll failure is non-critical
+      }
+    }, 2000);
+    return () => clearInterval(interval);
+  }, [activeUploadJob, id, refresh]);
 
   const startEdit = () => {
     if (!kb) return;
@@ -293,6 +312,7 @@ export function KBDetail() {
 
   const ingestFileList = async (files: File[]) => {
     if (files.length === 0 || !kb) return;
+    setUploadMenuOpen(false);
     setIngesting(true);
     setIngestSummary("");
     setError("");
@@ -306,8 +326,19 @@ export function KBDetail() {
     setFileStatuses(initial);
 
     try {
-      await ingestKBFiles(kb.kb_id, files, (event) => {
+      const { job_id, complete } = await ingestKBFiles(kb.kb_id, files, (event) => {
         switch (event.type) {
+          case "job_created":
+            // Store the job so polling can take over if stream drops
+            setActiveUploadJob({
+              job_id: event.job_id,
+              kb_id: kb.kb_id,
+              status: "processing",
+              files: Object.keys(initial).map((name) => ({ name, status: "pending" })),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            });
+            break;
           case "file_start":
             setFileStatuses((prev) => ({ ...prev, [event.file]: { state: "processing" } }));
             break;
@@ -341,6 +372,13 @@ export function KBDetail() {
             break;
         }
       });
+      // Stream completed normally — clear active job
+      if (complete) {
+        setActiveUploadJob((prev) => (prev ? { ...prev, status: "completed" } : null));
+      } else if (job_id) {
+        // Stream ended without complete event (navigated away briefly?)
+        // The polling effect will pick this up automatically
+      }
       await refresh();
     } catch (err: any) {
       setError(err.message);
@@ -350,6 +388,9 @@ export function KBDetail() {
       if (folderInputRef.current) folderInputRef.current.value = "";
     }
   };
+
+  // Keep the ref in sync so useDropZone's onDrop can call ingestFileList
+  ingestFileListRef.current = ingestFileList;
 
   const handleIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -482,6 +523,11 @@ export function KBDetail() {
             <span>max results: {kb.max_chunks_per_query}</span>
             <span>min score: {kb.min_similarity_score}</span>
           </div>
+          {activeUploadJob && activeUploadJob.status === "processing" && (
+            <div style={{ marginTop: 8 }}>
+              <UploadProgressBadge job={activeUploadJob} />
+            </div>
+          )}
         </div>
         <button type="button" style={css.btn} onClick={startEdit}>
           Settings
@@ -563,11 +609,13 @@ export function KBDetail() {
       )}
 
       {/* Upload section */}
-      <div style={css.card}>
+      <div style={{ ...css.card, position: "relative" }} {...dropZoneProps}>
+        {isDragging && <DropOverlay message="Drop files to upload" />}
         <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Upload</h3>
         <p style={{ fontSize: 13, color: "var(--fg2)", marginBottom: 12 }}>
-          Text files, PDFs, archives (.zip, .tar.gz), or entire folders. Archives and folders are
-          auto-expanded and the directory hierarchy is preserved.
+          Text files, PDFs, archives (.zip, .tar.gz), or entire folders. Drag &amp; drop or use the
+          button below. Archives and folders are auto-expanded and the directory hierarchy is
+          preserved.
         </p>
 
         {/* Hidden file inputs */}
