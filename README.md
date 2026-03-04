@@ -238,7 +238,7 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **Worker cancellation checks** — honor cancel requests mid-execution before expensive steps
 - **Cost budgets** — per-user/team spending limits based on the existing per-job cost tracking
 - **Multi-model executors** — plug in Aider, OpenHands, or custom scripts alongside Claude Code
-- **Advanced RAG research pipeline** — query enhancement, iterative retrieval with correction, RAPTOR tree preprocessing, ReAct agent loop (see [design doc](docs/RESEARCH_PIPELINE_DESIGN.md))
+- **Advanced RAG research pipeline** — query enhancement, iterative retrieval with correction, RAPTOR tree preprocessing, ReAct agent loop
 
 ---
 
@@ -249,7 +249,6 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **[docs/SLACK_SETUP.md](docs/SLACK_SETUP.md)** — Slack app creation, LLM routing, thread context & attachments
 - **[docs/API.md](docs/API.md)** — HTTP API reference for worker and web endpoints
 - **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** — development setup, conventions, and how to add features
-- **[docs/RESEARCH_PIPELINE_DESIGN.md](docs/RESEARCH_PIPELINE_DESIGN.md)** — design doc for the planned advanced RAG research pipeline (query enhancement, iterative retrieval, RAPTOR trees, agent loop)
 
 ---
 
