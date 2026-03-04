@@ -22,24 +22,6 @@ export interface UserSynthesisResult {
   chunks_used: KBSearchResult[];
 }
 
-/**
- * Build a formatted context string with inline citations.
- *
- * Format:
- *   ## Knowledge Base Context
- *   The following context was retrieved via deep research...
- *
- *   ### Sources
- *   [1] KB Name: source_file > Section (score: 0.87)
- *   [2] KB Name: source_file (score: 0.72)
- *   ...
- *
- *   ### Retrieved Context
- *   [1] <chunk content>
- *   ---
- *   [2] <chunk content>
- *   ...
- */
 // ─── LLM Synthesis Prompt (for user-facing answers) ──────────
 
 const SYNTHESIS_SYSTEM_PROMPT = `You are a knowledgeable assistant answering questions using retrieved documentation.
