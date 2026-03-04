@@ -47,6 +47,8 @@ export interface KBChunk {
   metadata: {
     section?: string;
     page?: number;
+    file_path?: string;
+    parent_dir?: string;
     created_at: string;
   };
 }
@@ -60,6 +62,8 @@ export interface KBSearchResult {
   metadata: {
     section?: string;
     page?: number;
+    file_path?: string;
+    parent_dir?: string;
   };
 }
 

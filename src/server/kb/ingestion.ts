@@ -19,7 +19,7 @@ import {
   writeFileSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
-import { extname, join, relative } from "node:path";
+import { dirname, extname, join, relative } from "node:path";
 import AdmZip from "adm-zip";
 import { v4 as uuidv4 } from "uuid";
 import { createLogger } from "../../shared/logger.js";
@@ -95,6 +95,7 @@ const ARCHIVE_EXTENSIONS = new Set([".zip", ".tar", ".tgz"]);
 
 export interface IngestedFile {
   name: string;
+  filePath: string;
   sizeBytes: number;
   chunks: Chunk[];
 }
@@ -209,32 +210,51 @@ async function extractPdfText(filePath: string): Promise<Array<{ pageNum: number
 }
 
 /**
+ * Stamp file_path and parent_dir metadata onto every chunk produced for a file.
+ */
+function stampPathMetadata(chunks: Chunk[], filePath: string): void {
+  const parentDir = dirname(filePath);
+  for (const chunk of chunks) {
+    chunk.metadata.file_path = filePath;
+    chunk.metadata.parent_dir = parentDir === "." ? "" : parentDir;
+  }
+}
+
+/**
  * Process a single file: read, chunk, and return results.
+ *
+ * @param diskPath - Absolute path to the file on disk (temp location)
+ * @param relativeName - Display name / document name stored in MongoDB
+ * @param hierarchyPath - Path relative to the upload root (for hierarchy metadata)
+ * @param options - Chunking configuration
  */
 async function processFile(
-  filePath: string,
+  diskPath: string,
   relativeName: string,
+  hierarchyPath: string,
   options: ChunkOptions,
 ): Promise<IngestedFile | null> {
-  const stat = statSync(filePath);
+  const stat = statSync(diskPath);
 
-  if (isPdf(filePath)) {
+  if (isPdf(diskPath)) {
     try {
-      const pages = await extractPdfText(filePath);
+      const pages = await extractPdfText(diskPath);
       const chunks = chunkPdfPages(pages, options, relativeName);
-      return { name: relativeName, sizeBytes: stat.size, chunks };
+      stampPathMetadata(chunks, hierarchyPath);
+      return { name: relativeName, filePath: hierarchyPath, sizeBytes: stat.size, chunks };
     } catch (err: any) {
       throw new Error(`PDF extraction failed: ${err.message}`);
     }
   }
 
-  if (isTextFile(filePath)) {
+  if (isTextFile(diskPath)) {
     try {
-      const text = readFileSync(filePath, "utf-8");
+      const text = readFileSync(diskPath, "utf-8");
       // Skip empty files
       if (!text.trim()) return null;
       const chunks = chunkText(text, options, relativeName);
-      return { name: relativeName, sizeBytes: stat.size, chunks };
+      stampPathMetadata(chunks, hierarchyPath);
+      return { name: relativeName, filePath: hierarchyPath, sizeBytes: stat.size, chunks };
     } catch (err: any) {
       throw new Error(`Text read failed: ${err.message}`);
     }
@@ -242,12 +262,13 @@ async function processFile(
 
   // Try to read as UTF-8 anyway — if it works and has content, chunk it
   try {
-    const text = readFileSync(filePath, "utf-8");
+    const text = readFileSync(diskPath, "utf-8");
     // Check for binary content (null bytes)
     if (text.includes("\0")) return null;
     if (!text.trim()) return null;
     const chunks = chunkText(text, options, relativeName);
-    return { name: relativeName, sizeBytes: stat.size, chunks };
+    stampPathMetadata(chunks, hierarchyPath);
+    return { name: relativeName, filePath: hierarchyPath, sizeBytes: stat.size, chunks };
   } catch {
     return null;
   }
@@ -280,9 +301,10 @@ export async function ingestFiles(
 
           const extractedFiles = walkDir(extractDir);
           for (const extractedPath of extractedFiles) {
-            const relName = `${filename}/${relative(extractDir, extractedPath)}`;
+            const hierarchyPath = relative(extractDir, extractedPath);
+            const relName = `${filename}/${hierarchyPath}`;
             try {
-              const ingested = await processFile(extractedPath, relName, options);
+              const ingested = await processFile(extractedPath, relName, hierarchyPath, options);
               if (ingested) {
                 result.files.push(ingested);
               } else {
@@ -309,7 +331,7 @@ export async function ingestFiles(
         writeFileSync(tempFile, buffer);
 
         try {
-          const ingested = await processFile(tempFile, filename, options);
+          const ingested = await processFile(tempFile, filename, filename, options);
           if (ingested) {
             result.files.push(ingested);
           } else {

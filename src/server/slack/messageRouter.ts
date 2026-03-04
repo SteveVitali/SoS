@@ -119,7 +119,10 @@ async function buildKBContext(userMessage: string, scopes: KBScope[]): Promise<s
     const entries: string[] = [];
 
     for (const r of results) {
-      const entry = `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`;
+      const path = r.metadata.file_path || r.source_file;
+      const breadcrumb = path.replace(/[/]/g, " > ");
+      const sectionSuffix = r.metadata.section ? ` > ${r.metadata.section}` : "";
+      const entry = `[${r.kb_name} > ${breadcrumb}${sectionSuffix}] (score: ${r.score.toFixed(2)}):\n${r.content}`;
       if (totalChars + entry.length > maxChars) break;
       entries.push(entry);
       totalChars += entry.length;

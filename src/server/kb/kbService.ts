@@ -2,6 +2,7 @@
  * Knowledge base service — orchestrates CRUD, ingestion, and search.
  */
 
+import { dirname } from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import type {
   KBProbeResult,
@@ -160,40 +161,60 @@ export async function ingestIntoKB(
     sourceFile: string;
     section?: string;
     page?: number;
+    filePath: string;
+    parentDir: string;
   }> = [];
 
   for (const file of ingestionResult.files) {
     for (const chunk of file.chunks) {
+      const filePath = chunk.metadata.file_path || file.filePath || file.name;
+      const parentDir =
+        chunk.metadata.parent_dir ?? (dirname(filePath) === "." ? "" : dirname(filePath));
       allChunks.push({
         content: chunk.content,
         sourceFile: file.name,
         section: chunk.metadata.section,
         page: chunk.metadata.page,
+        filePath,
+        parentDir,
       });
     }
   }
 
-  // Step 3: Generate embeddings in batches
-  const texts = allChunks.map((c) => c.content);
-  log.info("Generating embeddings", { kbId, chunks: texts.length });
+  // Step 3: Build breadcrumb-enriched content for embedding.
+  // Prepending the hierarchy path and section improves vector similarity
+  // for queries that reference the document structure ("contextual chunking").
+  const enrichedTexts = allChunks.map((c) => {
+    const pathBreadcrumb = c.filePath.replace(/[/]/g, " > ");
+    const lines: string[] = [`Source: ${pathBreadcrumb}`];
+    if (c.section) lines.push(`Section: ${c.section}`);
+    lines.push("", c.content);
+    return lines.join("\n");
+  });
+
+  log.info("Generating embeddings", { kbId, chunks: enrichedTexts.length });
 
   let embeddings: number[][];
   try {
-    embeddings = await embeddingProvider.embed(texts);
+    embeddings = await embeddingProvider.embed(enrichedTexts);
   } catch (err: any) {
     log.error("Embedding generation failed", { kbId, error: err.message });
     throw new Error(`Embedding generation failed: ${err.message}`);
   }
 
   // Step 4: Build vector records
+  // Store the enriched content (with breadcrumb) — it's useful context when
+  // injected into downstream LLM prompts as well.
   const records: VectorRecord[] = allChunks.map((chunk, i) => ({
     id: uuidv4(),
     kb_id: kbId,
     source_file: chunk.sourceFile,
-    content: chunk.content,
+    content: enrichedTexts[i],
     vector: embeddings[i],
     section: chunk.section || "",
     page: chunk.page || 0,
+    file_path: chunk.filePath,
+    parent_dir: chunk.parentDir,
     created_at: new Date().toISOString(),
   }));
 
@@ -362,6 +383,8 @@ async function twoStageSearch(
             metadata: {
               section: r.section || undefined,
               page: r.page || undefined,
+              file_path: r.file_path || undefined,
+              parent_dir: r.parent_dir || undefined,
             },
           });
         }
@@ -444,6 +467,8 @@ export async function searchSingleKB(
     metadata: {
       section: r.section || undefined,
       page: r.page || undefined,
+      file_path: r.file_path || undefined,
+      parent_dir: r.parent_dir || undefined,
     },
   }));
 }
