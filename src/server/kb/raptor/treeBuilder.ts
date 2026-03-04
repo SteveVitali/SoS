@@ -74,22 +74,6 @@ async function loadRecordsAtLevel(
 }
 
 /**
- * Delete all RAPTOR summary records (level > 0) for a KB.
- */
-async function _deleteRaptorLevels(kbId: string): Promise<void> {
-  // LanceDB doesn't have great support for conditional deletes on all fields.
-  // We'll rely on the fact that RAPTOR records have source_file = "__raptor__"
-  // For now, we store RAPTOR summaries with a distinctive source_file prefix.
-  // This is handled in the addRaptorRecords function.
-
-  // Note: A full implementation would delete where level > 0, but LanceDB
-  // has limitations on filter-based deletes. We use the source_file convention.
-  // Note: A full delete-by-level implementation requires LanceDB filter support.
-  // For now, RAPTOR summaries are identified by their source_file prefix.
-  log.info("RAPTOR level cleanup requested", { kbId });
-}
-
-/**
  * Build a RAPTOR tree for a knowledge base.
  *
  * Algorithm:

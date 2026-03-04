@@ -28,7 +28,7 @@ import { runQueryAnalyzer } from "./stages/queryAnalyzer.js";
 import { runQueryExpander } from "./stages/queryExpander.js";
 import { runReasoner } from "./stages/reasoner.js";
 import { runRetriever } from "./stages/retriever.js";
-import { runSynthesizer } from "./stages/synthesizer.js";
+import { runSynthesizer, type SynthesisResult } from "./stages/synthesizer.js";
 
 const log = createLogger("server:kb:research:pipeline");
 
@@ -52,15 +52,18 @@ function checkBudget(session: ResearchSession, config: ResearchConfig): void {
   if (elapsed >= config.max_wall_time_ms) throw new BudgetExhaustedError("wall_time");
 }
 
+// ─── Chunk dedup key ────────────────────────────────────────────
+
+/** Stable key for deduplicating search result chunks. */
+export function chunkKey(c: KBSearchResult): string {
+  return `${c.kb_id}:${c.source_file}:${c.content.slice(0, 100)}`;
+}
+
 // ─── Convergence detection ──────────────────────────────────────
 
 function hasNewChunks(existingChunks: KBSearchResult[], newChunks: KBSearchResult[]): boolean {
-  const existingKeys = new Set(
-    existingChunks.map((c) => `${c.kb_id}:${c.source_file}:${c.content.slice(0, 100)}`),
-  );
-  return newChunks.some(
-    (c) => !existingKeys.has(`${c.kb_id}:${c.source_file}:${c.content.slice(0, 100)}`),
-  );
+  const existingKeys = new Set(existingChunks.map(chunkKey));
+  return newChunks.some((c) => !existingKeys.has(chunkKey(c)));
 }
 
 // ─── Main pipeline ──────────────────────────────────────────────
@@ -129,11 +132,9 @@ export async function runResearchPipeline(
       }
 
       // Merge new chunks (deduplicate by key)
-      const existingKeys = new Set(
-        allAccumulatedChunks.map((c) => `${c.kb_id}:${c.source_file}:${c.content.slice(0, 100)}`),
-      );
+      const existingKeys = new Set(allAccumulatedChunks.map(chunkKey));
       for (const chunk of newChunks) {
-        const key = `${chunk.kb_id}:${chunk.source_file}:${chunk.content.slice(0, 100)}`;
+        const key = chunkKey(chunk);
         if (!existingKeys.has(key)) {
           allAccumulatedChunks.push(chunk);
           existingKeys.add(key);
@@ -227,29 +228,7 @@ export async function runResearchPipeline(
 
     // Complete the session
     const session = audit.complete();
-    const metrics = audit.computeMetrics();
-    metrics.chunks_used = synthesis.chunks_used.length;
-
-    // Persist session
-    try {
-      await saveResearchSession(session);
-    } catch (err) {
-      log.warn("Failed to persist research session", {
-        session_id: session.session_id,
-        error: (err as Error).message,
-      });
-    }
-
-    return {
-      session_id: session.session_id,
-      strategy: config.strategy,
-      original_query: query,
-      context: synthesis.context,
-      chunks: synthesis.chunks_used,
-      reasoning_trace: synthesis.reasoning_trace,
-      metrics,
-      audit: session,
-    };
+    return buildResult(query, config, session, audit, synthesis);
   } catch (err) {
     if (err instanceof BudgetExhaustedError) {
       // Graceful degradation: synthesize what we have
@@ -268,41 +247,47 @@ export async function runResearchPipeline(
       );
 
       const session = audit.budgetExhausted();
-      const metrics = audit.computeMetrics();
-      metrics.chunks_used = synthesis.chunks_used.length;
-
-      try {
-        await saveResearchSession(session);
-      } catch (saveErr) {
-        log.warn("Failed to persist research session", {
-          session_id: session.session_id,
-          error: (saveErr as Error).message,
-        });
-      }
-
-      return {
-        session_id: session.session_id,
-        strategy: config.strategy,
-        original_query: query,
-        context: synthesis.context,
-        chunks: synthesis.chunks_used,
-        reasoning_trace: synthesis.reasoning_trace,
-        metrics,
-        audit: session,
-      };
+      return buildResult(query, config, session, audit, synthesis);
     }
 
     // Unexpected error
     const session = audit.fail((err as Error).message);
-
-    try {
-      await saveResearchSession(session);
-    } catch (saveErr) {
-      log.warn("Failed to persist failed research session", {
-        error: (saveErr as Error).message,
-      });
-    }
-
+    await persistSession(session);
     throw err;
+  }
+}
+
+// ─── Helpers ────────────────────────────────────────────────────
+
+async function buildResult(
+  query: string,
+  config: ResearchConfig,
+  session: ResearchSession,
+  audit: AuditEmitter,
+  synthesis: SynthesisResult,
+): Promise<ResearchResult> {
+  const metrics = audit.computeMetrics();
+  metrics.chunks_used = synthesis.chunks_used.length;
+  await persistSession(session);
+  return {
+    session_id: session.session_id,
+    strategy: config.strategy,
+    original_query: query,
+    context: synthesis.context,
+    chunks: synthesis.chunks_used,
+    reasoning_trace: synthesis.reasoning_trace,
+    metrics,
+    audit: session,
+  };
+}
+
+async function persistSession(session: ResearchSession): Promise<void> {
+  try {
+    await saveResearchSession(session);
+  } catch (err) {
+    log.warn("Failed to persist research session", {
+      session_id: session.session_id,
+      error: (err as Error).message,
+    });
   }
 }

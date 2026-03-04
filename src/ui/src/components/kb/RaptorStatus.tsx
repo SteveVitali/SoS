@@ -18,8 +18,8 @@ export function RaptorStatus({ kbId }: { kbId: string }) {
     try {
       const data = await getRaptorStatus(kbId);
       setStatus(data.status);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -38,8 +38,8 @@ export function RaptorStatus({ kbId }: { kbId: string }) {
       setMessage(res.message || "Build started");
       // Poll for completion after a delay
       setTimeout(load, 3000);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     } finally {
       setBuilding(false);
     }

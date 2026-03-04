@@ -15,7 +15,8 @@ import type {
 import { listEnabledKBsByScope } from "../../kbRepo.js";
 import { AuditEmitter } from "../auditLog.js";
 import { saveResearchSession } from "../auditRepo.js";
-import { type ChatMessage, getResearchLLMClient } from "../llmClient.js";
+import { type ChatMessage, getResearchLLMClient, type ToolCall } from "../llmClient.js";
+import { chunkKey } from "../pipeline.js";
 import { runSynthesizer } from "../stages/synthesizer.js";
 import { buildAgentSystemPrompt } from "./agentPrompts.js";
 import { AGENT_TOOL_DEFINITIONS, type AgentToolContext, executeAgentTool } from "./agentTools.js";
@@ -89,7 +90,10 @@ export async function runResearchAgent(
 
       // Build assistant message with tool calls for conversation history
       // (OpenAI format: assistant message carries tool_calls)
-      const assistantMsg: any = { role: "assistant", content: response.content || "" };
+      const assistantMsg: ChatMessage & { tool_calls?: ToolCall[] } = {
+        role: "assistant",
+        content: response.content || "",
+      };
       assistantMsg.tool_calls = response.tool_calls;
       messages.push(assistantMsg);
 
@@ -115,10 +119,8 @@ export async function runResearchAgent(
         // Accumulate any retrieved chunks
         if (chunks) {
           for (const chunk of chunks) {
-            const key = `${chunk.kb_id}:${chunk.source_file}:${chunk.content.slice(0, 100)}`;
-            const exists = toolCtx.accumulatedChunks.some(
-              (c) => `${c.kb_id}:${c.source_file}:${c.content.slice(0, 100)}` === key,
-            );
+            const key = chunkKey(chunk);
+            const exists = toolCtx.accumulatedChunks.some((c) => chunkKey(c) === key);
             if (!exists) {
               toolCtx.accumulatedChunks.push(chunk);
             }
@@ -176,14 +178,7 @@ export async function runResearchAgent(
     const metrics = audit.computeMetrics();
     metrics.chunks_used = synthesis.chunks_used.length;
 
-    try {
-      await saveResearchSession(session);
-    } catch (err) {
-      log.warn("Failed to persist agent research session", {
-        session_id: session.session_id,
-        error: (err as Error).message,
-      });
-    }
+    await persistSession(session);
 
     return {
       session_id: session.session_id,
@@ -197,13 +192,18 @@ export async function runResearchAgent(
     };
   } catch (err) {
     const session = audit.fail((err as Error).message);
-    try {
-      await saveResearchSession(session);
-    } catch (saveErr) {
-      log.warn("Failed to persist failed agent session", {
-        error: (saveErr as Error).message,
-      });
-    }
+    await persistSession(session);
     throw err;
+  }
+}
+
+async function persistSession(session: { session_id: string }): Promise<void> {
+  try {
+    await saveResearchSession(session as Parameters<typeof saveResearchSession>[0]);
+  } catch (err) {
+    log.warn("Failed to persist research session", {
+      session_id: session.session_id,
+      error: (err as Error).message,
+    });
   }
 }

@@ -46,12 +46,12 @@ export class StepRecorder {
     this.onEvent?.({ type: "step_start", stage, iteration });
   }
 
-  recordInput(input: Record<string, unknown>): void {
-    this.step.input = input;
+  recordInput(input: Record<string, unknown> | object): void {
+    this.step.input = input as Record<string, unknown>;
   }
 
-  recordOutput(output: Record<string, unknown>): void {
-    this.step.output = output;
+  recordOutput(output: Record<string, unknown> | object): void {
+    this.step.output = output as Record<string, unknown>;
   }
 
   recordLLMCall(call: LLMCallRecord): void {

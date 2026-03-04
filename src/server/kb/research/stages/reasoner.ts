@@ -73,7 +73,7 @@ export async function runReasoner(
       follow_up_queries: [],
       missing_info: [],
     };
-    recorder.recordOutput(result as unknown as Record<string, unknown>);
+    recorder.recordOutput(result);
     recorder.finish({ is_sufficient: true });
     return result;
   }

@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ResearchMetrics, ResearchSession, ResearchStep } from "../../api.js";
+import { sessionStatusColor } from "./kbShared.js";
 
 const STAGE_ICONS: Record<string, string> = {
   query_analysis: "🔍",
@@ -212,21 +213,6 @@ export function MetricsSummary({ metrics }: { metrics: ResearchMetrics }) {
   );
 }
 
-function statusColor(status: string): string {
-  switch (status) {
-    case "completed":
-      return "#22c55e";
-    case "failed":
-      return "#ef4444";
-    case "budget_exhausted":
-      return "#eab308";
-    case "running":
-      return "#3b82f6";
-    default:
-      return "var(--fg2)";
-  }
-}
-
 export function ResearchTimeline({
   session,
   metrics,
@@ -252,8 +238,8 @@ export function ResearchTimeline({
               padding: "2px 8px",
               borderRadius: 4,
               fontWeight: 600,
-              background: `${statusColor(session.status)}22`,
-              color: statusColor(session.status),
+              background: `${sessionStatusColor(session.status)}22`,
+              color: sessionStatusColor(session.status),
             }}
           >
             {session.status}

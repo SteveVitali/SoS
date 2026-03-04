@@ -1,12 +1,7 @@
 import { useState } from "react";
-import {
-  type KBScope,
-  type ResearchResult,
-  type ResearchStrategy,
-  runResearch,
-} from "../../api.js";
+import { type ResearchResult, type ResearchStrategy, runResearch } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { ALL_SCOPES, ScopeToggleButtons } from "./kbShared.js";
+import { ScopeToggleButtons, useToggleScopes } from "./kbShared.js";
 import { MetricsSummary } from "./ResearchTimeline.js";
 
 interface ComparisonEntry {
@@ -18,7 +13,7 @@ interface ComparisonEntry {
 
 export function StrategyComparison() {
   const [query, setQuery] = useState("");
-  const [scopes, setScopes] = useState<KBScope[]>([...ALL_SCOPES]);
+  const { scopes, toggle: toggleScope } = useToggleScopes();
   const [running, setRunning] = useState(false);
   const [entries, setEntries] = useState<ComparisonEntry[]>([]);
 
@@ -45,10 +40,10 @@ export function StrategyComparison() {
         setEntries((prev) =>
           prev.map((e, i) => (i === idx ? { ...e, status: "done" as const, result } : e)),
         );
-      } catch (err: any) {
+      } catch (err: unknown) {
         setEntries((prev) =>
           prev.map((e, i) =>
-            i === idx ? { ...e, status: "error" as const, error: err.message } : e,
+            i === idx ? { ...e, status: "error" as const, error: (err as Error).message } : e,
           ),
         );
       }
@@ -56,12 +51,6 @@ export function StrategyComparison() {
 
     await Promise.allSettled(promises);
     setRunning(false);
-  };
-
-  const toggleScope = (scope: KBScope) => {
-    setScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
-    );
   };
 
   return (

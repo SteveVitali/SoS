@@ -296,6 +296,7 @@ export class WorkerApiClient {
       content: string;
       source_file: string;
       kb_name: string;
+      kb_id: string;
       score: number;
       metadata: { section?: string; page?: number };
     }>;

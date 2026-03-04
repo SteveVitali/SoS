@@ -1,13 +1,12 @@
 import { useState } from "react";
 import {
-  type KBScope,
   type ResearchResult,
   type ResearchStrategy,
   type ResearchStreamEvent,
   runResearchStreaming,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { ALL_SCOPES, ScopeToggleButtons, SearchResultCard } from "./kbShared.js";
+import { ScopeToggleButtons, SearchResultCard, useToggleScopes } from "./kbShared.js";
 import { MetricsSummary, ResearchTimeline } from "./ResearchTimeline.js";
 
 const STRATEGY_DESCRIPTIONS: Record<ResearchStrategy, string> = {
@@ -18,7 +17,7 @@ const STRATEGY_DESCRIPTIONS: Record<ResearchStrategy, string> = {
 
 export function ResearchPlayground() {
   const [query, setQuery] = useState("");
-  const [scopes, setScopes] = useState<KBScope[]>([...ALL_SCOPES]);
+  const { scopes, toggle: toggleScope } = useToggleScopes();
   const [strategy, setStrategy] = useState<ResearchStrategy>("deep");
   const [running, setRunning] = useState(false);
   const [error, setError] = useState("");
@@ -45,18 +44,12 @@ export function ResearchPlayground() {
         }
       });
       if (res) setResult(res);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     } finally {
       setRunning(false);
       setCurrentStage(null);
     }
-  };
-
-  const toggleScope = (scope: KBScope) => {
-    setScopes((prev) =>
-      prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
-    );
   };
 
   return (

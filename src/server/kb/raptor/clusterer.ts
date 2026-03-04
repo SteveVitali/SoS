@@ -67,8 +67,6 @@ export function kMeansClusters(items: ClusterInput[], k: number, maxIterations =
     }));
   }
 
-  const _dim = items[0].vector.length;
-
   // Initialize centroids using k-means++ initialization
   const centroids: number[][] = [];
   // Pick first centroid randomly

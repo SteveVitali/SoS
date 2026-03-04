@@ -56,7 +56,7 @@ export async function runEvaluator(
       incorrect_count: 0,
       ambiguous_count: 0,
     };
-    recorder.recordOutput(emptyResult as unknown as Record<string, unknown>);
+    recorder.recordOutput(emptyResult);
     recorder.finish({ correct: 0, incorrect: 0, ambiguous: 0 });
     return emptyResult;
   }

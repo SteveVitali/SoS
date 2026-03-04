@@ -45,7 +45,7 @@ export async function runQueryAnalyzer(
       complexity: "simple",
       sub_queries: [],
     };
-    recorder.recordOutput(result as unknown as Record<string, unknown>);
+    recorder.recordOutput(result);
     recorder.finish({ complexity: "simple", sub_queries: 0 });
     return result;
   }
@@ -91,7 +91,7 @@ export async function runQueryAnalyzer(
     has_step_back: !!analysis.step_back_query,
   });
 
-  recorder.recordOutput(analysis as unknown as Record<string, unknown>);
+  recorder.recordOutput(analysis);
   recorder.finish({
     complexity: analysis.complexity,
     sub_queries: analysis.sub_queries.length,

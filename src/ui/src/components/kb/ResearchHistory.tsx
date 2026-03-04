@@ -6,27 +6,8 @@ import {
   type ResearchStrategy,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { formatDuration, sessionStatusColor } from "./kbShared.js";
 import { ResearchTimeline } from "./ResearchTimeline.js";
-
-function statusColor(status: string): string {
-  switch (status) {
-    case "completed":
-      return "#22c55e";
-    case "failed":
-      return "#ef4444";
-    case "budget_exhausted":
-      return "#eab308";
-    case "running":
-      return "#3b82f6";
-    default:
-      return "var(--fg2)";
-  }
-}
-
-function formatDuration(ms: number): string {
-  if (ms < 1000) return `${ms}ms`;
-  return `${(ms / 1000).toFixed(1)}s`;
-}
 
 export function ResearchHistory() {
   const [sessions, setSessions] = useState<ResearchSession[]>([]);
@@ -52,8 +33,8 @@ export function ResearchHistory() {
       const data = await listResearchSessions(params);
       setSessions(data.sessions);
       setTotal(data.total);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     } finally {
       setLoading(false);
     }
@@ -73,8 +54,8 @@ export function ResearchHistory() {
     try {
       const data = await getResearchSession(id);
       setSelectedSession(data.session);
-    } catch (err: any) {
-      setError(err.message);
+    } catch (err: unknown) {
+      setError((err as Error).message);
     }
   };
 
@@ -167,8 +148,8 @@ export function ResearchHistory() {
                           padding: "1px 6px",
                           borderRadius: 4,
                           fontWeight: 600,
-                          background: `${statusColor(s.status)}22`,
-                          color: statusColor(s.status),
+                          background: `${sessionStatusColor(s.status)}22`,
+                          color: sessionStatusColor(s.status),
                           flexShrink: 0,
                         }}
                       >
