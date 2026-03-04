@@ -1,4 +1,4 @@
-routing: claude-opus-4.5
+routing: claude
 titleGeneration: claude-opus-4-5
 research: claude-opus-4.5
 raptorSummarization: claude-opus-4-5

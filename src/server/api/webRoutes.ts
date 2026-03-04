@@ -650,12 +650,72 @@ export function createWebRoutes(config: ServerConfig): Router {
     res.json({ models: registry });
   });
 
-  // GET /api/web/available-models — fetch healthy chat models from LiteLLM.
-  // Cross-references /model/info (deployment→group mapping) with /health (healthy deployments)
-  // to return only model groups that have at least one healthy deployment.
-  // Results are cached for 60 seconds to avoid hammering the upstream.
+  // GET /api/web/available-models — fetch chat models from LiteLLM.
+  // Uses /model/info (fast) for the model group list, and /health (slow, ~30-60s)
+  // as a best-effort background filter. Health data is cached separately and used
+  // to filter out unhealthy groups when available.
   let cachedModelList: { models: string[]; provider: string; fetchedAt: number } | null = null;
+  let cachedHealthyDeployments: { deployments: Set<string>; fetchedAt: number } | null = null;
+  let healthFetchInFlight = false;
   const MODEL_LIST_CACHE_TTL_MS = 60_000;
+  const HEALTH_CACHE_TTL_MS = 120_000; // health is slow, cache longer
+
+  interface ModelInfoEntry {
+    model_name: string;
+    litellm_params?: { model?: string };
+    model_info?: { mode?: string };
+  }
+
+  /** Extract chat-mode model groups from /model/info data, optionally filtered by health. */
+  function extractModelGroups(
+    entries: ModelInfoEntry[],
+    healthyDeployments: Set<string> | null,
+  ): string[] {
+    const groups = new Set<string>();
+    for (const entry of entries) {
+      const group = entry.model_name;
+      const deployment = entry.litellm_params?.model;
+      const mode = entry.model_info?.mode;
+      if (!group || !deployment) continue;
+      if (mode && mode !== "chat" && mode !== "completion") continue;
+      // If we have health data, only include groups with ≥1 healthy deployment
+      if (healthyDeployments && !healthyDeployments.has(deployment)) continue;
+      groups.add(group);
+    }
+    return [...groups].sort();
+  }
+
+  /** Fire-and-forget background fetch of /health to populate the health cache. */
+  function refreshHealthCache(base: string, headers: Record<string, string>): void {
+    if (healthFetchInFlight) return;
+    if (
+      cachedHealthyDeployments &&
+      Date.now() - cachedHealthyDeployments.fetchedAt < HEALTH_CACHE_TTL_MS
+    )
+      return;
+    healthFetchInFlight = true;
+    fetch(`${base}/health`, { headers, signal: AbortSignal.timeout(90_000) })
+      .then(async (res) => {
+        if (!res.ok) {
+          log.warn("Background health fetch returned non-OK", { status: res.status });
+          return;
+        }
+        const data = (await res.json()) as { healthy_endpoints?: { model?: string }[] };
+        const deployments = new Set(
+          (data.healthy_endpoints || []).map((e) => e.model).filter(Boolean) as string[],
+        );
+        cachedHealthyDeployments = { deployments, fetchedAt: Date.now() };
+        // Invalidate model list cache so next request uses the new health data
+        cachedModelList = null;
+        log.info("Background health cache refreshed", { healthy_deployments: deployments.size });
+      })
+      .catch((err: unknown) => {
+        log.warn("Background health fetch failed (non-fatal)", { error: (err as Error).message });
+      })
+      .finally(() => {
+        healthFetchInFlight = false;
+      });
+  }
 
   router.get("/available-models", async (_req: Request, res: Response) => {
     try {
@@ -683,69 +743,38 @@ export function createWebRoutes(config: ServerConfig): Router {
 
       const base = baseUrl.replace(/\/+$/, "");
       const headers = { Authorization: `Bearer ${apiKey}`, Accept: "application/json" };
-      const timeout = AbortSignal.timeout(10_000);
 
-      // Fetch /model/info and /health in parallel
-      const [modelInfoRes, healthRes] = await Promise.all([
-        fetch(`${base}/model/info`, { headers, signal: timeout }),
-        fetch(`${base}/health`, { headers, signal: timeout }),
-      ]);
+      // Kick off background health fetch (non-blocking)
+      refreshHealthCache(base, headers);
 
-      if (!modelInfoRes.ok || !healthRes.ok) {
-        const status = !modelInfoRes.ok ? modelInfoRes.status : healthRes.status;
-        const text = !modelInfoRes.ok
-          ? await modelInfoRes.text().catch(() => "")
-          : await healthRes.text().catch(() => "");
-        log.warn("Failed to fetch model info or health from LLM provider", {
-          modelInfoStatus: modelInfoRes.status,
-          healthStatus: healthRes.status,
+      // Fetch /model/info (fast, ~1-2s)
+      const modelInfoRes = await fetch(`${base}/model/info`, {
+        headers,
+        signal: AbortSignal.timeout(15_000),
+      });
+
+      if (!modelInfoRes.ok) {
+        const text = await modelInfoRes.text().catch(() => "");
+        log.warn("Failed to fetch model info from LLM provider", {
+          status: modelInfoRes.status,
           body: text.slice(0, 200),
         });
         res.json({
           models: cachedModelList?.models || [],
           provider,
-          error: `Upstream returned ${status}`,
+          error: `Upstream returned ${modelInfoRes.status}`,
         });
         return;
       }
 
-      // Parse responses
-      interface ModelInfoEntry {
-        model_name: string;
-        litellm_params?: { model?: string };
-        model_info?: { mode?: string };
-      }
-      interface HealthEntry {
-        model?: string;
-      }
-
       const modelInfoData = (await modelInfoRes.json()) as { data?: ModelInfoEntry[] };
-      const healthData = (await healthRes.json()) as { healthy_endpoints?: HealthEntry[] };
+      const healthyDeps = cachedHealthyDeployments?.deployments ?? null;
+      const models = extractModelGroups(modelInfoData.data || [], healthyDeps);
 
-      // Build set of healthy deployment model names
-      const healthyDeployments = new Set(
-        (healthData.healthy_endpoints || []).map((e) => e.model).filter(Boolean),
-      );
-
-      // Map deployment→group and filter to chat-mode groups with ≥1 healthy deployment
-      const healthyGroups = new Set<string>();
-      for (const entry of modelInfoData.data || []) {
-        const group = entry.model_name;
-        const deployment = entry.litellm_params?.model;
-        const mode = entry.model_info?.mode;
-        if (!group || !deployment) continue;
-        // Only include chat/completion models (skip embeddings, image, audio, etc.)
-        if (mode && mode !== "chat" && mode !== "completion") continue;
-        if (healthyDeployments.has(deployment)) {
-          healthyGroups.add(group);
-        }
-      }
-
-      const models = [...healthyGroups].sort();
-      log.info("Fetched healthy models from LLM provider", {
+      log.info("Fetched available models from LLM provider", {
         total_deployments: (modelInfoData.data || []).length,
-        healthy_deployments: healthyDeployments.size,
-        healthy_chat_groups: models.length,
+        health_filter_active: !!healthyDeps,
+        result_count: models.length,
       });
 
       cachedModelList = { models, provider, fetchedAt: Date.now() };
@@ -754,7 +783,7 @@ export function createWebRoutes(config: ServerConfig): Router {
       log.warn("Error fetching available models", { error: (err as Error).message });
       res.json({
         models: cachedModelList?.models || [],
-        provider: config.llmProvider,
+        provider: getResolvedProviderSettings().provider,
         error: (err as Error).message,
       });
     }
@@ -803,8 +832,9 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       const providerSettings: ProviderSettings | undefined = req.body?.provider;
       saveModelConfig(overrides, providerSettings);
-      // Invalidate the cached model list so next fetch uses new provider settings
+      // Invalidate caches so next fetch uses new provider settings
       cachedModelList = null;
+      cachedHealthyDeployments = null;
       const registry = getModelRegistry();
       res.json({ ok: true, models: registry });
     } catch (err: unknown) {
