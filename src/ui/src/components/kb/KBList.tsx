@@ -17,11 +17,13 @@ import { css } from "../../styles/theme.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { KBPlayground } from "./KBPlayground.js";
 import {
+  DropOverlay,
   formatBytes,
   ScopeBadge,
   ScopeToggleButtons,
   UploadDropdown,
   UploadProgressBadge,
+  useDropZone,
 } from "./kbShared.js";
 
 const raptorActionBtnStyle: React.CSSProperties = {
@@ -203,6 +205,20 @@ export function KBList() {
   const [createUploadMenuOpen, setCreateUploadMenuOpen] = useState(false);
   const createUploadMenuRef = useRef<HTMLDivElement>(null);
 
+  // Drag-and-drop on create form
+  const onDropCreateFiles = useCallback(
+    (files: File[]) => {
+      setCreateFiles((prev) => [...prev, ...files]);
+      setCreateUploadMenuOpen(false);
+      if (!showCreate) setShowCreate(true);
+    },
+    [showCreate],
+  );
+  const { isDragging: isCreateDragging, dropZoneProps: createDropProps } = useDropZone({
+    onDrop: onDropCreateFiles,
+    disabled: creating,
+  });
+
   // Active upload jobs across all KBs
   const [activeUploads, setActiveUploads] = useState<Record<string, UploadJob>>({});
 
@@ -377,7 +393,8 @@ export function KBList() {
       {error && <div style={css.error}>{error}</div>}
 
       {showCreate && (
-        <div style={{ ...css.card, marginBottom: 20 }}>
+        <div style={{ ...css.card, marginBottom: 20, position: "relative" }} {...createDropProps}>
+          {isCreateDragging && <DropOverlay message="Drop files to attach" />}
           <div style={css.field}>
             <label style={css.label}>Name</label>
             <input
@@ -403,7 +420,7 @@ export function KBList() {
           <div style={css.field}>
             <label style={css.label}>Upload Files (optional)</label>
             <p style={{ fontSize: 12, color: "var(--fg2)", margin: "0 0 8px" }}>
-              Select files or a folder to upload immediately after creation.
+              Select files or a folder, or drag &amp; drop onto this form.
             </p>
             {/* Hidden file inputs */}
             <input

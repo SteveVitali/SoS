@@ -18,12 +18,14 @@ import {
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import {
+  DropOverlay,
   formatBytes,
   ScopeBadge,
   ScopeToggleButtons,
   SearchResultCard,
   UploadDropdown,
   UploadProgressBadge,
+  useDropZone,
 } from "./kbShared.js";
 import { RaptorStatus } from "./RaptorStatus.js";
 import { RaptorTree } from "./RaptorTree.js";
@@ -146,6 +148,14 @@ export function KBDetail() {
   const [fileStatuses, setFileStatuses] = useState<Record<string, FileStatus>>({});
   const [ingestSummary, setIngestSummary] = useState<string>("");
   const [activeUploadJob, setActiveUploadJob] = useState<UploadJob | null>(null);
+
+  // Drag-and-drop
+  const onDropFiles = useCallback((files: File[]) => {
+    ingestFileListRef.current?.(files);
+  }, []);
+  const { isDragging, dropZoneProps } = useDropZone({ onDrop: onDropFiles, disabled: ingesting });
+  // Ref to break circular dependency: useDropZone needs onDrop, ingestFileList needs kb
+  const ingestFileListRef = useRef<((files: File[]) => Promise<void>) | null>(null);
 
   // Chunk exploration state
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
@@ -302,6 +312,7 @@ export function KBDetail() {
 
   const ingestFileList = async (files: File[]) => {
     if (files.length === 0 || !kb) return;
+    setUploadMenuOpen(false);
     setIngesting(true);
     setIngestSummary("");
     setError("");
@@ -377,6 +388,9 @@ export function KBDetail() {
       if (folderInputRef.current) folderInputRef.current.value = "";
     }
   };
+
+  // Keep the ref in sync so useDropZone's onDrop can call ingestFileList
+  ingestFileListRef.current = ingestFileList;
 
   const handleIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
@@ -595,11 +609,13 @@ export function KBDetail() {
       )}
 
       {/* Upload section */}
-      <div style={css.card}>
+      <div style={{ ...css.card, position: "relative" }} {...dropZoneProps}>
+        {isDragging && <DropOverlay message="Drop files to upload" />}
         <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Upload</h3>
         <p style={{ fontSize: 13, color: "var(--fg2)", marginBottom: 12 }}>
-          Text files, PDFs, archives (.zip, .tar.gz), or entire folders. Archives and folders are
-          auto-expanded and the directory hierarchy is preserved.
+          Text files, PDFs, archives (.zip, .tar.gz), or entire folders. Drag &amp; drop or use the
+          button below. Archives and folders are auto-expanded and the directory hierarchy is
+          preserved.
         </p>
 
         {/* Hidden file inputs */}
