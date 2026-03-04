@@ -19,6 +19,7 @@ import type {
   ResearchStreamEvent,
 } from "../../../shared/researchTypes.js";
 import { getEmbeddingProvider } from "../embeddings.js";
+import { runResearchAgent } from "./agent/agentLoop.js";
 import { AuditEmitter } from "./auditLog.js";
 import { saveResearchSession } from "./auditRepo.js";
 import { createResearchLLMClient, getResearchLLMClient } from "./llmClient.js";
@@ -78,6 +79,11 @@ export async function runResearchPipeline(
   },
 ): Promise<ResearchResult> {
   const { owner, consumer, onEvent } = options ?? {};
+
+  // Phase 4: delegate to agent loop
+  if (config.strategy === "agent") {
+    return runResearchAgent(query, scopes, config, { owner, consumer, onEvent });
+  }
 
   const audit = new AuditEmitter(query, scopes, config, consumer, onEvent);
   const llm = config.model
