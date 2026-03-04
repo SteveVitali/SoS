@@ -9,7 +9,7 @@ export const STRATEGY_PROFILES: Record<ResearchStrategy, ResearchConfig> = {
   simple: {
     strategy: "simple",
     max_iterations: 1,
-    max_llm_calls: 3,
+    max_llm_calls: 4,
     max_retrieval_calls: 10,
     max_wall_time_ms: 10_000,
     enable_decomposition: false,

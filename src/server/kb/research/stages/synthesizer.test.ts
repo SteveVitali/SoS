@@ -207,6 +207,19 @@ describe("synthesizer", () => {
     expect(result.chunks_used).toHaveLength(1);
   });
 
+  it("falls back to raw format when skip_llm_synthesis is false but no LLM provided", async () => {
+    const config = makeConfig({ skip_llm_synthesis: false });
+    const audit = new AuditEmitter("q", ["chat"], config);
+    const recorder = audit.startStep("synthesis", 0);
+    const chunks = [makeChunk()];
+
+    const result = await runSynthesizer("q", chunks, "", config, recorder);
+    // No LLM passed → raw format
+    expect(result.context).toContain("Retrieved Context");
+    expect(result.context).toContain("[1]");
+    expect(result.chunks_used).toHaveLength(1);
+  });
+
   it("passes source index and excerpts to LLM prompt", async () => {
     const config = makeConfig({ skip_llm_synthesis: false });
     const llm = makeMockLLM();
