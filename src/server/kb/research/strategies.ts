@@ -20,6 +20,7 @@ export const STRATEGY_PROFILES: Record<ResearchStrategy, ResearchConfig> = {
     max_chunks_per_query: 5,
     min_similarity_score: 0.3,
     dedup_threshold: 0.92,
+    skip_llm_synthesis: false,
   },
 
   deep: {
@@ -36,6 +37,7 @@ export const STRATEGY_PROFILES: Record<ResearchStrategy, ResearchConfig> = {
     max_chunks_per_query: 8,
     min_similarity_score: 0.25,
     dedup_threshold: 0.9,
+    skip_llm_synthesis: false,
   },
 
   agent: {
@@ -52,6 +54,7 @@ export const STRATEGY_PROFILES: Record<ResearchStrategy, ResearchConfig> = {
     max_chunks_per_query: 10,
     min_similarity_score: 0.2,
     dedup_threshold: 0.88,
+    skip_llm_synthesis: false,
   },
 };
 
