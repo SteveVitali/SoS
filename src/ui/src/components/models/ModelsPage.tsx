@@ -53,6 +53,7 @@ function RoleCard({
           gap: 10,
           padding: "12px 16px",
           background: "var(--bg)",
+          borderRadius: "var(--radius) var(--radius) 0 0",
         }}
       >
         <span style={{ ...css.mono, fontWeight: 600, fontSize: 14, minWidth: 180 }}>
@@ -62,7 +63,13 @@ function RoleCard({
         <span style={css.badge(badge.color)}>{badge.label}</span>
       </div>
 
-      <div style={{ padding: "12px 16px", background: "var(--bg2)" }}>
+      <div
+        style={{
+          padding: "12px 16px",
+          background: "var(--bg2)",
+          borderRadius: "0 0 var(--radius) var(--radius)",
+        }}
+      >
         <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
           {/* Effective model */}
           <div style={{ flex: 1, minWidth: 200 }}>
