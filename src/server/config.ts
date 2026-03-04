@@ -1,4 +1,5 @@
 import { createLogger } from "../shared/logger.js";
+import { getModelForRole } from "../shared/modelConfig.js";
 
 const log = createLogger("server:config");
 
@@ -40,7 +41,7 @@ export function loadServerConfig() {
     webBasicAuthUser: process.env.WEB_BASIC_AUTH_USER,
     webBasicAuthPass: process.env.WEB_BASIC_AUTH_PASS,
     llmProvider: (process.env.SOS_LLM_PROVIDER || "anthropic") as "anthropic" | "openai_compatible",
-    llmModel: process.env.SOS_LLM_MODEL || "claude-sonnet-4-20250514",
+    llmModel: getModelForRole("routing"),
     llmApiKey: process.env.SOS_LLM_API_KEY || process.env.ANTHROPIC_API_KEY || "",
     llmBaseUrl: process.env.SOS_LLM_BASE_URL || "",
     maxThreadMessages: optionalInt("SOS_MAX_THREAD_MESSAGES", 20),

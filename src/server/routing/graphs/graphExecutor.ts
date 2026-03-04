@@ -10,6 +10,7 @@
 
 import type { KBScope } from "../../../shared/kbTypes.js";
 import { createLogger } from "../../../shared/logger.js";
+import { getModelForRole } from "../../../shared/modelConfig.js";
 import type { LLMProvider } from "../../llm/llmProvider.js";
 import type { CommandContext, CommandResult } from "../../slack/commandExecutor.js";
 import type { RoutedAction } from "../../slack/messageRouter.js";
@@ -25,7 +26,7 @@ const log = createLogger("server:routing:graphs:executor");
 // ---------------------------------------------------------------------------
 
 let llmProvider: LLMProvider | null = null;
-let defaultModel = "claude-sonnet-4-20250514";
+let defaultModel = getModelForRole("correctiveRag");
 
 export function initGraphExecutor(provider: LLMProvider, model: string) {
   llmProvider = provider;

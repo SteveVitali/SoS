@@ -4,6 +4,7 @@
  */
 
 import { createLogger } from "../../shared/logger.js";
+import { getModelForRole } from "../../shared/modelConfig.js";
 
 const log = createLogger("server:kb:embeddings");
 
@@ -33,7 +34,7 @@ export function loadEmbeddingConfig(): EmbeddingConfig {
   const provider = (process.env.SOS_EMBEDDING_PROVIDER || "openai") as
     | "openai"
     | "openai_compatible";
-  const model = process.env.SOS_EMBEDDING_MODEL || "text-embedding-3-small";
+  const model = getModelForRole("embedding");
   const apiKey = process.env.SOS_EMBEDDING_API_KEY || process.env.OPENAI_API_KEY || "";
   const baseUrl = process.env.SOS_EMBEDDING_BASE_URL || "https://api.openai.com/v1";
   const dimensions = process.env.SOS_EMBEDDING_DIMENSIONS
