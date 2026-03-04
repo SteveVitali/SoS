@@ -54,10 +54,19 @@ export type ModelRoleName =
 
 export type LLMProviderType = "anthropic" | "openai_compatible";
 
+const VALID_PROVIDERS = new Set<string>(["anthropic", "openai_compatible"]);
+
 export interface ProviderSettings {
   provider?: LLMProviderType;
   base_url?: string;
   api_key?: string;
+}
+
+export interface ResolvedProviderSettings {
+  provider: LLMProviderType;
+  base_url: string;
+  api_key: string;
+  source: { provider: string; base_url: string; api_key: string };
 }
 
 // ─── Defaults ───────────────────────────────────────────────────
@@ -124,7 +133,12 @@ function parseConfigFile(filePath: string): ParsedConfig {
 
     const provider: ProviderSettings = {};
     if (typeof data.provider === "string" && data.provider.trim()) {
-      provider.provider = data.provider.trim() as LLMProviderType;
+      const raw = data.provider.trim();
+      if (VALID_PROVIDERS.has(raw)) {
+        provider.provider = raw as LLMProviderType;
+      } else {
+        log.warn("Unknown provider in model config, ignoring", { provider: raw });
+      }
     }
     if (typeof data.base_url === "string" && data.base_url.trim()) {
       provider.base_url = data.base_url.trim();
@@ -205,8 +219,7 @@ export function getModelConfigPath(): string | null {
  * Get the raw overrides map from the YAML file.
  */
 export function getModelConfigRaw(): Partial<Record<ModelRoleName, string>> {
-  if (!modelConfigPath) return {};
-  return parseConfigFile(modelConfigPath).overrides;
+  return { ...cachedOverrides };
 }
 
 /**
@@ -219,12 +232,7 @@ export function getProviderSettings(): ProviderSettings {
 /**
  * Get the resolved provider settings (YAML > env > default).
  */
-export function getResolvedProviderSettings(): {
-  provider: LLMProviderType;
-  base_url: string;
-  api_key: string;
-  source: { provider: string; base_url: string; api_key: string };
-} {
+export function getResolvedProviderSettings(): ResolvedProviderSettings {
   const fileProvider = cachedProvider.provider;
   const envProvider = process.env.SOS_LLM_PROVIDER as LLMProviderType | undefined;
   const provider = fileProvider || envProvider || "openai_compatible";

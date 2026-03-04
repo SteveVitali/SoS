@@ -1,3 +1,4 @@
+import type React from "react";
 import { useCallback, useEffect, useState } from "react";
 import {
   fetchAvailableModels,
@@ -22,6 +23,50 @@ const SOURCE_BADGE: Record<string, { color: string; label: string }> = {
   env: { color: "#a855f7", label: "env" },
 };
 
+/** Reusable card with a header row and a body section. */
+function CardSection({
+  header,
+  children,
+  style,
+}: {
+  header: React.ReactNode;
+  children: React.ReactNode;
+  style?: React.CSSProperties;
+}) {
+  return (
+    <div
+      style={{
+        border: "1px solid var(--border)",
+        borderRadius: "var(--radius)",
+        marginBottom: 12,
+        ...style,
+      }}
+    >
+      <div
+        style={{
+          display: "flex",
+          alignItems: "center",
+          gap: 10,
+          padding: "12px 16px",
+          background: "var(--bg)",
+          borderRadius: "var(--radius) var(--radius) 0 0",
+        }}
+      >
+        {header}
+      </div>
+      <div
+        style={{
+          padding: "12px 16px",
+          background: "var(--bg2)",
+          borderRadius: "0 0 var(--radius) var(--radius)",
+        }}
+      >
+        {children}
+      </div>
+    </div>
+  );
+}
+
 function RoleCard({
   roleName,
   role,
@@ -41,116 +86,95 @@ function RoleCard({
   const envIsSet = !!role.envOverride;
 
   return (
-    <div
-      style={{
-        border: "1px solid var(--border)",
-        borderRadius: "var(--radius)",
-        marginBottom: 12,
-      }}
+    <CardSection
+      header={
+        <>
+          <span style={{ ...css.mono, fontWeight: 600, fontSize: 14, minWidth: 180 }}>
+            {roleName}
+          </span>
+          <span style={{ fontSize: 12, color: "var(--fg3)", flex: 1 }}>{role.description}</span>
+          <span style={css.badge(badge.color)}>{badge.label}</span>
+        </>
+      }
     >
-      <div
-        style={{
-          display: "flex",
-          alignItems: "center",
-          gap: 10,
-          padding: "12px 16px",
-          background: "var(--bg)",
-          borderRadius: "var(--radius) var(--radius) 0 0",
-        }}
-      >
-        <span style={{ ...css.mono, fontWeight: 600, fontSize: 14, minWidth: 180 }}>
-          {roleName}
-        </span>
-        <span style={{ fontSize: 12, color: "var(--fg3)", flex: 1 }}>{role.description}</span>
-        <span style={css.badge(badge.color)}>{badge.label}</span>
-      </div>
-
-      <div
-        style={{
-          padding: "12px 16px",
-          background: "var(--bg2)",
-          borderRadius: "0 0 var(--radius) var(--radius)",
-        }}
-      >
-        <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
-          {/* Effective model */}
-          <div style={{ flex: 1, minWidth: 200 }}>
-            <span style={css.label}>Effective Model</span>
-            <div
-              style={{
-                ...css.mono,
-                fontSize: 13,
-                fontWeight: 600,
-                color: "var(--fg)",
-                marginTop: 2,
-              }}
-            >
-              {role.model}
-            </div>
-          </div>
-
-          {/* Default */}
-          <div style={{ minWidth: 200 }}>
-            <span style={css.label}>Default</span>
-            <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
-              {role.default}
-            </div>
-          </div>
-
-          {/* Env var */}
-          <div style={{ minWidth: 200 }}>
-            <span style={css.label}>Env Var</span>
-            <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
-              {role.envVar}
-              {envIsSet && (
-                <span
-                  style={{
-                    marginLeft: 6,
-                    fontSize: 10,
-                    padding: "1px 6px",
-                    borderRadius: 8,
-                    background: "#a855f722",
-                    color: "#a855f7",
-                    border: "1px solid #a855f744",
-                  }}
-                >
-                  set
-                </span>
-              )}
-            </div>
+      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+        {/* Effective model */}
+        <div style={{ flex: 1, minWidth: 200 }}>
+          <span style={css.label}>Effective Model</span>
+          <div
+            style={{
+              ...css.mono,
+              fontSize: 13,
+              fontWeight: 600,
+              color: "var(--fg)",
+              marginTop: 2,
+            }}
+          >
+            {role.model}
           </div>
         </div>
 
-        {/* File override input */}
-        <div style={{ marginTop: 12 }}>
-          <span style={css.label}>File Override (highest priority)</span>
-          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <ModelAutocomplete
-              value={overrideValue}
-              onChange={onOverrideChange}
-              models={availableModels}
-              loading={modelsLoading}
-              placeholder={`Enter model name to override ${roleName}...`}
-            />
-            {overrideValue && (
-              <button
-                type="button"
-                style={{ ...css.btnSmall, color: "var(--fg3)" }}
-                onClick={() => onOverrideChange("")}
-                title="Clear override"
+        {/* Default */}
+        <div style={{ minWidth: 200 }}>
+          <span style={css.label}>Default</span>
+          <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
+            {role.default}
+          </div>
+        </div>
+
+        {/* Env var */}
+        <div style={{ minWidth: 200 }}>
+          <span style={css.label}>Env Var</span>
+          <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
+            {role.envVar}
+            {envIsSet && (
+              <span
+                style={{
+                  marginLeft: 6,
+                  fontSize: 10,
+                  padding: "1px 6px",
+                  borderRadius: 8,
+                  background: "#a855f722",
+                  color: "#a855f7",
+                  border: "1px solid #a855f744",
+                }}
               >
-                Clear
-              </button>
+                set
+              </span>
             )}
           </div>
-          {envIsSet && overrideValue && (
-            <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
-              File override takes precedence over env var {role.envVar}.
-            </div>
-          )}
         </div>
       </div>
-    </div>
+
+      {/* File override input */}
+      <div style={{ marginTop: 12 }}>
+        <span style={css.label}>File Override (highest priority)</span>
+        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+          <ModelAutocomplete
+            value={overrideValue}
+            onChange={onOverrideChange}
+            models={availableModels}
+            loading={modelsLoading}
+            placeholder={`Enter model name to override ${roleName}...`}
+          />
+          {overrideValue && (
+            <button
+              type="button"
+              style={{ ...css.btnSmall, color: "var(--fg3)" }}
+              onClick={() => onOverrideChange("")}
+              title="Clear override"
+            >
+              Clear
+            </button>
+          )}
+        </div>
+        {envIsSet && overrideValue && (
+          <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
+            File override takes precedence over env var {role.envVar}.
+          </div>
+        )}
+      </div>
+    </CardSection>
   );
 }
 
@@ -326,123 +350,94 @@ export function ModelsPage() {
       </div>
 
       {/* Provider settings */}
-      <div
-        style={{
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius)",
-          marginBottom: 16,
-        }}
-      >
-        <div
-          style={{
-            display: "flex",
-            alignItems: "center",
-            gap: 10,
-            padding: "12px 16px",
-            background: "var(--bg)",
-            borderRadius: "var(--radius) var(--radius) 0 0",
-          }}
-        >
-          <span style={{ ...css.mono, fontWeight: 600, fontSize: 14 }}>LLM Provider</span>
-          <span style={{ fontSize: 12, color: "var(--fg3)", flex: 1 }}>
-            Connection settings for the LLM API
-          </span>
-          {providerResolved && (
-            <span
-              style={css.badge(
-                SOURCE_BADGE[providerResolved.source.provider]?.color || "var(--fg3)",
-              )}
-            >
-              {providerResolved.source.provider}
+      <CardSection
+        style={{ marginBottom: 16 }}
+        header={
+          <>
+            <span style={{ ...css.mono, fontWeight: 600, fontSize: 14 }}>LLM Provider</span>
+            <span style={{ fontSize: 12, color: "var(--fg3)", flex: 1 }}>
+              Connection settings for the LLM API
             </span>
-          )}
-        </div>
-        <div
-          style={{
-            padding: "12px 16px",
-            background: "var(--bg2)",
-            borderRadius: "0 0 var(--radius) var(--radius)",
-          }}
-        >
-          {providerResolved && (
-            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 12 }}>
-              <div>
-                <span style={css.label}>Effective Provider</span>
-                <div style={{ ...css.mono, fontSize: 13, fontWeight: 600, marginTop: 2 }}>
-                  {providerResolved.provider}
-                </div>
-              </div>
-              <div>
-                <span style={css.label}>Effective Base URL</span>
-                <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
-                  {providerResolved.base_url || "(not set)"}
-                </div>
-              </div>
-              <div>
-                <span style={css.label}>API Key</span>
-                <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
-                  {providerResolved.api_key_set ? "***" : "(not set)"}
-                  {providerResolved.api_key_set && (
-                    <span
-                      style={{
-                        marginLeft: 6,
-                        fontSize: 10,
-                        padding: "1px 6px",
-                        borderRadius: 8,
-                        background: "#22c55e22",
-                        color: "#22c55e",
-                        border: "1px solid #22c55e44",
-                      }}
-                    >
-                      {providerResolved.source.api_key}
-                    </span>
-                  )}
-                </div>
-              </div>
-            </div>
-          )}
-
-          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
-            <div>
-              <span style={css.label}>Provider</span>
-              <select
-                style={{ ...css.input, maxWidth: 280, cursor: "pointer" }}
-                value={provider.provider || ""}
-                onChange={(e) => handleProviderChange("provider", e.target.value)}
+            {providerResolved && (
+              <span
+                style={css.badge(
+                  SOURCE_BADGE[providerResolved.source.provider]?.color || "var(--fg3)",
+                )}
               >
-                <option value="">Default (openai_compatible)</option>
-                {PROVIDER_OPTIONS.map((opt) => (
-                  <option key={opt.value} value={opt.value}>
-                    {opt.label}
-                  </option>
-                ))}
-              </select>
+                {providerResolved.source.provider}
+              </span>
+            )}
+          </>
+        }
+      >
+        {providerResolved && (
+          <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 12 }}>
+            <div>
+              <span style={css.label}>Effective Provider</span>
+              <div style={{ ...css.mono, fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+                {providerResolved.provider}
+              </div>
             </div>
-            <div style={{ flex: 1, minWidth: 250 }}>
-              <span style={css.label}>Base URL</span>
-              <input
-                style={{ ...css.input, width: "100%" }}
-                value={provider.base_url || ""}
-                onChange={(e) => handleProviderChange("base_url", e.target.value)}
-                placeholder="https://litellm.example.com"
-              />
+            <div>
+              <span style={css.label}>Effective Base URL</span>
+              <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
+                {providerResolved.base_url || "(not set)"}
+              </div>
             </div>
-            <div style={{ minWidth: 200 }}>
+            <div>
               <span style={css.label}>API Key</span>
-              <input
-                style={{ ...css.input, maxWidth: 280 }}
-                type="password"
-                value={provider.api_key || ""}
-                onChange={(e) => handleProviderChange("api_key", e.target.value)}
-                placeholder="sk-..."
-              />
+              <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
+                {providerResolved.api_key_set ? "***" : "(not set)"}
+                {providerResolved.api_key_set && (
+                  <span style={{ marginLeft: 6, ...css.badge("#22c55e") }}>
+                    {providerResolved.source.api_key}
+                  </span>
+                )}
+              </div>
             </div>
           </div>
-          <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 6 }}>
-            Env vars: SOS_LLM_PROVIDER, SOS_LLM_BASE_URL, SOS_LLM_API_KEY
+        )}
+
+        <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+          <div>
+            <span style={css.label}>Provider</span>
+            <select
+              style={{ ...css.input, maxWidth: 280, cursor: "pointer" }}
+              value={provider.provider || ""}
+              onChange={(e) => handleProviderChange("provider", e.target.value)}
+            >
+              <option value="">Default (openai_compatible)</option>
+              {PROVIDER_OPTIONS.map((opt) => (
+                <option key={opt.value} value={opt.value}>
+                  {opt.label}
+                </option>
+              ))}
+            </select>
+          </div>
+          <div style={{ flex: 1, minWidth: 250 }}>
+            <span style={css.label}>Base URL</span>
+            <input
+              style={{ ...css.input, width: "100%" }}
+              value={provider.base_url || ""}
+              onChange={(e) => handleProviderChange("base_url", e.target.value)}
+              placeholder="https://litellm.example.com"
+            />
+          </div>
+          <div style={{ minWidth: 200 }}>
+            <span style={css.label}>API Key</span>
+            <input
+              style={{ ...css.input, maxWidth: 280 }}
+              type="password"
+              value={provider.api_key || ""}
+              onChange={(e) => handleProviderChange("api_key", e.target.value)}
+              placeholder="sk-..."
+            />
           </div>
         </div>
-      </div>
+        <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 6 }}>
+          Env vars: SOS_LLM_PROVIDER, SOS_LLM_BASE_URL, SOS_LLM_API_KEY
+        </div>
+      </CardSection>
 
       {/* Role cards */}
       {models &&
