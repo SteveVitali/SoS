@@ -196,4 +196,5 @@ export interface RoutingConfig {
   actions: Record<string, ActionDef>;
   custom_actions: Record<string, ActionDef>;
   kb_context_max_tokens?: number;
+  kb_research_strategy?: "simple" | "deep" | "agent";
 }

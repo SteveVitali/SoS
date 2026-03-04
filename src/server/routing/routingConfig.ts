@@ -75,12 +75,16 @@ function parseRoutingConfig(data: any): RoutingConfig {
     }
   }
 
+  const validStrategies = ["simple", "deep", "agent"];
+  const rawStrategy = data?.kb_research_strategy;
+
   return {
     model: data?.model,
     system_prompt: data?.system_prompt || "",
     actions,
     custom_actions: customActions,
     kb_context_max_tokens: data?.kb_context_max_tokens,
+    kb_research_strategy: validStrategies.includes(rawStrategy) ? rawStrategy : undefined,
   };
 }
 

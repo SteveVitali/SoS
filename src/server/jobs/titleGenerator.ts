@@ -1,11 +1,12 @@
 import { createLogger } from "../../shared/logger.js";
+import { getModelForRole } from "../../shared/modelConfig.js";
 import type { LLMProvider } from "../llm/index.js";
 import { updateJobFields } from "./jobRepo.js";
 
 const log = createLogger("server:titleGenerator");
 
 let provider: LLMProvider | null = null;
-let configuredModel = "claude-sonnet-4-20250514";
+let configuredModel = getModelForRole("titleGeneration");
 
 export function initTitleGenerator(llmProvider: LLMProvider, model: string) {
   provider = llmProvider;

@@ -19,6 +19,7 @@ import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import type { KBScope, KBSearchResult } from "../../../shared/kbTypes.js";
 import { formatPathBreadcrumb } from "../../../shared/kbUtils.js";
 import { createLogger } from "../../../shared/logger.js";
+import { getModelForRole } from "../../../shared/modelConfig.js";
 import { searchKnowledgeBases } from "../../kb/kbService.js";
 import type { LLMProvider } from "../../llm/llmProvider.js";
 import type { RAGGraphConfig, RAGGraphState } from "./types.js";
@@ -251,7 +252,7 @@ function gradeRouter(state: RAGGraphState): "synthesize" | "reformulate_query" {
 // ---------------------------------------------------------------------------
 
 export function buildCorrectiveRAGGraph(provider: LLMProvider, config: RAGGraphConfig) {
-  const model = config.model ?? "claude-sonnet-4-20250514";
+  const model = config.model ?? getModelForRole("correctiveRag");
   const maxAnswerTokens = config.max_answer_tokens ?? 1024;
 
   const graph = new StateGraph(RAGState)
