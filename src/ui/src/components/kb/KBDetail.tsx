@@ -4,7 +4,6 @@ import {
   type ChunkRecord,
   deleteKBDocument,
   getKB,
-  type IngestProgressEvent,
   ingestKBFiles,
   type KBDocument,
   type KBScope,
@@ -24,11 +23,20 @@ export function KBDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [ingesting, setIngesting] = useState(false);
-  const [progressEvents, setProgressEvents] = useState<IngestProgressEvent[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
   const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
+
+  // Per-file ingestion progress
+  type FileStatus =
+    | { state: "pending" }
+    | { state: "processing" }
+    | { state: "done"; chunks: number }
+    | { state: "skipped"; reason: string }
+    | { state: "error"; error: string };
+  const [fileStatuses, setFileStatuses] = useState<Record<string, FileStatus>>({});
+  const [ingestSummary, setIngestSummary] = useState<string>("");
 
   // Chunk exploration state
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
@@ -133,11 +141,52 @@ export function KBDetail() {
   const ingestFileList = async (files: File[]) => {
     if (files.length === 0 || !kb) return;
     setIngesting(true);
-    setProgressEvents([]);
+    setIngestSummary("");
     setError("");
+
+    // Populate all files upfront as "pending"
+    const initial: Record<string, FileStatus> = {};
+    for (const f of files) {
+      const name = f.webkitRelativePath || f.name;
+      initial[name] = { state: "pending" };
+    }
+    setFileStatuses(initial);
+
     try {
       await ingestKBFiles(kb.kb_id, files, (event) => {
-        setProgressEvents((prev) => [...prev, event]);
+        switch (event.type) {
+          case "file_start":
+            setFileStatuses((prev) => ({ ...prev, [event.file]: { state: "processing" } }));
+            break;
+          case "file_done":
+            setFileStatuses((prev) => ({
+              ...prev,
+              [event.file]: { state: "done", chunks: event.chunks },
+            }));
+            break;
+          case "file_skip":
+            setFileStatuses((prev) => ({
+              ...prev,
+              [event.file]: { state: "skipped", reason: event.reason },
+            }));
+            break;
+          case "file_error":
+            setFileStatuses((prev) => ({
+              ...prev,
+              [event.file]: { state: "error", error: event.error },
+            }));
+            break;
+          case "complete":
+            setIngestSummary(
+              `Done \u2014 ${event.documents_added} doc${event.documents_added !== 1 ? "s" : ""}, ` +
+                `${event.chunks_added} chunk${event.chunks_added !== 1 ? "s" : ""}` +
+                (event.skipped.length ? `, ${event.skipped.length} skipped` : "") +
+                (event.errors.length
+                  ? `, ${event.errors.length} error${event.errors.length !== 1 ? "s" : ""}`
+                  : ""),
+            );
+            break;
+        }
       });
       await refresh();
     } catch (err: any) {
@@ -446,77 +495,103 @@ export function KBDetail() {
           )}
         </div>
 
-        {/* Real-time progress log */}
-        {progressEvents.length > 0 && (
+        {/* Real-time per-file progress */}
+        {Object.keys(fileStatuses).length > 0 && (
           <div
             style={{
               marginTop: 12,
               border: "1px solid var(--border)",
               borderRadius: "var(--radius)",
-              maxHeight: 220,
+              maxHeight: 280,
               overflowY: "auto",
               fontSize: 12,
               fontFamily: "monospace",
               background: "var(--bg)",
             }}
           >
-            {progressEvents.map((ev, i) => {
-              let icon = "";
-              let color = "var(--fg2)";
-              let text = "";
-              switch (ev.type) {
-                case "start":
+            {Object.entries(fileStatuses).map(([name, status]) => {
+              let icon: string;
+              let color: string;
+              let badge = "";
+              switch (status.state) {
+                case "pending":
                   icon = "◦";
-                  text = `Starting ingestion (${ev.total_uploads} upload${ev.total_uploads !== 1 ? "s" : ""})`;
+                  color = "var(--fg2)";
                   break;
-                case "file_start":
+                case "processing":
                   icon = "⟳";
                   color = "var(--accent)";
-                  text = ev.file;
                   break;
-                case "file_done":
+                case "done":
                   icon = "✓";
                   color = "var(--green)";
-                  text = `${ev.file}  (${ev.chunks} chunk${ev.chunks !== 1 ? "s" : ""})`;
+                  badge = `${status.chunks} chunk${status.chunks !== 1 ? "s" : ""}`;
                   break;
-                case "file_skip":
+                case "skipped":
                   icon = "–";
-                  text = `${ev.file}  (${ev.reason})`;
+                  color = "var(--fg2)";
+                  badge = status.reason;
                   break;
-                case "file_error":
+                case "error":
                   icon = "✗";
                   color = "var(--red)";
-                  text = `${ev.file}: ${ev.error}`;
-                  break;
-                case "complete":
-                  icon = "●";
-                  color = "var(--green)";
-                  text =
-                    `Done — ${ev.documents_added} doc${ev.documents_added !== 1 ? "s" : ""}, ${ev.chunks_added} chunk${ev.chunks_added !== 1 ? "s" : ""}` +
-                    (ev.skipped.length ? `, ${ev.skipped.length} skipped` : "") +
-                    (ev.errors.length
-                      ? `, ${ev.errors.length} error${ev.errors.length !== 1 ? "s" : ""}`
-                      : "");
+                  badge = status.error;
                   break;
               }
               return (
                 <div
-                  key={i}
+                  key={name}
                   style={{
-                    padding: "4px 10px",
-                    color,
-                    borderBottom:
-                      i < progressEvents.length - 1 ? "1px solid var(--border)" : "none",
-                    whiteSpace: "nowrap",
-                    overflow: "hidden",
-                    textOverflow: "ellipsis",
+                    display: "flex",
+                    alignItems: "center",
+                    gap: 6,
+                    padding: "3px 10px",
+                    borderBottom: "1px solid var(--border)",
                   }}
                 >
-                  <span style={{ marginRight: 6 }}>{icon}</span>
-                  {text}
+                  <span style={{ color, flexShrink: 0 }}>{icon}</span>
+                  <span
+                    style={{
+                      flex: 1,
+                      overflow: "hidden",
+                      textOverflow: "ellipsis",
+                      whiteSpace: "nowrap",
+                      color: status.state === "pending" ? "var(--fg2)" : "var(--fg)",
+                    }}
+                    title={name}
+                  >
+                    {name}
+                  </span>
+                  {badge && (
+                    <span
+                      style={{
+                        flexShrink: 0,
+                        fontSize: 11,
+                        color: status.state === "error" ? "var(--red)" : "var(--fg2)",
+                        maxWidth: 180,
+                        overflow: "hidden",
+                        textOverflow: "ellipsis",
+                        whiteSpace: "nowrap",
+                      }}
+                      title={badge}
+                    >
+                      {badge}
+                    </span>
+                  )}
                 </div>
               );
             })}
+            {ingestSummary && (
+              <div
+                style={{
+                  padding: "5px 10px",
+                  color: "var(--green)",
+                  fontWeight: 600,
+                }}
+              >
+                {ingestSummary}
+              </div>
+            )}
           </div>
         )}
       </div>
