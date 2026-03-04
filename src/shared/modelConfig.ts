@@ -4,16 +4,16 @@
  * This is the **single source of truth** for which LLM model is used for each
  * function in the application. Models are resolved in this precedence order:
  *
- *   1. Environment variable override  (highest priority)
- *   2. model-config.yaml file override
+ *   1. model-config.yaml file override  (highest priority)
+ *   2. Environment variable override
  *   3. Hardcoded default / inheritance
  *
  * ┌──────────────────────┬──────────────────────────────┬──────────────────────────────────┐
  * │ Role                 │ Default model                │ Env override                     │
  * ├──────────────────────┼──────────────────────────────┼──────────────────────────────────┤
- * │ routing              │ claude-sonnet-4-20250514     │ SOS_LLM_MODEL                    │
+ * │ routing              │ claude-opus-4-0-20250514     │ SOS_LLM_MODEL                    │
  * │ titleGeneration      │ (inherits routing)           │ SOS_TITLE_MODEL                  │
- * │ research             │ bedrock/amazon.nova-pro-v1:0 │ SOS_RESEARCH_LLM_MODEL           │
+ * │ research             │ claude-opus-4-0-20250514     │ SOS_RESEARCH_LLM_MODEL           │
  * │ raptorSummarization  │ (inherits research)          │ SOS_RAPTOR_MODEL                 │
  * │ embedding            │ text-embedding-3-small       │ SOS_EMBEDDING_MODEL              │
  * └──────────────────────┴──────────────────────────────┴──────────────────────────────────┘
@@ -54,8 +54,8 @@ export type ModelRoleName =
 
 // ─── Defaults ───────────────────────────────────────────────────
 
-const DEFAULT_ROUTING_MODEL = "claude-sonnet-4-20250514";
-const DEFAULT_RESEARCH_MODEL = "bedrock/amazon.nova-pro-v1:0";
+const DEFAULT_ROUTING_MODEL = "claude-opus-4-0-20250514";
+const DEFAULT_RESEARCH_MODEL = "claude-opus-4-0-20250514";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 const VALID_ROLES: ModelRoleName[] = [
@@ -79,7 +79,7 @@ let suppressNextWatch = false;
 export function generateDefaultModelConfig(): string {
   return [
     "# Model Config — override model assignments per role.",
-    "# Env vars take precedence over values here.",
+    "# Values here take precedence over env vars and hardcoded defaults.",
     "# Uncomment and change values as needed.",
     "",
     `# routing: ${DEFAULT_ROUTING_MODEL}              # Env: SOS_LLM_MODEL`,
@@ -231,12 +231,12 @@ function resolveRole(
 
   let model: string;
   let source: ModelRole["source"];
-  if (envVal) {
-    model = envVal;
-    source = "env";
-  } else if (fileVal) {
+  if (fileVal) {
     model = fileVal;
     source = "file";
+  } else if (envVal) {
+    model = envVal;
+    source = "env";
   } else {
     model = defaultModel;
     source = "default";

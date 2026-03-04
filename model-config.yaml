@@ -1,9 +1,9 @@
 # Model Config — override model assignments per role.
-# Env vars take precedence over values here.
+# Values here take precedence over env vars and hardcoded defaults.
 # Uncomment and change values as needed.
 
-# routing: claude-sonnet-4-20250514              # Env: SOS_LLM_MODEL
+# routing: claude-opus-4-0-20250514              # Env: SOS_LLM_MODEL
 # titleGeneration: (inherits routing)         # Env: SOS_TITLE_MODEL
-# research: bedrock/amazon.nova-pro-v1:0  # Env: SOS_RESEARCH_LLM_MODEL
+# research: claude-opus-4-0-20250514  # Env: SOS_RESEARCH_LLM_MODEL
 # raptorSummarization: (inherits research)    # Env: SOS_RAPTOR_MODEL
 # embedding: text-embedding-3-small       # Env: SOS_EMBEDDING_MODEL

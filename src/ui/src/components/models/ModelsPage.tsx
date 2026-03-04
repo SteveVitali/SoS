@@ -1,5 +1,6 @@
 import { useCallback, useEffect, useState } from "react";
 import {
+  fetchAvailableModels,
   getModelConfig,
   type ModelConfigResponse,
   type ModelRoleInfo,
@@ -9,6 +10,7 @@ import {
 import { css } from "../../styles/theme.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { Spinner } from "../shared/Spinner.js";
+import { ModelAutocomplete } from "./ModelAutocomplete.js";
 
 const ROLE_ORDER = ["routing", "titleGeneration", "research", "raptorSummarization", "embedding"];
 
@@ -23,11 +25,15 @@ function RoleCard({
   role,
   overrideValue,
   onOverrideChange,
+  availableModels,
+  modelsLoading,
 }: {
   roleName: string;
   role: ModelRoleInfo;
   overrideValue: string;
   onOverrideChange: (value: string) => void;
+  availableModels: string[];
+  modelsLoading: boolean;
 }) {
   const badge = SOURCE_BADGE[role.source] || SOURCE_BADGE.default;
   const envIsSet = !!role.envOverride;
@@ -109,12 +115,13 @@ function RoleCard({
 
         {/* File override input */}
         <div style={{ marginTop: 12 }}>
-          <span style={css.label}>File Override</span>
+          <span style={css.label}>File Override (highest priority)</span>
           <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-            <input
-              style={{ ...css.input, maxWidth: 400 }}
+            <ModelAutocomplete
               value={overrideValue}
-              onChange={(e) => onOverrideChange(e.target.value)}
+              onChange={onOverrideChange}
+              models={availableModels}
+              loading={modelsLoading}
               placeholder={`Enter model name to override ${roleName}...`}
             />
             {overrideValue && (
@@ -128,9 +135,9 @@ function RoleCard({
               </button>
             )}
           </div>
-          {envIsSet && (
-            <div style={{ fontSize: 11, color: "#f59e0b", marginTop: 4 }}>
-              Env var {role.envVar} is set — it takes precedence over file overrides.
+          {envIsSet && overrideValue && (
+            <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
+              File override takes precedence over env var {role.envVar}.
             </div>
           )}
         </div>
@@ -149,6 +156,8 @@ export function ModelsPage() {
   const [error, setError] = useState("");
   const [saveMsg, setSaveMsg] = useState("");
   const [dirty, setDirty] = useState(false);
+  const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [modelsLoading, setModelsLoading] = useState(false);
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -168,6 +177,12 @@ export function ModelsPage() {
 
   useEffect(() => {
     fetchConfig();
+    // Fetch available models from LLM provider (non-blocking)
+    setModelsLoading(true);
+    fetchAvailableModels()
+      .then((res) => setAvailableModels(res.models || []))
+      .catch(() => setAvailableModels([]))
+      .finally(() => setModelsLoading(false));
   }, [fetchConfig]);
 
   const handleSave = async () => {
@@ -277,8 +292,8 @@ export function ModelsPage() {
           color: "var(--fg3)",
         }}
       >
-        <strong style={{ color: "var(--fg2)" }}>Precedence:</strong> Environment variable &gt; File
-        override (model-config.yaml) &gt; Hardcoded default / inheritance
+        <strong style={{ color: "var(--fg2)" }}>Precedence:</strong> File override
+        (model-config.yaml) &gt; Environment variable &gt; Hardcoded default / inheritance
       </div>
 
       {/* Role cards */}
@@ -290,6 +305,8 @@ export function ModelsPage() {
             role={models[roleName]}
             overrideValue={overrides[roleName] || ""}
             onOverrideChange={(value) => handleOverrideChange(roleName, value)}
+            availableModels={availableModels}
+            modelsLoading={modelsLoading}
           />
         ))}
     </div>

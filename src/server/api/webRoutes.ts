@@ -647,6 +647,73 @@ export function createWebRoutes(config: ServerConfig): Router {
     res.json({ models: registry });
   });
 
+  // GET /api/web/available-models — dynamically fetch model list from LLM provider
+  // When using openai_compatible (LiteLLM), proxies GET /v1/models to list available models.
+  // Results are cached for 60 seconds to avoid hammering the upstream.
+  let cachedModelList: { models: string[]; provider: string; fetchedAt: number } | null = null;
+  const MODEL_LIST_CACHE_TTL_MS = 60_000;
+
+  router.get("/available-models", async (_req: Request, res: Response) => {
+    try {
+      const provider = config.llmProvider;
+      const baseUrl = config.llmBaseUrl;
+      const apiKey = config.llmApiKey;
+
+      if (provider !== "openai_compatible" || !baseUrl) {
+        res.json({
+          models: [],
+          provider,
+          message:
+            "Dynamic model list only available with openai_compatible provider (e.g. LiteLLM)",
+        });
+        return;
+      }
+
+      // Return cached result if fresh
+      if (cachedModelList && Date.now() - cachedModelList.fetchedAt < MODEL_LIST_CACHE_TTL_MS) {
+        res.json(cachedModelList);
+        return;
+      }
+
+      // Fetch from upstream /v1/models
+      const url = `${baseUrl.replace(/\/+$/, "")}/v1/models`;
+      const upstream = await fetch(url, {
+        headers: {
+          Authorization: `Bearer ${apiKey}`,
+          Accept: "application/json",
+        },
+        signal: AbortSignal.timeout(10_000),
+      });
+
+      if (!upstream.ok) {
+        const text = await upstream.text().catch(() => "");
+        log.warn("Failed to fetch models from LLM provider", {
+          status: upstream.status,
+          body: text.slice(0, 200),
+        });
+        res.json({
+          models: cachedModelList?.models || [],
+          provider,
+          error: `Upstream returned ${upstream.status}`,
+        });
+        return;
+      }
+
+      const data = (await upstream.json()) as { data?: Array<{ id: string }> };
+      const models = (data.data || []).map((m) => m.id).sort();
+
+      cachedModelList = { models, provider, fetchedAt: Date.now() };
+      res.json({ models, provider });
+    } catch (err: unknown) {
+      log.warn("Error fetching available models", { error: (err as Error).message });
+      res.json({
+        models: cachedModelList?.models || [],
+        provider: config.llmProvider,
+        error: (err as Error).message,
+      });
+    }
+  });
+
   // --- Model Config (YAML file overrides) ---
 
   // GET /api/web/model-config — read model-config.yaml overrides + resolved registry
