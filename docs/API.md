@@ -294,7 +294,7 @@ Searches enabled knowledge bases by scope. Used by workers to fetch KB context b
       "kb_name": "Design Docs",
       "kb_id": "uuid",
       "score": 0.87,
-      "metadata": { "section": "Authentication Flow" }
+      "metadata": { "section": "Authentication Flow", "file_path": "design-docs/auth.md", "parent_dir": "design-docs" }
     }
   ]
 }
@@ -793,7 +793,34 @@ POST /api/web/kb/:id/ingest
 Content-Type: multipart/form-data
 ```
 
-Upload files for ingestion. Supports text files (`.md`, `.txt`, `.py`, `.ts`, etc.), PDFs, and archives (`.zip`, `.tar`, `.tar.gz`). Archives are auto-extracted. Max 50 files, 100MB each.
+Upload files for ingestion. Supports text files (`.md`, `.txt`, `.py`, `.ts`, etc.), PDFs, archives (`.zip`, `.tar`, `.tar.gz`), and entire folders (via the web UI's folder picker). Archives and folders are auto-expanded and the directory hierarchy is preserved in vector metadata (`file_path`, `parent_dir`). Chunk content is enriched with breadcrumb paths before embedding for better retrieval. Max 500 files, 100MB each.
+
+#### Streaming mode (NDJSON)
+
+When the request includes `Accept: text/x-ndjson`, the endpoint streams real-time per-file progress events as newline-delimited JSON instead of returning a single JSON response. Each line is a JSON object with a `type` field:
+
+| Event type | Fields | Meaning |
+|---|---|---|
+| `start` | `total_uploads` | Ingestion beginning |
+| `file_start` | `file` | A file is being processed |
+| `file_done` | `file`, `chunks` | File successfully ingested |
+| `file_skip` | `file`, `reason` | File skipped (unsupported/empty) |
+| `file_error` | `file`, `error` | File failed |
+| `complete` | `documents_added`, `chunks_added`, `skipped`, `errors` | All files processed |
+
+**Example stream:**
+```
+{"type":"start","total_uploads":3}
+{"type":"file_start","file":"docs/auth.md"}
+{"type":"file_done","file":"docs/auth.md","chunks":12}
+{"type":"file_start","file":"image.png"}
+{"type":"file_skip","file":"image.png","reason":"unsupported or empty"}
+{"type":"complete","documents_added":1,"chunks_added":12,"skipped":["image.png"],"errors":[]}
+```
+
+#### Legacy mode (JSON)
+
+Without the `Accept: text/x-ndjson` header, the endpoint returns a single JSON response after all files are processed:
 
 **Response:**
 ```json
@@ -826,7 +853,7 @@ Search across all enabled knowledge bases using two-stage routing. Returns resul
 **Response:**
 ```json
 {
-  "results": [{ "content": "...", "source_file": "...", "kb_name": "...", "kb_id": "...", "score": 0.87, "metadata": {} }],
+  "results": [{ "content": "...", "source_file": "...", "kb_name": "...", "kb_id": "...", "score": 0.87, "metadata": { "file_path": "docs/api/auth.md", "parent_dir": "docs/api" } }],
   "routing": {
     "total_kbs": 3,
     "relevant_kbs": 2,
@@ -858,7 +885,7 @@ GET /api/web/kb/:id/documents/:name/chunks?offset=0&limit=20
 
 Paginated list of chunks for a specific document. Limit is capped at 100.
 
-**Response:** `{ "chunks": [{ "id": "...", "content": "...", "section": "...", "page": 0, "created_at": "..." }], "total": 47 }`
+**Response:** `{ "chunks": [{ "id": "...", "content": "...", "section": "...", "page": 0, "file_path": "docs/api/auth.md", "parent_dir": "docs/api", "created_at": "..." }], "total": 47 }`
 
 ### List Documents
 

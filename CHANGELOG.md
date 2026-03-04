@@ -9,13 +9,19 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **KB hierarchical path metadata & contextual chunking** — vector records now store `file_path` and `parent_dir` for each chunk; chunk content is enriched with breadcrumb paths (e.g., `Source: docs > api > auth.md`) before embedding, improving retrieval for queries referencing document structure
+- **Streaming ingestion progress** — `POST /api/web/kb/:id/ingest` now supports `Accept: text/x-ndjson` for real-time per-file progress events; new `ingestIntoKBStreaming` async generator yields `file_start`, `file_done`, `file_skip`, `file_error`, and `complete` events as NDJSON
+- **Real-time ingestion progress UI** — KBDetail upload section shows all files upfront with per-file status indicators (pending ◦, processing ⟳, done ✓, skipped –, error ✗) that update in real time as streaming events arrive; summary line shows final counts
+- **Unified upload dropdown** — single "Upload ▾" button with dropdown menu for selecting files or entire folders; folder upload uses `webkitdirectory` and preserves the relative path hierarchy
+- **KB shared utilities** — new `src/shared/kbUtils.ts` with `pathToBreadcrumb()` and `formatPathBreadcrumb()` helpers (with tests)
+- **KBPlayground component** — dedicated playground UI for testing KB search queries interactively
 - **LangGraph corrective RAG** — new `langgraph` execution type that runs LangGraph state machines as action handlers; ships with a `corrective_rag` graph that iteratively retrieves from knowledge bases, grades relevance via LLM, reformulates queries, and synthesizes answers with source citations
   - New `kb_search` action in `routing-config.yaml` for KB-powered question answering
   - Configurable per-graph: `max_retrievals`, `max_chunks`, `min_score`, `show_trace`, `timeout_ms`
   - Observability: full reasoning trace logged + optional Slack footer summarizing retrieval rounds
   - Dependencies: `@langchain/langgraph`, `@langchain/core`
 - **YAML-driven routing config** — `routing-config.yaml` controls LLM action routing: system prompt, model, per-action parameters, execution types, and reply templates; auto-generated with sensible defaults if missing
-- **Routing config visual editor** — new Routing tab in the web UI with structured editors for all 11 execution types (ParameterListEditor, ExecutionEditor with type-aware fields, ReplyTemplatesEditor), plus raw YAML fallback view
+- **Routing config visual editor** — new Routing tab in the web UI with structured editors for all 13 execution types (ParameterListEditor, ExecutionEditor with type-aware fields, ReplyTemplatesEditor), plus raw YAML fallback view
 - **Routing config API** — `GET/PUT /api/web/routing-config` and `POST /api/web/routing-config/reload` for reading, saving, and hot-reloading the routing config
 - **Worker management system** — spawn, monitor, and shut down worker processes from the web UI
   - In-memory worker registry on the server with 60s stale detection
