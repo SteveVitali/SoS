@@ -7,6 +7,9 @@ import {
   getModelConfigPath,
   getModelConfigRaw,
   getModelRegistry,
+  getProviderSettings,
+  getResolvedProviderSettings,
+  type ProviderSettings,
   reloadModelConfig,
   saveModelConfig,
 } from "../../shared/modelConfig.js";
@@ -656,9 +659,11 @@ export function createWebRoutes(config: ServerConfig): Router {
 
   router.get("/available-models", async (_req: Request, res: Response) => {
     try {
-      const provider = config.llmProvider;
-      const baseUrl = config.llmBaseUrl;
-      const apiKey = config.llmApiKey;
+      // Use resolved provider settings (YAML > env > default)
+      const resolved = getResolvedProviderSettings();
+      const provider = resolved.provider;
+      const baseUrl = resolved.base_url;
+      const apiKey = resolved.api_key;
 
       if (provider !== "openai_compatible" || !baseUrl) {
         res.json({
@@ -757,13 +762,26 @@ export function createWebRoutes(config: ServerConfig): Router {
 
   // --- Model Config (YAML file overrides) ---
 
-  // GET /api/web/model-config — read model-config.yaml overrides + resolved registry
+  // GET /api/web/model-config — read model-config.yaml overrides + resolved registry + provider
   router.get("/model-config", (_req: Request, res: Response) => {
     try {
       const configPath = getModelConfigPath();
       const registry = getModelRegistry();
       const overrides = getModelConfigRaw();
-      res.json({ models: registry, overrides, path: configPath || "" });
+      const providerRaw = getProviderSettings();
+      const providerResolved = getResolvedProviderSettings();
+      res.json({
+        models: registry,
+        overrides,
+        path: configPath || "",
+        provider: providerRaw,
+        providerResolved: {
+          provider: providerResolved.provider,
+          base_url: providerResolved.base_url,
+          api_key_set: !!providerResolved.api_key,
+          source: providerResolved.source,
+        },
+      });
     } catch (err: unknown) {
       log.error("Read model config error", { error: (err as Error).message });
       res.status(500).json({ error: (err as Error).message });
@@ -783,7 +801,10 @@ export function createWebRoutes(config: ServerConfig): Router {
         res.status(400).json({ error: "Missing or invalid overrides object in body" });
         return;
       }
-      saveModelConfig(overrides);
+      const providerSettings: ProviderSettings | undefined = req.body?.provider;
+      saveModelConfig(overrides, providerSettings);
+      // Invalidate the cached model list so next fetch uses new provider settings
+      cachedModelList = null;
       const registry = getModelRegistry();
       res.json({ ok: true, models: registry });
     } catch (err: unknown) {

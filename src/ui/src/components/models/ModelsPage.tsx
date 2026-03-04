@@ -4,6 +4,8 @@ import {
   getModelConfig,
   type ModelConfigResponse,
   type ModelRoleInfo,
+  type ProviderResolved,
+  type ProviderSettings,
   reloadModelConfig,
   saveModelConfig,
 } from "../../api.js";
@@ -152,6 +154,11 @@ function RoleCard({
   );
 }
 
+const PROVIDER_OPTIONS: { value: string; label: string }[] = [
+  { value: "openai_compatible", label: "OpenAI-compatible (LiteLLM)" },
+  { value: "anthropic", label: "Anthropic (direct)" },
+];
+
 export function ModelsPage() {
   const [models, setModels] = useState<Record<string, ModelRoleInfo> | null>(null);
   const [overrides, setOverrides] = useState<Record<string, string>>({});
@@ -164,6 +171,8 @@ export function ModelsPage() {
   const [dirty, setDirty] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
+  const [provider, setProvider] = useState<ProviderSettings>({});
+  const [providerResolved, setProviderResolved] = useState<ProviderResolved | null>(null);
 
   const fetchConfig = useCallback(async () => {
     setLoading(true);
@@ -173,6 +182,8 @@ export function ModelsPage() {
       setModels(res.models);
       setOverrides(res.overrides);
       setConfigPath(res.path);
+      setProvider(res.provider || {});
+      setProviderResolved(res.providerResolved || null);
       setDirty(false);
     } catch (err: unknown) {
       setLoadError(err instanceof Error ? err.message : String(err));
@@ -181,15 +192,18 @@ export function ModelsPage() {
     }
   }, []);
 
-  useEffect(() => {
-    fetchConfig();
-    // Fetch available models from LLM provider (non-blocking)
+  const refreshAvailableModels = useCallback(() => {
     setModelsLoading(true);
     fetchAvailableModels()
       .then((res) => setAvailableModels(res.models || []))
       .catch(() => setAvailableModels([]))
       .finally(() => setModelsLoading(false));
-  }, [fetchConfig]);
+  }, []);
+
+  useEffect(() => {
+    fetchConfig();
+    refreshAvailableModels();
+  }, [fetchConfig, refreshAvailableModels]);
 
   const handleSave = async () => {
     setSaving(true);
@@ -201,13 +215,17 @@ export function ModelsPage() {
       for (const [key, val] of Object.entries(overrides)) {
         if (val.trim()) clean[key] = val.trim();
       }
-      await saveModelConfig(clean);
+      await saveModelConfig(clean, provider);
       setSaveMsg("Saved");
       setDirty(false);
       // Re-fetch to get canonical state (overrides + resolved models)
       const fresh = await getModelConfig();
       setModels(fresh.models);
       setOverrides(fresh.overrides);
+      setProvider(fresh.provider || {});
+      setProviderResolved(fresh.providerResolved || null);
+      // Re-fetch available models since provider may have changed
+      refreshAvailableModels();
       setTimeout(() => setSaveMsg(""), 3000);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
@@ -227,6 +245,11 @@ export function ModelsPage() {
 
   const handleOverrideChange = (roleName: string, value: string) => {
     setOverrides((prev) => ({ ...prev, [roleName]: value }));
+    setDirty(true);
+  };
+
+  const handleProviderChange = (field: keyof ProviderSettings, value: string) => {
+    setProvider((prev) => ({ ...prev, [field]: value || undefined }));
     setDirty(true);
   };
 
@@ -300,6 +323,125 @@ export function ModelsPage() {
       >
         <strong style={{ color: "var(--fg2)" }}>Precedence:</strong> File override
         (model-config.yaml) &gt; Environment variable &gt; Hardcoded default / inheritance
+      </div>
+
+      {/* Provider settings */}
+      <div
+        style={{
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          marginBottom: 16,
+        }}
+      >
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "12px 16px",
+            background: "var(--bg)",
+            borderRadius: "var(--radius) var(--radius) 0 0",
+          }}
+        >
+          <span style={{ ...css.mono, fontWeight: 600, fontSize: 14 }}>LLM Provider</span>
+          <span style={{ fontSize: 12, color: "var(--fg3)", flex: 1 }}>
+            Connection settings for the LLM API
+          </span>
+          {providerResolved && (
+            <span
+              style={css.badge(
+                SOURCE_BADGE[providerResolved.source.provider]?.color || "var(--fg3)",
+              )}
+            >
+              {providerResolved.source.provider}
+            </span>
+          )}
+        </div>
+        <div
+          style={{
+            padding: "12px 16px",
+            background: "var(--bg2)",
+            borderRadius: "0 0 var(--radius) var(--radius)",
+          }}
+        >
+          {providerResolved && (
+            <div style={{ display: "flex", gap: 24, flexWrap: "wrap", marginBottom: 12 }}>
+              <div>
+                <span style={css.label}>Effective Provider</span>
+                <div style={{ ...css.mono, fontSize: 13, fontWeight: 600, marginTop: 2 }}>
+                  {providerResolved.provider}
+                </div>
+              </div>
+              <div>
+                <span style={css.label}>Effective Base URL</span>
+                <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
+                  {providerResolved.base_url || "(not set)"}
+                </div>
+              </div>
+              <div>
+                <span style={css.label}>API Key</span>
+                <div style={{ ...css.mono, fontSize: 12, color: "var(--fg3)", marginTop: 2 }}>
+                  {providerResolved.api_key_set ? "***" : "(not set)"}
+                  {providerResolved.api_key_set && (
+                    <span
+                      style={{
+                        marginLeft: 6,
+                        fontSize: 10,
+                        padding: "1px 6px",
+                        borderRadius: 8,
+                        background: "#22c55e22",
+                        color: "#22c55e",
+                        border: "1px solid #22c55e44",
+                      }}
+                    >
+                      {providerResolved.source.api_key}
+                    </span>
+                  )}
+                </div>
+              </div>
+            </div>
+          )}
+
+          <div style={{ display: "flex", gap: 16, flexWrap: "wrap", alignItems: "flex-end" }}>
+            <div>
+              <span style={css.label}>Provider</span>
+              <select
+                style={{ ...css.input, maxWidth: 280, cursor: "pointer" }}
+                value={provider.provider || ""}
+                onChange={(e) => handleProviderChange("provider", e.target.value)}
+              >
+                <option value="">Default (openai_compatible)</option>
+                {PROVIDER_OPTIONS.map((opt) => (
+                  <option key={opt.value} value={opt.value}>
+                    {opt.label}
+                  </option>
+                ))}
+              </select>
+            </div>
+            <div style={{ flex: 1, minWidth: 250 }}>
+              <span style={css.label}>Base URL</span>
+              <input
+                style={{ ...css.input, width: "100%" }}
+                value={provider.base_url || ""}
+                onChange={(e) => handleProviderChange("base_url", e.target.value)}
+                placeholder="https://litellm.example.com"
+              />
+            </div>
+            <div style={{ minWidth: 200 }}>
+              <span style={css.label}>API Key</span>
+              <input
+                style={{ ...css.input, maxWidth: 280 }}
+                type="password"
+                value={provider.api_key || ""}
+                onChange={(e) => handleProviderChange("api_key", e.target.value)}
+                placeholder="sk-..."
+              />
+            </div>
+          </div>
+          <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 6 }}>
+            Env vars: SOS_LLM_PROVIDER, SOS_LLM_BASE_URL, SOS_LLM_API_KEY
+          </div>
+        </div>
       </div>
 
       {/* Role cards */}

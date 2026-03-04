@@ -298,10 +298,25 @@ export interface ModelRoleInfo {
   source: "default" | "file" | "env";
 }
 
+export interface ProviderSettings {
+  provider?: string;
+  base_url?: string;
+  api_key?: string;
+}
+
+export interface ProviderResolved {
+  provider: string;
+  base_url: string;
+  api_key_set: boolean;
+  source: { provider: string; base_url: string; api_key: string };
+}
+
 export interface ModelConfigResponse {
   models: Record<string, ModelRoleInfo>;
   overrides: Record<string, string>;
   path: string;
+  provider?: ProviderSettings;
+  providerResolved?: ProviderResolved;
 }
 
 export async function getModelConfig(): Promise<ModelConfigResponse> {
@@ -310,8 +325,9 @@ export async function getModelConfig(): Promise<ModelConfigResponse> {
 
 export async function saveModelConfig(
   overrides: Record<string, string>,
+  provider?: ProviderSettings,
 ): Promise<{ ok: boolean; models: Record<string, ModelRoleInfo> }> {
-  return request("PUT", "/model-config", { overrides });
+  return request("PUT", "/model-config", { overrides, provider });
 }
 
 export async function reloadModelConfig(): Promise<{

@@ -40,7 +40,9 @@ export function loadServerConfig() {
     jobMaxCiFixAttempts: optionalInt("JOB_MAX_CI_FIX_ATTEMPTS", 2),
     webBasicAuthUser: process.env.WEB_BASIC_AUTH_USER,
     webBasicAuthPass: process.env.WEB_BASIC_AUTH_PASS,
-    llmProvider: (process.env.SOS_LLM_PROVIDER || "anthropic") as "anthropic" | "openai_compatible",
+    llmProvider: (process.env.SOS_LLM_PROVIDER || "openai_compatible") as
+      | "anthropic"
+      | "openai_compatible",
     llmModel: getModelForRole("routing"),
     llmApiKey: process.env.SOS_LLM_API_KEY || process.env.ANTHROPIC_API_KEY || "",
     llmBaseUrl: process.env.SOS_LLM_BASE_URL || "",
