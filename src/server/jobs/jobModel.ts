@@ -48,6 +48,18 @@ export const CreateRespondToCommentsFromWebSchema = z.object({
 });
 export type CreateRespondToCommentsFromWeb = z.infer<typeof CreateRespondToCommentsFromWebSchema>;
 
+export const CreateSelfReviewPrSchema = z.object({
+  requested_by: z.string().min(1, "requested_by is required"),
+  pr_url: z.string().url("pr_url must be a valid URL"),
+});
+export type CreateSelfReviewPr = z.infer<typeof CreateSelfReviewPrSchema>;
+
+export const CreateAddReviewCommentsSchema = z.object({
+  requested_by: z.string().min(1, "requested_by is required"),
+  pr_url: z.string().url("pr_url must be a valid URL"),
+});
+export type CreateAddReviewComments = z.infer<typeof CreateAddReviewCommentsSchema>;
+
 export const CreateGithubSummarySchema = z.object({
   requested_by: z.string().min(1, "requested_by is required"),
   query_type: z.enum(["my_recap", "team_recap"]),

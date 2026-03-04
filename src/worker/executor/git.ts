@@ -69,6 +69,14 @@ export function getDiff(worktreePath: string): string {
   }
 }
 
+export function getDiffVsBase(worktreePath: string, baseBranch: string): string {
+  try {
+    return exec(`git diff origin/${baseBranch}...HEAD`, worktreePath);
+  } catch {
+    return "";
+  }
+}
+
 export function getDiffStats(worktreePath: string): string {
   try {
     return exec("git diff --stat HEAD~1 HEAD", worktreePath);

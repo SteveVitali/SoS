@@ -17,6 +17,10 @@ export const EVENT_LABELS: Record<string, string> = {
   COMMENTS_FETCHED: "Comments Fetched",
   COMMENT_ADDRESSED: "Comment Addressed",
   COMMENTS_PUSHED: "Comments Pushed",
+  REVIEW_GENERATED: "Review Generated",
+  COMMENTS_PARSED: "Comments Parsed",
+  REVIEW_POSTED: "Review Posted",
+  SELF_REVIEW_FINISHED: "Self-Review Finished",
   PLAN_STARTED: "Plan Started",
   PLAN_GENERATED: "Plan Generated",
   PLAN_CONFIRMED: "Plan Confirmed",
@@ -40,7 +44,8 @@ export function eventColor(type: string): string {
     type === "DONE" ||
     type.includes("GREEN") ||
     type === "COMMENTS_PUSHED" ||
-    type === "COMMENT_ADDRESSED"
+    type === "COMMENT_ADDRESSED" ||
+    type === "REVIEW_POSTED"
   )
     return "var(--green)";
   return "var(--accent)";

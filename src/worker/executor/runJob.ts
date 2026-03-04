@@ -254,22 +254,46 @@ export async function runJob(
       }
     }
 
-    // 4) Fetch KB context (non-fatal)
+    // 4) Fetch KB context via research pipeline (non-fatal, falls back to simple search)
     let kbContext: string | undefined;
     try {
       const scope = job.plan?.summary ? "create_job" : "agent_task";
-      const kbResults = await api.searchKnowledgeBases(job.task_text, [scope, "all"]);
-      if (kbResults.length > 0) {
-        kbContext = kbResults
-          .map(
-            (r) =>
-              `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
-          )
-          .join("\n\n---\n\n");
-        log.info("KB context fetched for job", { task_id: job.task_id, chunks: kbResults.length });
+      const research = await api.researchKnowledgeBases({
+        query: job.task_text,
+        scopes: [scope, "all"],
+        strategy: "deep",
+        consumer: { type: "worker_job", id: job.task_id },
+      });
+      if (research.context) {
+        kbContext = research.context;
+        log.info("KB research context fetched for job", {
+          task_id: job.task_id,
+          session_id: research.session_id,
+          chunks: research.metrics.chunks_used,
+          llm_calls: research.metrics.llm_calls,
+          duration_ms: research.metrics.total_duration_ms,
+        });
       }
     } catch {
-      // Non-fatal
+      // Fall back to legacy simple search
+      try {
+        const scope = job.plan?.summary ? "create_job" : "agent_task";
+        const kbResults = await api.searchKnowledgeBases(job.task_text, [scope, "all"]);
+        if (kbResults.length > 0) {
+          kbContext = kbResults
+            .map(
+              (r) =>
+                `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
+            )
+            .join("\n\n---\n\n");
+          log.info("KB context fetched via fallback", {
+            task_id: job.task_id,
+            chunks: kbResults.length,
+          });
+        }
+      } catch {
+        // Non-fatal
+      }
     }
 
     // 5) Run Claude Code CLI

@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import type { GitHubPr } from "../../api.js";
 import { css } from "../../styles/theme.js";
@@ -5,10 +6,12 @@ import { relativeTime } from "../../utils/format.js";
 import { Dot } from "../shared/Dot.js";
 import { HoverRow } from "../shared/HoverRow.js";
 
+export type PrAction = "self_review" | "add_review_comments" | "respond_to_comments";
+
 interface PrRowProps {
   pr: GitHubPr;
-  responding: boolean;
-  onRespond: () => void;
+  busy: boolean;
+  onTrigger: (action: PrAction) => void;
 }
 
 function prStateColor(pr: GitHubPr): string {
@@ -17,7 +20,14 @@ function prStateColor(pr: GitHubPr): string {
   return "#ef4444";
 }
 
-export function PrRow({ pr, responding, onRespond }: PrRowProps) {
+const ACTION_LABELS: Record<PrAction, string> = {
+  self_review: "Self Review",
+  add_review_comments: "Add Review Comments",
+  respond_to_comments: "Respond to Comments",
+};
+
+export function PrRow({ pr, busy, onTrigger }: PrRowProps) {
+  const [open, setOpen] = useState(false);
   const hasUnaddressed = pr.comments && pr.comments.unaddressed_threads > 0;
   const hasUnresolved = pr.comments && pr.comments.unresolved_threads > 0;
 
@@ -73,20 +83,70 @@ export function PrRow({ pr, responding, onRespond }: PrRowProps) {
               )}
             </div>
           )}
-          {/* Respond button */}
-          {hasUnaddressed && (
+          {/* Trigger dropdown */}
+          <div style={{ position: "relative" }}>
             <button
               type="button"
               style={css.btnSmall}
-              disabled={responding}
+              disabled={busy}
               onClick={(e) => {
                 e.stopPropagation();
-                onRespond();
+                setOpen((o) => !o);
               }}
             >
-              {responding ? "..." : "Respond"}
+              {busy ? "..." : "Trigger ▾"}
             </button>
-          )}
+            {open && (
+              <div
+                style={{
+                  position: "absolute",
+                  right: 0,
+                  top: "100%",
+                  marginTop: 4,
+                  background: "var(--bg)",
+                  border: "1px solid var(--border)",
+                  borderRadius: "var(--radius)",
+                  boxShadow: "0 4px 12px rgba(0,0,0,0.3)",
+                  zIndex: 10,
+                  minWidth: 200,
+                  overflow: "hidden",
+                }}
+              >
+                {(["self_review", "add_review_comments", "respond_to_comments"] as PrAction[]).map(
+                  (action) => (
+                    <button
+                      key={action}
+                      type="button"
+                      style={{
+                        display: "block",
+                        width: "100%",
+                        padding: "8px 14px",
+                        background: "transparent",
+                        border: "none",
+                        color: "var(--fg)",
+                        fontSize: 13,
+                        textAlign: "left",
+                        cursor: "pointer",
+                      }}
+                      onMouseEnter={(e) => {
+                        (e.target as HTMLElement).style.background = "var(--bg2)";
+                      }}
+                      onMouseLeave={(e) => {
+                        (e.target as HTMLElement).style.background = "transparent";
+                      }}
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        setOpen(false);
+                        onTrigger(action);
+                      }}
+                    >
+                      {ACTION_LABELS[action]}
+                    </button>
+                  ),
+                )}
+              </div>
+            )}
+          </div>
         </div>
       </div>
 

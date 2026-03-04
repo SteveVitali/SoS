@@ -3,8 +3,14 @@ import path from "node:path";
 import { type Request, type Response, Router } from "express";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { createLogger } from "../../shared/logger.js";
+import { getModelRegistry } from "../../shared/modelConfig.js";
 import type { ServerConfig } from "../config.js";
-import { CreateJobFromWebSchema, CreateRespondToCommentsFromWebSchema } from "../jobs/jobModel.js";
+import {
+  CreateAddReviewCommentsSchema,
+  CreateJobFromWebSchema,
+  CreateRespondToCommentsFromWebSchema,
+  CreateSelfReviewPrSchema,
+} from "../jobs/jobModel.js";
 import * as jobService from "../jobs/jobService.js";
 import {
   getRoutingConfigPath,
@@ -129,6 +135,38 @@ export function createWebRoutes(config: ServerConfig): Router {
         error: (err as Error).message,
         task_id: pstr(req.params.task_id),
       });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/web/jobs/self-review-pr
+  router.post("/jobs/self-review-pr", async (req: Request, res: Response) => {
+    try {
+      const parsed = CreateSelfReviewPrSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+        return;
+      }
+      const job = await jobService.createSelfReviewPrJob(parsed.data);
+      res.status(201).json({ job });
+    } catch (err: unknown) {
+      log.error("Create self-review-pr job error", { error: (err as Error).message });
+      res.status(500).json({ error: "Internal error" });
+    }
+  });
+
+  // POST /api/web/jobs/add-review-comments
+  router.post("/jobs/add-review-comments", async (req: Request, res: Response) => {
+    try {
+      const parsed = CreateAddReviewCommentsSchema.safeParse(req.body);
+      if (!parsed.success) {
+        res.status(400).json({ error: "Invalid request", details: parsed.error.errors });
+        return;
+      }
+      const job = await jobService.createAddReviewCommentsJob(parsed.data);
+      res.status(201).json({ job });
+    } catch (err: unknown) {
+      log.error("Create add-review-comments job error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });
@@ -593,6 +631,14 @@ export function createWebRoutes(config: ServerConfig): Router {
     req.on("close", () => {
       unsubscribe();
     });
+  });
+
+  // --- Model Registry ---
+
+  // GET /api/web/models — active model assignments across all roles
+  router.get("/models", (_req: Request, res: Response) => {
+    const registry = getModelRegistry();
+    res.json({ models: registry });
   });
 
   // --- Routing Config ---

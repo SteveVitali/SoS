@@ -14,10 +14,12 @@ import { notifyConversations } from "../chat/conversationNotifier.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 import { checkIdempotent } from "./idempotency.js";
 import type {
+  CreateAddReviewComments,
   CreateGithubSummary,
   CreateJobFromSlack,
   CreateJobFromWeb,
   CreateRespondToCommentsFromWeb,
+  CreateSelfReviewPr,
 } from "./jobModel.js";
 import {
   appendEvent,
@@ -147,6 +149,14 @@ export async function createJobFromWeb(input: CreateJobFromWeb): Promise<JobDoc>
   return job;
 }
 
+function extractPrLabel(prUrl: string): { prNum: string; repoName: string } {
+  const prMatch = prUrl.match(/\/pull\/(\d+)/);
+  const prNum = prMatch ? `#${prMatch[1]}` : "";
+  const repoMatch = prUrl.match(/github\.com\/[^/]+\/([^/]+)/);
+  const repoName = repoMatch ? repoMatch[1] : "";
+  return { prNum, repoName };
+}
+
 // --- Create Respond-to-Comments Job ---
 export async function createRespondToCommentsJob(
   input: CreateRespondToCommentsFromWeb,
@@ -155,12 +165,7 @@ export async function createRespondToCommentsJob(
 ): Promise<JobDoc> {
   const now = nowDate();
   const taskId = uuidv4();
-
-  // Extract short PR identifier for title
-  const prMatch = input.pr_url.match(/\/pull\/(\d+)/);
-  const prNum = prMatch ? `#${prMatch[1]}` : "";
-  const repoMatch = input.pr_url.match(/github\.com\/[^/]+\/([^/]+)/);
-  const repoName = repoMatch ? repoMatch[1] : "";
+  const { prNum, repoName } = extractPrLabel(input.pr_url);
   const title = `Respond to PR comments — ${repoName}${prNum}`;
 
   const doc: JobDoc = {
@@ -180,12 +185,76 @@ export async function createRespondToCommentsJob(
   };
 
   const job = await insertJob(doc);
-  log.info("Respond-to-comments job created", { task_id: taskId, pr_url: input.pr_url });
+  log.info("Respond-to-comments job created", {
+    task_id: taskId,
+    pr_url: input.pr_url,
+    status: job.status,
+  });
 
   if (slackPoster && job.slack?.channel_id && job.slack?.thread_ts) {
     await slackPoster.postQueued(job);
   }
 
+  return job;
+}
+
+// --- Create Self-Review PR Job ---
+export async function createSelfReviewPrJob(input: CreateSelfReviewPr): Promise<JobDoc> {
+  const now = nowDate();
+  const taskId = uuidv4();
+  const { prNum, repoName } = extractPrLabel(input.pr_url);
+  const title = `Self-review PR — ${repoName}${prNum}`;
+
+  const doc: JobDoc = {
+    task_id: taskId,
+    job_type: "self_review_pr",
+    source: { type: "web_create" },
+    requested_by: input.requested_by,
+    status: "QUEUED",
+    created_at: now,
+    updated_at: now,
+    title,
+    task_text: `Self-review and fix issues in PR ${input.pr_url}`,
+    pr_url: input.pr_url,
+    events: [{ at: now, type: "QUEUED", payload: { source: "web" } }],
+  };
+
+  const job = await insertJob(doc);
+  log.info("Self-review PR job created", {
+    task_id: taskId,
+    pr_url: input.pr_url,
+    status: job.status,
+  });
+  return job;
+}
+
+// --- Create Add-Review-Comments Job ---
+export async function createAddReviewCommentsJob(input: CreateAddReviewComments): Promise<JobDoc> {
+  const now = nowDate();
+  const taskId = uuidv4();
+  const { prNum, repoName } = extractPrLabel(input.pr_url);
+  const title = `Add review comments — ${repoName}${prNum}`;
+
+  const doc: JobDoc = {
+    task_id: taskId,
+    job_type: "add_pr_review_comments",
+    source: { type: "web_create" },
+    requested_by: input.requested_by,
+    status: "QUEUED",
+    created_at: now,
+    updated_at: now,
+    title,
+    task_text: `Analyze and post inline review comments on PR ${input.pr_url}`,
+    pr_url: input.pr_url,
+    events: [{ at: now, type: "QUEUED", payload: { source: "web" } }],
+  };
+
+  const job = await insertJob(doc);
+  log.info("Add-review-comments job created", {
+    task_id: taskId,
+    pr_url: input.pr_url,
+    status: job.status,
+  });
   return job;
 }
 

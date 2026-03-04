@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import { createRespondToCommentsJob, type GitHubPr } from "../../api.js";
+import {
+  createAddReviewCommentsJob,
+  createRespondToCommentsJob,
+  createSelfReviewPrJob,
+  type GitHubPr,
+} from "../../api.js";
 import { useAppData } from "../../stores/AppDataContext.js";
 import { css } from "../../styles/theme.js";
 import { LastUpdated } from "../shared/LastUpdated.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { Spinner } from "../shared/Spinner.js";
-import { PrRow } from "./PrRow.js";
+import { type PrAction, PrRow } from "./PrRow.js";
 
 export function PrsList() {
   const navigate = useNavigate();
@@ -15,7 +20,7 @@ export function PrsList() {
 
   const [state, setState] = useState<"open" | "closed" | "merged" | "all">("open");
   const [limit, setLimit] = useState(20);
-  const [responding, setResponding] = useState<string | null>(null);
+  const [busyPr, setBusyPr] = useState<string | null>(null);
   const [actionError, setActionError] = useState("");
 
   // When filters change, refresh with new params
@@ -23,24 +28,32 @@ export function PrsList() {
     refreshPrs({ state, limit });
   }, [state, limit, refreshPrs]);
 
-  const handleRespondToComments = async (pr: GitHubPr) => {
-    setResponding(pr.url);
+  const handleTrigger = async (pr: GitHubPr, action: PrAction) => {
+    setBusyPr(pr.url);
     setActionError("");
     try {
       if (!jobOwner) {
         setActionError("Job owner not configured on server");
         return;
       }
-      const res = await createRespondToCommentsJob({
-        requested_by: jobOwner,
-        pr_url: pr.url,
-      });
+      const payload = { requested_by: jobOwner, pr_url: pr.url };
+      let taskId: string;
+      if (action === "self_review") {
+        const res = await createSelfReviewPrJob(payload);
+        taskId = res.job.task_id;
+      } else if (action === "add_review_comments") {
+        const res = await createAddReviewCommentsJob(payload);
+        taskId = res.job.task_id;
+      } else {
+        const res = await createRespondToCommentsJob(payload);
+        taskId = res.job.task_id;
+      }
       refreshJobs();
-      navigate(`/jobs/${res.job.task_id}`);
+      navigate(`/jobs/${taskId}`);
     } catch (err: unknown) {
       setActionError(err instanceof Error ? (err as Error).message : String(err));
     } finally {
-      setResponding(null);
+      setBusyPr(null);
     }
   };
 
@@ -83,8 +96,8 @@ export function PrsList() {
               <PrRow
                 key={pr.url}
                 pr={pr}
-                responding={responding === pr.url}
-                onRespond={() => handleRespondToComments(pr)}
+                busy={busyPr === pr.url}
+                onTrigger={(action) => handleTrigger(pr, action)}
               />
             ))}
           </div>

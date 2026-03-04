@@ -1,4 +1,4 @@
-import { execSync } from "node:child_process";
+import { execFileSync, execSync } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
 
 const log = createLogger("worker:ghComments");
@@ -41,6 +41,16 @@ export function getPrBranch(prUrl: string): string {
     timeout: 30_000,
   }).trim();
   if (!result) throw new Error(`Could not determine branch for PR: ${prUrl}`);
+  return result;
+}
+
+/** Get the base branch name from a PR URL. */
+export function getPrBaseBranch(prUrl: string): string {
+  const result = execSync(`gh pr view "${prUrl}" --json baseRefName -q .baseRefName`, {
+    encoding: "utf-8",
+    timeout: 30_000,
+  }).trim();
+  if (!result) throw new Error(`Could not determine base branch for PR: ${prUrl}`);
   return result;
 }
 
@@ -114,6 +124,123 @@ export function fetchUnresolvedThreads(prUrl: string): ReviewThread[] {
 }
 
 /** Reply to a review thread on GitHub. Uses the last comment's ID to post a reply. */
+export interface ReviewCommentInput {
+  path: string;
+  line: number;
+  body: string;
+  side?: "LEFT" | "RIGHT";
+}
+
+/**
+ * Post a pull request review with inline comments via GitHub GraphQL API.
+ * Uses the `addPullRequestReview` mutation to create a review with comments.
+ *
+ * All `gh` invocations use `execFileSync` (no shell) so that review comment
+ * bodies containing quotes, backticks, or other metacharacters are safe.
+ */
+export function createPullRequestReview(
+  prUrl: string,
+  comments: ReviewCommentInput[],
+  reviewBody: string,
+  event: "COMMENT" | "REQUEST_CHANGES" | "APPROVE" = "COMMENT",
+): void {
+  const { owner, repo, number } = parsePrUrl(prUrl);
+
+  // 1) Fetch the PR node ID and head commit OID
+  const prQuery = `
+    query($owner: String!, $repo: String!, $number: Int!) {
+      repository(owner: $owner, name: $repo) {
+        pullRequest(number: $number) {
+          id
+          headRefOid
+        }
+      }
+    }
+  `;
+  const prRaw = execFileSync(
+    "gh",
+    [
+      "api",
+      "graphql",
+      "-f",
+      `query=${prQuery}`,
+      "-f",
+      `owner=${owner}`,
+      "-f",
+      `repo=${repo}`,
+      "-F",
+      `number=${number}`,
+    ],
+    { encoding: "utf-8", timeout: 30_000 },
+  );
+  const prData = JSON.parse(prRaw);
+  const prId = prData?.data?.repository?.pullRequest?.id;
+  const commitOid = prData?.data?.repository?.pullRequest?.headRefOid;
+  if (!prId || !commitOid) {
+    throw new Error(`Could not resolve PR node ID for ${prUrl}`);
+  }
+
+  // 2) Build the threads array for the mutation
+  const threads = comments.map((c) => ({
+    path: c.path,
+    line: c.line,
+    side: c.side || "RIGHT",
+    body: c.body,
+  }));
+
+  // 3) Post the review via addPullRequestReview mutation
+  const mutation = `
+    mutation($prId: ID!, $commitOid: GitObjectID!, $event: PullRequestReviewEvent!, $body: String!, $threads: [DraftPullRequestReviewThread!]) {
+      addPullRequestReview(input: {
+        pullRequestId: $prId,
+        commitOID: $commitOid,
+        event: $event,
+        body: $body,
+        threads: $threads
+      }) {
+        pullRequestReview {
+          id
+          state
+        }
+      }
+    }
+  `;
+
+  try {
+    execFileSync(
+      "gh",
+      [
+        "api",
+        "graphql",
+        "-f",
+        `query=${mutation}`,
+        "-f",
+        `prId=${prId}`,
+        "-f",
+        `commitOid=${commitOid}`,
+        "-f",
+        `event=${event}`,
+        "-f",
+        `body=${reviewBody}`,
+        "-F",
+        `threads=${JSON.stringify(threads)}`,
+      ],
+      { encoding: "utf-8", timeout: 60_000 },
+    );
+    log.info("Created pull request review", {
+      prUrl,
+      event,
+      commentCount: comments.length,
+    });
+  } catch (err: unknown) {
+    log.error("Failed to create pull request review", {
+      prUrl,
+      error: (err as Error).message,
+    });
+    throw err;
+  }
+}
+
 export function replyToThread(prUrl: string, thread: ReviewThread, body: string): void {
   // biome-ignore lint/correctness/noUnusedVariables: lint suppression
   const { owner: _owner, repo: _repo, number: _number } = parsePrUrl(prUrl);

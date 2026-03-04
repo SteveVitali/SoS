@@ -1,3 +1,11 @@
+/** Sentinel error when a job is canceled mid-execution. */
+export class CanceledError extends Error {
+  constructor() {
+    super("Job was canceled during execution");
+    this.name = "CanceledError";
+  }
+}
+
 /** Sentinel error to signal the job should be requeued, not failed. */
 export class RequeueError extends Error {
   constructor(public reason: string) {
