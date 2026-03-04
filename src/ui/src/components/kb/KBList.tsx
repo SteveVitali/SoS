@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
+  buildRaptorTree,
   createKB,
   deleteKB,
   getAllActiveUploads,
@@ -23,10 +24,18 @@ import {
   UploadProgressBadge,
 } from "./kbShared.js";
 
-function RaptorBadge({ status }: { status?: RaptorStatus }) {
-  if (!status) return null;
+function RaptorBadge({
+  status,
+  onBuild,
+  building,
+}: {
+  status?: RaptorStatus;
+  onBuild: () => void;
+  building?: boolean;
+}) {
+  const isBuilding = building || !!status?.building;
 
-  if (status.building) {
+  if (isBuilding && status) {
     const phase = status.phase || "Building";
     const pct =
       status.clusters_total && status.clusters_total > 0
@@ -49,7 +58,6 @@ function RaptorBadge({ status }: { status?: RaptorStatus }) {
           {status.current_level != null && ` L${status.current_level}`}
           {pct != null && ` — ${pct}%`}
         </span>
-        {/* Inline mini progress bar */}
         {pct != null && (
           <div
             style={{
@@ -75,7 +83,7 @@ function RaptorBadge({ status }: { status?: RaptorStatus }) {
     );
   }
 
-  if (status.built) {
+  if (status?.built) {
     return (
       <div
         style={{
@@ -96,11 +104,28 @@ function RaptorBadge({ status }: { status?: RaptorStatus }) {
             · {new Date(status.last_built).toLocaleDateString()}
           </span>
         )}
+        <button
+          type="button"
+          onClick={onBuild}
+          style={{
+            background: "none",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            color: "var(--fg2)",
+            cursor: "pointer",
+            fontSize: 10,
+            padding: "1px 6px",
+            marginLeft: 2,
+          }}
+          title="Rebuild RAPTOR index"
+        >
+          Rebuild
+        </button>
       </div>
     );
   }
 
-  if (status.error_message) {
+  if (status?.error_message) {
     return (
       <div
         style={{
@@ -114,11 +139,60 @@ function RaptorBadge({ status }: { status?: RaptorStatus }) {
       >
         <span>🌲</span>
         <span>RAPTOR build failed</span>
+        <button
+          type="button"
+          onClick={onBuild}
+          style={{
+            background: "none",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            color: "var(--fg2)",
+            cursor: "pointer",
+            fontSize: 10,
+            padding: "1px 6px",
+            marginLeft: 2,
+          }}
+          title="Retry RAPTOR build"
+        >
+          Retry
+        </button>
       </div>
     );
   }
 
-  return null;
+  // No status yet — show a Build button if KB has documents
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        marginTop: 6,
+        fontSize: 11,
+        color: "var(--fg2)",
+      }}
+    >
+      <span>🌲</span>
+      <span>No RAPTOR index</span>
+      <button
+        type="button"
+        onClick={onBuild}
+        style={{
+          background: "none",
+          border: "1px solid var(--border)",
+          borderRadius: "var(--radius)",
+          color: "var(--accent)",
+          cursor: "pointer",
+          fontSize: 10,
+          padding: "1px 6px",
+          marginLeft: 2,
+        }}
+        title="Build RAPTOR index"
+      >
+        Build
+      </button>
+    </div>
+  );
 }
 
 export function KBList() {
@@ -142,7 +216,12 @@ export function KBList() {
   // Active upload jobs across all KBs
   const [activeUploads, setActiveUploads] = useState<Record<string, UploadJob>>({});
 
-  const anyBuilding = Object.values(raptorStatuses).some((s) => s.building);
+  // Track KBs with a RAPTOR build being submitted (before polling picks it up)
+  const [raptorSubmitting, setRaptorSubmitting] = useState<Record<string, boolean>>({});
+
+  const anyBuilding =
+    Object.values(raptorStatuses).some((s) => s.building) ||
+    Object.values(raptorSubmitting).some(Boolean);
   const anyUploading = Object.values(activeUploads).some((u) => u.status === "processing");
 
   const refresh = useCallback(async () => {
@@ -276,6 +355,20 @@ export function KBList() {
       await refresh();
     } catch (err: any) {
       setError(err.message);
+    }
+  };
+
+  const handleBuildRaptor = async (kbId: string) => {
+    setRaptorSubmitting((prev) => ({ ...prev, [kbId]: true }));
+    setError("");
+    try {
+      await buildRaptorTree(kbId);
+      // Trigger an immediate refresh so polling picks up the building state
+      await refresh();
+    } catch (err: any) {
+      setError(err.message);
+    } finally {
+      setRaptorSubmitting((prev) => ({ ...prev, [kbId]: false }));
     }
   };
 
@@ -452,7 +545,11 @@ export function KBList() {
                     <span>{formatBytes(kb.total_size_bytes)}</span>
                     <span>model: {kb.embedding_model}</span>
                   </div>
-                  <RaptorBadge status={raptorStatuses[kb.kb_id]} />
+                  <RaptorBadge
+                    status={raptorStatuses[kb.kb_id]}
+                    onBuild={() => handleBuildRaptor(kb.kb_id)}
+                    building={raptorSubmitting[kb.kb_id]}
+                  />
                   {activeUploads[kb.kb_id] && (
                     <div style={{ marginTop: 6 }}>
                       <UploadProgressBadge job={activeUploads[kb.kb_id]} />
