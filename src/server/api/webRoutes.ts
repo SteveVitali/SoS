@@ -647,8 +647,9 @@ export function createWebRoutes(config: ServerConfig): Router {
     res.json({ models: registry });
   });
 
-  // GET /api/web/available-models — dynamically fetch model list from LLM provider
-  // When using openai_compatible (LiteLLM), proxies GET /v1/models to list available models.
+  // GET /api/web/available-models — fetch healthy chat models from LiteLLM.
+  // Cross-references /model/info (deployment→group mapping) with /health (healthy deployments)
+  // to return only model groups that have at least one healthy deployment.
   // Results are cached for 60 seconds to avoid hammering the upstream.
   let cachedModelList: { models: string[]; provider: string; fetchedAt: number } | null = null;
   const MODEL_LIST_CACHE_TTL_MS = 60_000;
@@ -675,32 +676,72 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
 
-      // Fetch from upstream /v1/models
-      const url = `${baseUrl.replace(/\/+$/, "")}/v1/models`;
-      const upstream = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(10_000),
-      });
+      const base = baseUrl.replace(/\/+$/, "");
+      const headers = { Authorization: `Bearer ${apiKey}`, Accept: "application/json" };
+      const timeout = AbortSignal.timeout(10_000);
 
-      if (!upstream.ok) {
-        const text = await upstream.text().catch(() => "");
-        log.warn("Failed to fetch models from LLM provider", {
-          status: upstream.status,
+      // Fetch /model/info and /health in parallel
+      const [modelInfoRes, healthRes] = await Promise.all([
+        fetch(`${base}/model/info`, { headers, signal: timeout }),
+        fetch(`${base}/health`, { headers, signal: timeout }),
+      ]);
+
+      if (!modelInfoRes.ok || !healthRes.ok) {
+        const status = !modelInfoRes.ok ? modelInfoRes.status : healthRes.status;
+        const text = !modelInfoRes.ok
+          ? await modelInfoRes.text().catch(() => "")
+          : await healthRes.text().catch(() => "");
+        log.warn("Failed to fetch model info or health from LLM provider", {
+          modelInfoStatus: modelInfoRes.status,
+          healthStatus: healthRes.status,
           body: text.slice(0, 200),
         });
         res.json({
           models: cachedModelList?.models || [],
           provider,
-          error: `Upstream returned ${upstream.status}`,
+          error: `Upstream returned ${status}`,
         });
         return;
       }
 
-      const data = (await upstream.json()) as { data?: Array<{ id: string }> };
-      const models = (data.data || []).map((m) => m.id).sort();
+      // Parse responses
+      interface ModelInfoEntry {
+        model_name: string;
+        litellm_params?: { model?: string };
+        model_info?: { mode?: string };
+      }
+      interface HealthEntry {
+        model?: string;
+      }
+
+      const modelInfoData = (await modelInfoRes.json()) as { data?: ModelInfoEntry[] };
+      const healthData = (await healthRes.json()) as { healthy_endpoints?: HealthEntry[] };
+
+      // Build set of healthy deployment model names
+      const healthyDeployments = new Set(
+        (healthData.healthy_endpoints || []).map((e) => e.model).filter(Boolean),
+      );
+
+      // Map deployment→group and filter to chat-mode groups with ≥1 healthy deployment
+      const healthyGroups = new Set<string>();
+      for (const entry of modelInfoData.data || []) {
+        const group = entry.model_name;
+        const deployment = entry.litellm_params?.model;
+        const mode = entry.model_info?.mode;
+        if (!group || !deployment) continue;
+        // Only include chat/completion models (skip embeddings, image, audio, etc.)
+        if (mode && mode !== "chat" && mode !== "completion") continue;
+        if (healthyDeployments.has(deployment)) {
+          healthyGroups.add(group);
+        }
+      }
+
+      const models = [...healthyGroups].sort();
+      log.info("Fetched healthy models from LLM provider", {
+        total_deployments: (modelInfoData.data || []).length,
+        healthy_deployments: healthyDeployments.size,
+        healthy_chat_groups: models.length,
+      });
 
       cachedModelList = { models, provider, fetchedAt: Date.now() };
       res.json({ models, provider });
