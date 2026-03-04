@@ -36,7 +36,7 @@
     "adm-zip": "^0.5.16",
     "dotenv": "^17.3.1",
     "express": "^5.0.0",
-    "mongodb": "^6.9.0",
+    "mongodb": "^7.1.0",
     "multer": "^2.1.0",
     "openai": "^6.25.0",
     "pdf-parse": "^2.4.5",
