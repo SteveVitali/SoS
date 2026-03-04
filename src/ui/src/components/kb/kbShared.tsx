@@ -1,4 +1,4 @@
-import { type DragEvent, type RefObject, useCallback, useRef, useState } from "react";
+import { type DragEvent, type RefObject, useCallback, useMemo, useRef, useState } from "react";
 import type { KBScope, KBSearchResult, UploadJob } from "../../api.js";
 import { css } from "../../styles/theme.js";
 
@@ -323,7 +323,7 @@ async function filesFromDrop(e: DragEvent): Promise<File[]> {
     return Array.from(e.dataTransfer?.files ?? []);
   }
 
-  const nested = await Promise.all(entries.map((e) => readEntriesRecursively(e)));
+  const nested = await Promise.all(entries.map((entry) => readEntriesRecursively(entry)));
   return nested.flat();
 }
 
@@ -394,12 +394,15 @@ export function useDropZone({
     [disabled, onDrop],
   );
 
-  const dropZoneProps = {
-    onDragEnter: handleDragEnter,
-    onDragLeave: handleDragLeave,
-    onDragOver: handleDragOver,
-    onDrop: handleDrop,
-  };
+  const dropZoneProps = useMemo(
+    () => ({
+      onDragEnter: handleDragEnter,
+      onDragLeave: handleDragLeave,
+      onDragOver: handleDragOver,
+      onDrop: handleDrop,
+    }),
+    [handleDragEnter, handleDragLeave, handleDragOver, handleDrop],
+  );
 
   return { isDragging, dropZoneProps } as const;
 }

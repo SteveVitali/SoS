@@ -206,14 +206,11 @@ export function KBList() {
   const createUploadMenuRef = useRef<HTMLDivElement>(null);
 
   // Drag-and-drop on create form
-  const onDropCreateFiles = useCallback(
-    (files: File[]) => {
-      setCreateFiles((prev) => [...prev, ...files]);
-      setCreateUploadMenuOpen(false);
-      if (!showCreate) setShowCreate(true);
-    },
-    [showCreate],
-  );
+  const onDropCreateFiles = useCallback((files: File[]) => {
+    setCreateFiles((prev) => [...prev, ...files]);
+    setCreateUploadMenuOpen(false);
+    setShowCreate(true); // idempotent — no need to read showCreate
+  }, []);
   const { isDragging: isCreateDragging, dropZoneProps: createDropProps } = useDropZone({
     onDrop: onDropCreateFiles,
     disabled: creating,
