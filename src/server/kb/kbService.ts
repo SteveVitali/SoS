@@ -37,6 +37,7 @@ import {
   removeDocumentRecord,
   updateKB,
 } from "./kbRepo.js";
+import { buildRaptorTree } from "./raptor/treeBuilder.js";
 import { runResearchPipeline } from "./research/pipeline.js";
 import { getStrategyConfig } from "./research/strategies.js";
 import {
@@ -469,6 +470,21 @@ export async function ingestIntoKBWithJob(
       documents: totalDocsAdded,
       chunks: totalChunksAdded,
     });
+
+    // Auto-trigger RAPTOR build if documents were actually added
+    if (totalDocsAdded > 0) {
+      try {
+        const updatedKb = await findKB(kbId);
+        if (updatedKb) {
+          log.info("Auto-triggering RAPTOR build after upload", { kbId });
+          buildRaptorTree(kbId, updatedKb.chunk_count).catch((err) => {
+            log.error("Auto-RAPTOR build failed", { kbId, error: err.message });
+          });
+        }
+      } catch (err: any) {
+        log.error("Failed to auto-trigger RAPTOR build", { kbId, error: err.message });
+      }
+    }
   };
 
   // Start processing in background — don't await
