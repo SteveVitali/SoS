@@ -11,9 +11,9 @@
  * ┌──────────────────────┬──────────────────────────────┬──────────────────────────────────┐
  * │ Role                 │ Default model                │ Env override                     │
  * ├──────────────────────┼──────────────────────────────┼──────────────────────────────────┤
- * │ routing              │ claude-opus-4-0-20250514     │ SOS_LLM_MODEL                    │
+ * │ routing              │ claude-opus-4-5     │ SOS_LLM_MODEL                    │
  * │ titleGeneration      │ (inherits routing)           │ SOS_TITLE_MODEL                  │
- * │ research             │ claude-opus-4-0-20250514     │ SOS_RESEARCH_LLM_MODEL           │
+ * │ research             │ claude-opus-4-5     │ SOS_RESEARCH_LLM_MODEL           │
  * │ raptorSummarization  │ (inherits research)          │ SOS_RAPTOR_MODEL                 │
  * │ embedding            │ text-embedding-3-small       │ SOS_EMBEDDING_MODEL              │
  * └──────────────────────┴──────────────────────────────┴──────────────────────────────────┘
@@ -54,8 +54,8 @@ export type ModelRoleName =
 
 // ─── Defaults ───────────────────────────────────────────────────
 
-const DEFAULT_ROUTING_MODEL = "claude-opus-4-0-20250514";
-const DEFAULT_RESEARCH_MODEL = "claude-opus-4-0-20250514";
+const DEFAULT_ROUTING_MODEL = "claude-opus-4-5";
+const DEFAULT_RESEARCH_MODEL = "claude-opus-4-5";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 const VALID_ROLES: ModelRoleName[] = [

@@ -44,7 +44,6 @@ function RoleCard({
         border: "1px solid var(--border)",
         borderRadius: "var(--radius)",
         marginBottom: 12,
-        overflow: "hidden",
       }}
     >
       <div
