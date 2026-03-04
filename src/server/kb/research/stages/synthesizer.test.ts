@@ -77,6 +77,16 @@ describe("synthesizer", () => {
     expect(result.reasoning_trace).toBe("Deep reasoning here");
   });
 
+  it("omits reasoning section for deep strategy when trace is empty", () => {
+    const config = makeConfig({ strategy: "deep" });
+    const audit = new AuditEmitter("q", ["chat"], config);
+    const recorder = audit.startStep("synthesis", 0);
+    const chunks = [makeChunk()];
+
+    const result = runSynthesizer("q", chunks, "", config, recorder);
+    expect(result.context).not.toContain("Research Reasoning");
+  });
+
   it("omits reasoning trace for simple strategy", () => {
     const config = makeConfig({ strategy: "simple" });
     const audit = new AuditEmitter("q", ["chat"], config);

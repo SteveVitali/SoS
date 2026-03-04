@@ -1,6 +1,12 @@
 /**
- * Synthesizer stage — assembles final context string from accumulated chunks
- * with inline citations mapping back to specific sources.
+ * Synthesizer stage — two modes:
+ *
+ * 1. runSynthesizer() — assembles a raw context string with inline citations
+ *    for injection into the routing LLM's system prompt ({KB_CONTEXT}).
+ *
+ * 2. synthesizeForUser() — calls the research LLM to produce a coherent
+ *    markdown answer with inline citations, used by the kb_search executor
+ *    when the output goes directly to the user.
  */
 
 import type { KBSearchResult } from "../../../../shared/kbTypes.js";
@@ -22,6 +28,29 @@ export interface UserSynthesisResult {
   chunks_used: KBSearchResult[];
 }
 
+// ─── Shared helpers ─────────────────────────────────────────
+
+interface ChunkCitations {
+  sourceLines: string[];
+  contextBlocks: string[];
+}
+
+function buildChunkCitations(
+  chunks: KBSearchResult[],
+  options?: { includeScore?: boolean },
+): ChunkCitations {
+  const sourceLines: string[] = [];
+  const contextBlocks: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
+    const section = c.metadata.section ? ` > ${c.metadata.section}` : "";
+    const score = options?.includeScore ? ` (score: ${c.score.toFixed(2)})` : "";
+    sourceLines.push(`[${i + 1}] ${c.kb_name}: ${c.source_file}${section}${score}`);
+    contextBlocks.push(`[${i + 1}] ${c.content}`);
+  }
+  return { sourceLines, contextBlocks };
+}
+
 // ─── LLM Synthesis Prompt (for user-facing answers) ──────────
 
 const SYNTHESIS_SYSTEM_PROMPT = `You are a knowledgeable assistant answering questions using retrieved documentation.
@@ -39,15 +68,7 @@ function buildSynthesisUserPrompt(
   chunks: KBSearchResult[],
   reasoningTrace: string,
 ): string {
-  const sourceLines: string[] = [];
-  const contextBlocks: string[] = [];
-
-  for (let i = 0; i < chunks.length; i++) {
-    const c = chunks[i];
-    const section = c.metadata.section ? ` > ${c.metadata.section}` : "";
-    sourceLines.push(`[${i + 1}] ${c.kb_name}: ${c.source_file}${section}`);
-    contextBlocks.push(`[${i + 1}] ${c.content}`);
-  }
+  const { sourceLines, contextBlocks } = buildChunkCitations(chunks);
 
   const parts = [
     `Question: ${query}`,
@@ -144,21 +165,8 @@ export function runSynthesizer(
   // Take the top chunks (already sorted by evaluation score / vector score)
   const topChunks = chunks.slice(0, config.max_chunks_per_query);
 
-  // Build source citation index
-  const sourceLines: string[] = [];
-  for (let i = 0; i < topChunks.length; i++) {
-    const c = topChunks[i];
-    const section = c.metadata.section ? ` > ${c.metadata.section}` : "";
-    sourceLines.push(
-      `[${i + 1}] ${c.kb_name}: ${c.source_file}${section} (score: ${c.score.toFixed(2)})`,
-    );
-  }
-
-  // Build context blocks with citation markers
-  const contextBlocks: string[] = [];
-  for (let i = 0; i < topChunks.length; i++) {
-    contextBlocks.push(`[${i + 1}] ${topChunks[i].content}`);
-  }
+  // Build source citation index and context blocks
+  const { sourceLines, contextBlocks } = buildChunkCitations(topChunks, { includeScore: true });
 
   // Assemble final context
   const parts: string[] = [

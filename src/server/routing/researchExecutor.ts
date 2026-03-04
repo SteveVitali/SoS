@@ -5,8 +5,10 @@
  * (src/server/kb/research/pipeline.ts), replacing the old LangGraph-based
  * corrective RAG executor.
  *
- * Unlike the LangGraph executor, this module does NOT need its own LLM
- * provider — the research pipeline manages its own LLM client internally.
+ * After the research pipeline retrieves and evaluates chunks, this executor
+ * calls synthesizeForUser() to produce a coherent LLM-generated answer with
+ * inline citations — rather than returning the raw chunk dump that the
+ * pipeline's system-prompt-oriented synthesizer produces.
  */
 
 import type { KBScope } from "../../shared/kbTypes.js";
