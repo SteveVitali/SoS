@@ -1,8 +1,9 @@
-import { describe, expect, it } from "vitest";
+import { describe, expect, it, vi } from "vitest";
 import type { KBSearchResult } from "../../../../shared/kbTypes.js";
 import type { ResearchConfig } from "../../../../shared/researchTypes.js";
 import { AuditEmitter } from "../auditLog.js";
-import { runSynthesizer } from "./synthesizer.js";
+import type { LLMClient, LLMResponse } from "../llmClient.js";
+import { runSynthesizer, synthesizeForUser } from "./synthesizer.js";
 
 function makeConfig(overrides: Partial<ResearchConfig> = {}): ResearchConfig {
   return {
@@ -109,5 +110,110 @@ describe("synthesizer", () => {
 
     const result = runSynthesizer("q", chunks, "", config, recorder);
     expect(result.context).toContain("deep");
+  });
+});
+
+// ─── synthesizeForUser tests ────────────────────────────────────
+
+function makeMockLLM(content = "A well-structured answer with [1] citations."): LLMClient {
+  const mockResponse: LLMResponse = {
+    content,
+    model: "test-model",
+    prompt_tokens: 100,
+    completion_tokens: 50,
+    duration_ms: 500,
+    tool_calls: [],
+  };
+  return {
+    chat: vi.fn().mockResolvedValue(mockResponse),
+    chatWithTools: vi.fn().mockResolvedValue(mockResponse),
+    toAuditRecord: vi.fn(),
+    config: {
+      model: "test-model",
+      api_key: "test-key",
+      base_url: "http://localhost",
+      temperature: 0,
+      max_tokens: 2048,
+    },
+  };
+}
+
+describe("synthesizeForUser", () => {
+  it("returns empty answer for no chunks", async () => {
+    const config = makeConfig();
+    const llm = makeMockLLM();
+
+    const result = await synthesizeForUser("test query", [], "", config, llm);
+    expect(result.answer).toBe("");
+    expect(result.chunks_used).toEqual([]);
+    expect(llm.chat).not.toHaveBeenCalled();
+  });
+
+  it("calls LLM and returns synthesized answer", async () => {
+    const config = makeConfig();
+    const llm = makeMockLLM(
+      "The venue woe lifecycle involves [1] proposal, [2] voting, and resolution.",
+    );
+    const chunks = [makeChunk({ content: "Proposal step" }), makeChunk({ content: "Voting step" })];
+
+    const result = await synthesizeForUser("lifecycle of venue woe", chunks, "", config, llm);
+
+    expect(result.answer).toContain("venue woe lifecycle");
+    expect(result.chunks_used).toHaveLength(2);
+    expect(llm.chat).toHaveBeenCalledTimes(1);
+
+    // Verify the prompt includes the query and chunk content
+    const callArgs = vi.mocked(llm.chat).mock.calls[0];
+    const systemMsg = callArgs[0][0];
+    const userMsg = callArgs[0][1];
+    expect(systemMsg.role).toBe("system");
+    expect(systemMsg.content).toContain("knowledgeable assistant");
+    expect(userMsg.content).toContain("lifecycle of venue woe");
+    expect(userMsg.content).toContain("Proposal step");
+    expect(userMsg.content).toContain("Voting step");
+  });
+
+  it("includes reasoning trace in prompt when provided", async () => {
+    const config = makeConfig();
+    const llm = makeMockLLM();
+    const chunks = [makeChunk()];
+
+    await synthesizeForUser("test", chunks, "Deep reasoning about the topic", config, llm);
+
+    const userMsg = vi.mocked(llm.chat).mock.calls[0][0][1];
+    expect(userMsg.content).toContain("Deep reasoning about the topic");
+  });
+
+  it("falls back to raw chunk dump when LLM fails", async () => {
+    const config = makeConfig();
+    const llm = makeMockLLM();
+    vi.mocked(llm.chat).mockRejectedValue(new Error("API timeout"));
+    const chunks = [
+      makeChunk({ content: "Chunk A content" }),
+      makeChunk({ content: "Chunk B content" }),
+    ];
+
+    const result = await synthesizeForUser("test", chunks, "", config, llm);
+
+    expect(result.answer).toContain("[1] Chunk A content");
+    expect(result.answer).toContain("[2] Chunk B content");
+    expect(result.chunks_used).toHaveLength(2);
+  });
+
+  it("respects max_chunks_per_query limit", async () => {
+    const config = makeConfig({ max_chunks_per_query: 2 });
+    const llm = makeMockLLM();
+    const chunks = [
+      makeChunk({ score: 0.9, content: "A" }),
+      makeChunk({ score: 0.8, content: "B" }),
+      makeChunk({ score: 0.7, content: "C" }),
+    ];
+
+    const result = await synthesizeForUser("test", chunks, "", config, llm);
+
+    expect(result.chunks_used).toHaveLength(2);
+    // Verify only 2 chunks appear in the prompt
+    const userMsg = vi.mocked(llm.chat).mock.calls[0][0][1];
+    expect(userMsg.content).not.toContain("[3]");
   });
 });

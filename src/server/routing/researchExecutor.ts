@@ -13,6 +13,9 @@ import type { KBScope } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import type { ResearchStrategy } from "../../shared/researchTypes.js";
 import { researchKnowledgeBases } from "../kb/kbService.js";
+import { getResearchLLMClient } from "../kb/research/llmClient.js";
+import { synthesizeForUser } from "../kb/research/stages/synthesizer.js";
+import { getStrategyConfig } from "../kb/research/strategies.js";
 import type { CommandContext, CommandResult } from "../slack/commandExecutor.js";
 import type { RoutedAction } from "../slack/messageRouter.js";
 import type { ResearchExecution } from "./routingTypes.js";
@@ -111,13 +114,35 @@ export async function executeResearch(
       metrics: result.metrics,
     });
 
-    // Build the reply from the synthesized context
-    const hasContent = result.context && result.context.trim().length > 0;
+    // Synthesize a user-facing answer via LLM (instead of returning raw chunks)
+    let answer = "";
+    const hasChunks = result.chunks && result.chunks.length > 0;
+    if (hasChunks) {
+      try {
+        const llm = getResearchLLMClient();
+        const strategyConfig = getStrategyConfig(strategy);
+        const synthesis = await synthesizeForUser(
+          query,
+          result.chunks,
+          result.reasoning_trace || "",
+          strategyConfig,
+          llm,
+        );
+        answer = synthesis.answer;
+      } catch (synthErr) {
+        log.warn("User-facing synthesis failed, using raw context", {
+          error: (synthErr as Error).message,
+        });
+        answer = result.context;
+      }
+    }
+
+    const hasContent = answer.trim().length > 0;
     let reply = execDef.reply_template
       ? renderTemplate(
           execDef.reply_template,
           tplCtx(action, ctx, {
-            answer: result.context,
+            answer,
             strategy: result.strategy,
             session_id: result.session_id,
             iterations: result.metrics.iterations,
@@ -127,7 +152,7 @@ export async function executeResearch(
           }),
         )
       : hasContent
-        ? result.context
+        ? answer
         : "I searched the knowledge bases but couldn't find any relevant information. Try rephrasing your question or checking that the relevant knowledge bases are enabled.";
 
     // Append trace/metrics footer when show_trace is enabled

@@ -179,8 +179,10 @@ export async function runResearchPipeline(
         reasonRecorder,
       );
 
-      // Accumulate reasoning trace
-      reasoningTrace += `\n**Iteration ${iteration + 1}:** ${reasoning.reasoning_text}`;
+      // Accumulate reasoning trace (skip if reasoning text is empty)
+      if (reasoning.reasoning_text) {
+        reasoningTrace += `\n**Iteration ${iteration + 1}:** ${reasoning.reasoning_text}`;
+      }
       previousReasoning = reasoning.reasoning_text;
 
       // Check for convergence: reasoning says sufficient
