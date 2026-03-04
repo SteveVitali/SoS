@@ -32,6 +32,9 @@ export interface ResearchConfig {
   max_chunks_per_query: number;
   min_similarity_score: number;
   dedup_threshold: number;
+
+  // Synthesis
+  skip_llm_synthesis: boolean;
 }
 
 // ─── Session & Steps ────────────────────────────────────────────

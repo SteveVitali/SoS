@@ -174,12 +174,13 @@ export async function runResearchAgent(
 
     // Synthesize final context
     const synthRecorder = audit.startStep("synthesis", 0);
-    const synthesis = runSynthesizer(
+    const synthesis = await runSynthesizer(
       query,
       toolCtx.accumulatedChunks,
       synthesizeSummary || "",
       config,
       synthRecorder,
+      llm,
     );
 
     const session = audit.complete();

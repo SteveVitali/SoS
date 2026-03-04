@@ -220,12 +220,13 @@ export async function runResearchPipeline(
 
     // ─── Stage 6: Synthesis ────────────────────────────────
     const synthRecorder = audit.startStep("synthesis", 0);
-    const synthesis = runSynthesizer(
+    const synthesis = await runSynthesizer(
       query,
       allAccumulatedChunks,
       reasoningTrace.trim(),
       config,
       synthRecorder,
+      llm,
     );
 
     // Complete the session
@@ -240,12 +241,13 @@ export async function runResearchPipeline(
       });
 
       const synthRecorder = audit.startStep("synthesis", 0);
-      const synthesis = runSynthesizer(
+      const synthesis = await runSynthesizer(
         query,
         allAccumulatedChunks,
         reasoningTrace.trim(),
         config,
         synthRecorder,
+        llm,
       );
 
       const session = audit.budgetExhausted();

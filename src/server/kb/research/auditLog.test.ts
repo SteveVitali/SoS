@@ -17,6 +17,7 @@ function makeConfig(overrides: Partial<ResearchConfig> = {}): ResearchConfig {
     max_chunks_per_query: 5,
     min_similarity_score: 0.3,
     dedup_threshold: 0.9,
+    skip_llm_synthesis: false,
     ...overrides,
   };
 }
