@@ -135,20 +135,13 @@ export interface DispatchExecution {
   reply_unknown?: string;
 }
 
-/** Run a LangGraph graph (e.g. corrective_rag). */
-export interface LangGraphExecution {
-  type: "langgraph";
-  graph: string;
-  graph_config?: {
-    scopes?: string[];
-    max_retrievals?: number;
-    max_chunks?: number;
-    min_score?: number;
-    model?: string;
-    max_answer_tokens?: number;
-    show_trace?: boolean;
-    timeout_ms?: number;
-  };
+/** Run the advanced research pipeline against knowledge bases. */
+export interface ResearchExecution {
+  type: "research";
+  scopes?: string[];
+  default_strategy?: "simple" | "deep" | "agent";
+  show_trace?: boolean;
+  timeout_ms?: number;
   reply_template?: string;
   reply_error?: string;
 }
@@ -166,7 +159,7 @@ export type ExecutionDef =
   | AgentTaskExecution
   | LeaveChannelExecution
   | DispatchExecution
-  | LangGraphExecution;
+  | ResearchExecution;
 
 // --- Knowledge Base Config (per-action) ---
 

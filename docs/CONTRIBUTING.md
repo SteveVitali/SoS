@@ -58,8 +58,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 - **`src/shared/`** — code imported by both server and worker (types, utilities); includes `researchTypes.ts` for research pipeline types
 - **`src/server/`** — server-only code (never imported by worker)
-- **`src/server/routing/`** — YAML-driven LLM action routing: config loading, type definitions, executors, tool building, and template rendering
-- **`src/server/routing/graphs/`** — LangGraph-based execution graphs (e.g., corrective RAG); state machines that run as `langgraph` execution types
+- **`src/server/routing/`** — YAML-driven LLM action routing: config loading, type definitions, executors, tool building, template rendering, and the research executor
 - **`src/server/kb/`** — knowledge base module: vector store, chunker, embeddings, ingestion, MongoDB repo, service, API routes
 - **`src/server/kb/research/`** — advanced RAG research pipeline: pipeline runner, LLM client, audit logging, strategy profiles, and stages (queryAnalyzer, queryExpander, retriever, evaluator, reasoner, synthesizer) + agent/ (ReAct agent loop, tools, prompts)
 - **`src/server/kb/raptor/`** — RAPTOR tree preprocessing: k-means clustering, LLM summarization, recursive tree building, MongoDB metadata
@@ -105,15 +104,14 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 3. Register it in `src/server/llm/index.ts` so `createLLMProvider` returns it by provider name
 4. Document the required env vars in `docs/CONFIGURATION.md` and `docs/SLACK_SETUP.md`
 
-### Adding a new LangGraph execution graph
+### Adding a new research strategy
 
-1. Define your graph state and config types in `src/server/routing/graphs/types.ts` (or a new file)
-2. Create the graph in `src/server/routing/graphs/myGraph.ts` with a `runMyGraph()` convenience function
-3. Add a `case "my_graph"` to the switch in `src/server/routing/graphs/graphExecutor.ts` → `runGraph()`
-4. Export from the barrel file `src/server/routing/graphs/index.ts`
-5. Add tests in `src/server/routing/graphs/myGraph.test.ts` (mock `searchKnowledgeBases` and `LLMProvider`)
-6. Activate via `routing-config.yaml`: set `execution.type: langgraph` and `execution.graph: my_graph` on an action
-7. Configure graph-specific settings under `execution.graph_config` (see `EXAMPLE_YAML.md` for reference)
+1. Add the strategy name to the `ResearchStrategy` type in `src/shared/researchTypes.ts`
+2. Add a profile entry in `src/server/kb/research/strategies.ts` → `STRATEGY_PROFILES`
+3. Implement any new pipeline stages under `src/server/kb/research/stages/`
+4. The routing executor (`src/server/routing/researchExecutor.ts`) will automatically support it
+5. Update `routing-config.yaml` to include the new strategy in the `kb_search` action's `strategy` enum
+6. Add tests in the appropriate `*.test.ts` files
 
 ### Adding a new API endpoint
 

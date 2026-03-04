@@ -291,7 +291,7 @@ Each action has an `execution` block that determines what happens when the LLM p
 | `agent_task` | Create a job with custom YAML-defined instructions injected into the Claude prompt |
 | `leave_channel` | Leave the current Slack channel |
 | `dispatch` | Route to sub-executions based on a parameter value (polymorphic dispatch) |
-| `langgraph` | Run a LangGraph state machine (e.g., corrective RAG with iterative retrieve → grade → reformulate loops) |
+| `research` | Run the advanced research pipeline against knowledge bases (supports simple/deep/agent strategies) |
 
 ### Template Engine
 
@@ -395,11 +395,7 @@ son-of-steve/
 │   │   │   ├── executors.ts        # Action execution dispatch (13 handlers, one per execution type)
 │   │   │   ├── toolBuilder.ts      # Build LLM tool definitions + prompt sections from YAML actions
 │   │   │   ├── template.ts         # Mustache-style template rendering for replies
-│   │   │   ├── graphs/             # LangGraph-based execution graphs
-│   │   │   │   ├── correctiveRag.ts    # Corrective RAG graph (retrieve → grade → reformulate → synthesize)
-│   │   │   │   ├── graphExecutor.ts    # Bridge between YAML executors and LangGraph graphs
-│   │   │   │   ├── types.ts            # Shared state, config, and result types for graphs
-│   │   │   │   └── index.ts            # Barrel export
+│   │   │   ├── researchExecutor.ts # Bridge between routing and the research pipeline (kb_search action)
 │   │   │   └── index.ts            # Barrel export
 │   │   ├── workers/
 │   │   │   ├── spawnWorker.ts     # Spawn/kill worker processes (detached process groups)

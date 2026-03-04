@@ -29,7 +29,7 @@ import {
 } from "../jobs/jobService.js";
 import type { CommandContext, CommandResult } from "../slack/commandExecutor.js";
 import type { RoutedAction } from "../slack/messageRouter.js";
-import { executeLangGraph } from "./graphs/graphExecutor.js";
+import { executeResearch } from "./researchExecutor.js";
 import type {
   AgentTaskExecution,
   CreateJobExecution,
@@ -40,9 +40,9 @@ import type {
   JobActionExecution,
   JobListExecution,
   JobQueryExecution,
-  LangGraphExecution,
   LeaveChannelExecution,
   ReplyExecution,
+  ResearchExecution,
   ShellExecution,
   WebhookExecution,
 } from "./routingTypes.js";
@@ -822,8 +822,8 @@ export async function executeAction(
       return executeLeaveChannel(action, ctx, execDef);
     case "dispatch":
       return executeDispatch(action, ctx, execDef);
-    case "langgraph":
-      return executeLangGraph(action, ctx, execDef);
+    case "research":
+      return executeResearch(action, ctx, execDef);
     default:
       // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
       log.warn("Unknown execution type", { type: (execDef as any).type });
