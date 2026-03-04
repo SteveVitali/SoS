@@ -7,6 +7,7 @@ import { JobDetail } from "./components/jobs/JobDetail.js";
 import { JobsList } from "./components/jobs/JobsList.js";
 import { KBDetail } from "./components/kb/KBDetail.js";
 import { KBList } from "./components/kb/KBList.js";
+import { ModelsPage } from "./components/models/ModelsPage.js";
 import { PrsList } from "./components/prs/PrsList.js";
 import { RepoRegistryEditor } from "./components/registry/RepoRegistryEditor.js";
 import { ResearchPage } from "./components/research/ResearchPage.js";
@@ -34,6 +35,7 @@ function AppShell() {
   const showKnowledgeList = path === "/knowledge";
   const isResearchTab = path === "/research";
   const isRoutingTab = path === "/routing";
+  const isModelsTab = path === "/models";
 
   return (
     <div style={css.container}>
@@ -51,6 +53,7 @@ function AppShell() {
             <NavTab to="/knowledge" label="Knowledge" active={isKnowledgeTab} />
             <NavTab to="/research" label="Research" active={isResearchTab} />
             <NavTab to="/routing" label="Routing" active={isRoutingTab} />
+            <NavTab to="/models" label="Models" active={isModelsTab} />
           </div>
         </div>
         <div style={css.nav}>
@@ -92,6 +95,7 @@ function AppShell() {
         <Route path="/knowledge/:id" element={<KBDetail />} />
         <Route path="/research" element={<ResearchPage />} />
         <Route path="/routing" element={<RoutingConfigEditor />} />
+        <Route path="/models" element={<ModelsPage />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />
         <Route path="/jobs/:taskId" element={<JobDetail />} />
         <Route path="*" element={null} />
