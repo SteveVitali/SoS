@@ -321,6 +321,17 @@ export async function reloadModelConfig(): Promise<{
   return request("POST", "/model-config/reload");
 }
 
+export interface AvailableModelsResponse {
+  models: string[];
+  provider: string;
+  message?: string;
+  error?: string;
+}
+
+export async function fetchAvailableModels(): Promise<AvailableModelsResponse> {
+  return request("GET", "/available-models");
+}
+
 export interface WorktreeSlotStatus {
   slotName: string;
   inUse: boolean;
