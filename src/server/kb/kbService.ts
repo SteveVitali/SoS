@@ -477,13 +477,6 @@ export async function ingestIntoKBWithJob(
 }
 
 /**
- * Detach the NDJSON event callback from a running upload job.
- * Called when the streaming response closes (client navigates away).
- * This is a no-op — the background processing continues regardless.
- * The function signature is kept for documentation clarity.
- */
-
-/**
  * Remove a document from a knowledge base.
  */
 export async function removeDocument(kbId: string, docName: string): Promise<boolean> {

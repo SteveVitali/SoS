@@ -127,6 +127,7 @@ export interface UploadJob {
 // ---------------------------------------------------------------------------
 
 export type IngestProgressEvent =
+  | { type: "job_created"; job_id: string }
   | { type: "start"; total_uploads: number }
   | { type: "file_start"; file: string }
   | { type: "file_done"; file: string; chunks: number }

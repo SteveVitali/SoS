@@ -39,6 +39,22 @@ type FileStatus =
   | { state: "skipped"; reason: string }
   | { state: "error"; error: string };
 
+/** Convert a server-side UploadFileStatus to the local FileStatus union. */
+function toFileStatus(f: import("../../api.js").UploadFileStatus): FileStatus {
+  switch (f.status) {
+    case "pending":
+      return { state: "pending" };
+    case "processing":
+      return { state: "processing" };
+    case "done":
+      return { state: "done", chunks: f.chunks ?? 0 };
+    case "skipped":
+      return { state: "skipped", reason: f.skip_reason ?? "skipped" };
+    case "error":
+      return { state: "error", error: f.error ?? "unknown error" };
+  }
+}
+
 function FileStatusRow({ name, status }: { name: string; status: FileStatus }) {
   let icon: string;
   let color: string;
@@ -183,27 +199,8 @@ export function KBDetail() {
         const job = uploads[0]; // most recent active job
         setActiveUploadJob(job);
         setIngesting(true);
-        // Convert server file statuses to local FileStatus format
         const restored: Record<string, FileStatus> = {};
-        for (const f of job.files) {
-          switch (f.status) {
-            case "pending":
-              restored[f.name] = { state: "pending" };
-              break;
-            case "processing":
-              restored[f.name] = { state: "processing" };
-              break;
-            case "done":
-              restored[f.name] = { state: "done", chunks: f.chunks ?? 0 };
-              break;
-            case "skipped":
-              restored[f.name] = { state: "skipped", reason: f.skip_reason ?? "skipped" };
-              break;
-            case "error":
-              restored[f.name] = { state: "error", error: f.error ?? "unknown error" };
-              break;
-          }
-        }
+        for (const f of job.files) restored[f.name] = toFileStatus(f);
         setFileStatuses(restored);
       }
     } catch {
@@ -222,27 +219,8 @@ export function KBDetail() {
       try {
         const { job } = await getUploadJob(id, activeUploadJob.job_id);
         setActiveUploadJob(job);
-        // Update file statuses from server state
         const updated: Record<string, FileStatus> = {};
-        for (const f of job.files) {
-          switch (f.status) {
-            case "pending":
-              updated[f.name] = { state: "pending" };
-              break;
-            case "processing":
-              updated[f.name] = { state: "processing" };
-              break;
-            case "done":
-              updated[f.name] = { state: "done", chunks: f.chunks ?? 0 };
-              break;
-            case "skipped":
-              updated[f.name] = { state: "skipped", reason: f.skip_reason ?? "skipped" };
-              break;
-            case "error":
-              updated[f.name] = { state: "error", error: f.error ?? "unknown error" };
-              break;
-          }
-        }
+        for (const f of job.files) updated[f.name] = toFileStatus(f);
         setFileStatuses(updated);
         if (job.status !== "processing") {
           setIngesting(false);
