@@ -59,9 +59,14 @@ Rules:
 - Answer the question directly and thoroughly using ONLY the provided context.
 - Use inline citation numbers like [1], [2] to reference your sources.
 - If the context doesn't contain enough information, say so clearly.
-- Format your answer with markdown: use headings, lists, bold, and code blocks where appropriate.
 - Be concise but complete. Avoid repeating the question back.
-- Do NOT mention "the context" or "the documents" — just answer naturally as if you know the material.`;
+- Do NOT mention "the context" or "the documents" — just answer naturally as if you know the material.
+
+Formatting rules (your output must work in Slack):
+- Use **bold text** for section headers — do NOT use # or ## markdown headings.
+- Use bullet lists (- item) instead of markdown tables.
+- Use \`backtick\` for inline code and \`\`\` for code blocks.
+- Separate sections with blank lines for readability.`;
 
 function buildSynthesisUserPrompt(
   query: string,

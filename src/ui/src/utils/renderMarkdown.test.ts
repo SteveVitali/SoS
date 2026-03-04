@@ -123,4 +123,35 @@ describe("renderMarkdown", () => {
     expect(html).toContain("<li>First</li>");
     expect(html).toContain("Conclusion</p>");
   });
+
+  // --- Tables ---
+
+  it("renders a markdown table", () => {
+    const md = "| Name | Role |\n|------|------|\n| Alice | Engineer |\n| Bob | Designer |";
+    const html = toHtml(md);
+    expect(html).toContain("<table");
+    expect(html).toContain("<th");
+    expect(html).toContain("Name");
+    expect(html).toContain("Role");
+    expect(html).toContain("<td");
+    expect(html).toContain("Alice");
+    expect(html).toContain("Engineer");
+    expect(html).toContain("Bob");
+    expect(html).toContain("Designer");
+  });
+
+  it("renders inline formatting inside table cells", () => {
+    const md = "| Rule | Details |\n|------|--------|\n| **No saves** | Use `service` instead |";
+    const html = toHtml(md);
+    expect(html).toContain("<strong>No saves</strong>");
+    expect(html).toContain("<code>service</code>");
+  });
+
+  it("renders table between paragraphs", () => {
+    const md = "Before\n\n| A | B |\n|---|---|\n| 1 | 2 |\n\nAfter";
+    const html = toHtml(md);
+    expect(html).toContain("Before</p>");
+    expect(html).toContain("<table");
+    expect(html).toContain("After</p>");
+  });
 });

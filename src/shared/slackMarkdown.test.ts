@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { slackToMarkdown } from "./slackMarkdown.js";
+import { markdownToSlack, slackToMarkdown } from "./slackMarkdown.js";
 
 describe("slackToMarkdown", () => {
   it("converts Slack bold *text* to markdown **text**", () => {
@@ -44,5 +44,47 @@ describe("slackToMarkdown", () => {
 
   it("handles emoji before bold", () => {
     expect(slackToMarkdown("📊 *Your recap (7d)*")).toBe("📊 **Your recap (7d)**");
+  });
+});
+
+describe("markdownToSlack", () => {
+  it("converts markdown headings to Slack bold", () => {
+    expect(markdownToSlack("## Section Title")).toBe("*Section Title*");
+    expect(markdownToSlack("# Main Title")).toBe("*Main Title*");
+    expect(markdownToSlack("### Sub")).toBe("*Sub*");
+  });
+
+  it("converts markdown links to Slack links", () => {
+    expect(markdownToSlack("[Example](https://example.com)")).toBe("<https://example.com|Example>");
+  });
+
+  it("converts markdown table to bullet list", () => {
+    const table = [
+      "| Rule | Details |",
+      "|------|------|",
+      "| No saves | Call service instead |",
+      "| Use API | Required for all writes |",
+    ].join("\n");
+    const result = markdownToSlack(table);
+    expect(result).toContain("•");
+    expect(result).toContain("*Rule:*");
+    expect(result).toContain("No saves");
+    expect(result).toContain("*Details:*");
+    expect(result).toContain("Call service instead");
+    expect(result).toContain("—");
+  });
+
+  it("preserves plain text", () => {
+    expect(markdownToSlack("just some text")).toBe("just some text");
+  });
+
+  it("preserves bullet lists", () => {
+    expect(markdownToSlack("- item one\n- item two")).toBe("- item one\n- item two");
+  });
+
+  it("handles mixed content", () => {
+    const input = "## Summary\n\nHere is the answer.\n\n- Point one\n- Point two";
+    const result = markdownToSlack(input);
+    expect(result).toBe("*Summary*\n\nHere is the answer.\n\n- Point one\n- Point two");
   });
 });

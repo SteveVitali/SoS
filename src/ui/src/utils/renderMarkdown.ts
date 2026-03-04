@@ -10,8 +10,10 @@ const HEADING_RE = /^(#{1,6})\s+(.+)$/;
 const ORDERED_LIST_RE = /^\d+[.)]\s+(.+)$/;
 const UNORDERED_LIST_RE = /^[-*•]\s+(.+)$/;
 const HR_RE = /^-{3,}$/;
+const TABLE_ROW_RE = /^\|(.+)\|\s*$/;
+const TABLE_SEP_RE = /^\|?[\s-:|]+\|[\s-:|]+\|?$/;
 
-type BlockType = "paragraph" | "heading" | "ol" | "ul" | "hr";
+type BlockType = "paragraph" | "heading" | "ol" | "ul" | "hr" | "table";
 
 interface Block {
   type: BlockType;
@@ -67,6 +69,70 @@ export function renderMarkdown(md: string): ReactNode {
         );
         break;
 
+      case "table": {
+        const headerCells = parseTableCells(block.lines[0]);
+        // block.lines[1] is the separator — skip it
+        const dataRows = block.lines.slice(2);
+        const tableStyle = {
+          borderCollapse: "collapse" as const,
+          width: "100%",
+          margin: "0.5em 0",
+          fontSize: "0.9em",
+        };
+        const thStyle = {
+          border: "1px solid var(--border, #555)",
+          padding: "6px 10px",
+          textAlign: "left" as const,
+          fontWeight: 600,
+          background: "var(--bg3, #2a2a2a)",
+        };
+        const tdStyle = {
+          border: "1px solid var(--border, #555)",
+          padding: "6px 10px",
+        };
+
+        elements.push(
+          createElement(
+            "table",
+            { key, style: tableStyle },
+            createElement(
+              "thead",
+              { key: `${key}-thead` },
+              createElement(
+                "tr",
+                { key: `${key}-hrow` },
+                ...headerCells.map((cell, ci) =>
+                  createElement(
+                    "th",
+                    { key: `${key}-th-${ci}`, style: thStyle },
+                    ...parseInline(cell),
+                  ),
+                ),
+              ),
+            ),
+            createElement(
+              "tbody",
+              { key: `${key}-tbody` },
+              ...dataRows.map((row, ri) => {
+                const cells = parseTableCells(row);
+                return createElement(
+                  "tr",
+                  { key: `${key}-tr-${ri}` },
+                  ...cells.map((cell, ci) =>
+                    createElement(
+                      "td",
+                      { key: `${key}-td-${ri}-${ci}`, style: tdStyle },
+                      ...parseInline(cell),
+                    ),
+                  ),
+                );
+              }),
+            ),
+          ),
+        );
+        break;
+      }
+
       case "paragraph": {
         const inner: ReactNode[] = [];
         for (let j = 0; j < block.lines.length; j++) {
@@ -100,12 +166,14 @@ function parseBlocks(md: string): Block[] {
     }
   };
 
-  for (const raw of rawLines) {
-    const trimmed = raw.trim();
+  let lineIdx = 0;
+  while (lineIdx < rawLines.length) {
+    const trimmed = rawLines[lineIdx].trim();
 
     // Blank line → flush current block
     if (trimmed === "") {
       flush();
+      lineIdx++;
       continue;
     }
 
@@ -113,6 +181,25 @@ function parseBlocks(md: string): Block[] {
     if (HR_RE.test(trimmed)) {
       flush();
       blocks.push({ type: "hr", lines: [] });
+      lineIdx++;
+      continue;
+    }
+
+    // Detect markdown table: pipe row followed by separator row
+    if (
+      TABLE_ROW_RE.test(trimmed) &&
+      lineIdx + 1 < rawLines.length &&
+      TABLE_SEP_RE.test(rawLines[lineIdx + 1].trim())
+    ) {
+      flush();
+      const tableLines: string[] = [trimmed, rawLines[lineIdx + 1].trim()];
+      lineIdx += 2;
+      // Collect data rows
+      while (lineIdx < rawLines.length && TABLE_ROW_RE.test(rawLines[lineIdx].trim())) {
+        tableLines.push(rawLines[lineIdx].trim());
+        lineIdx++;
+      }
+      blocks.push({ type: "table", lines: tableLines });
       continue;
     }
 
@@ -125,6 +212,7 @@ function parseBlocks(md: string): Block[] {
         lines: [headingMatch[2]],
         level: headingMatch[1].length,
       });
+      lineIdx++;
       continue;
     }
 
@@ -137,6 +225,7 @@ function parseBlocks(md: string): Block[] {
         flush();
         current = { type: "ol", lines: [olMatch[1]] };
       }
+      lineIdx++;
       continue;
     }
 
@@ -149,6 +238,7 @@ function parseBlocks(md: string): Block[] {
         flush();
         current = { type: "ul", lines: [ulMatch[1]] };
       }
+      lineIdx++;
       continue;
     }
 
@@ -159,10 +249,18 @@ function parseBlocks(md: string): Block[] {
       flush();
       current = { type: "paragraph", lines: [trimmed] };
     }
+    lineIdx++;
   }
 
   flush();
   return blocks;
+}
+
+function parseTableCells(line: string): string[] {
+  return line
+    .split("|")
+    .map((c) => c.trim())
+    .filter(Boolean);
 }
 
 function parseInline(text: string): ReactNode[] {
