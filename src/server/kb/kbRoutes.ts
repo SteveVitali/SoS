@@ -7,6 +7,7 @@ import { type Request, type Response, Router } from "express";
 import multer from "multer";
 import type { KBScope } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
+import type { ResearchStrategy } from "../../shared/researchTypes.js";
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
@@ -17,6 +18,7 @@ import {
   ingestIntoKBStreaming,
   listKnowledgeBases,
   removeDocument,
+  researchKnowledgeBases,
   searchKnowledgeBases,
   searchKnowledgeBasesWithRouting,
   searchSingleKB,
@@ -24,6 +26,7 @@ import {
 } from "./kbService.js";
 import { getBatchRaptorStatus, getRaptorStatus } from "./raptor/raptorRepo.js";
 import { buildRaptorTree } from "./raptor/treeBuilder.js";
+import { findResearchSession, listResearchSessions } from "./research/auditRepo.js";
 import { listRaptorNodes } from "./vectorStore.js";
 
 const log = createLogger("server:kb:routes");
@@ -313,6 +316,102 @@ export function createKBWebRoutes(): Router {
     }
   });
 
+  // ─── Research Pipeline Routes ─────────────────────────────
+
+  // POST /api/web/kb/research — run research pipeline (JSON or NDJSON streaming)
+  router.post("/research", async (req: Request, res: Response) => {
+    try {
+      const { query, scopes, strategy, config_overrides } = req.body;
+
+      if (!query || typeof query !== "string") {
+        res.status(400).json({ error: "query is required" });
+        return;
+      }
+
+      const wantsStream = req.headers.accept?.includes("text/x-ndjson");
+
+      if (wantsStream) {
+        res.setHeader("Content-Type", "text/x-ndjson; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.flushHeaders();
+
+        const result = await researchKnowledgeBases({
+          query,
+          scopes: scopes || ["chat"],
+          strategy: strategy as ResearchStrategy,
+          config_overrides,
+          consumer: { type: "playground" },
+          owner: req.body.owner,
+          onEvent: (event) => {
+            res.write(JSON.stringify(event) + "\n");
+          },
+        });
+
+        // Write final result as last line
+        res.write(JSON.stringify({ type: "result", ...result }) + "\n");
+        res.end();
+      } else {
+        const result = await researchKnowledgeBases({
+          query,
+          scopes: scopes || ["chat"],
+          strategy: strategy as ResearchStrategy,
+          config_overrides,
+          consumer: { type: "playground" },
+          owner: req.body.owner,
+        });
+
+        res.json(result);
+      }
+    } catch (err: any) {
+      log.error("Research pipeline error", { error: err.message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      } else {
+        res.write(JSON.stringify({ type: "session_error", error: err.message }) + "\n");
+        res.end();
+      }
+    }
+  });
+
+  // GET /api/web/kb/research/sessions — list past research sessions
+  router.get("/research/sessions", async (req: Request, res: Response) => {
+    try {
+      const limit = Math.min(100, Math.max(1, Number(req.query.limit) || 20));
+      const offset = Math.max(0, Number(req.query.offset) || 0);
+      const strategy = req.query.strategy as ResearchStrategy | undefined;
+      const consumer_type = req.query.consumer_type as string | undefined;
+      const consumer_id = req.query.consumer_id as string | undefined;
+
+      const result = await listResearchSessions({
+        limit,
+        offset,
+        strategy,
+        consumer_type,
+        consumer_id,
+      });
+      res.json(result);
+    } catch (err: any) {
+      log.error("List research sessions error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/web/kb/research/sessions/:id — get full research session
+  router.get("/research/sessions/:id", async (req: Request, res: Response) => {
+    try {
+      const session = await findResearchSession(pstr(req.params.id));
+      if (!session) {
+        res.status(404).json({ error: "Research session not found" });
+        return;
+      }
+      res.json({ session });
+    } catch (err: any) {
+      log.error("Get research session error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
   // ─── RAPTOR Routes ────────────────────────────────────────
 
   // POST /api/web/kb/:id/raptor/build — trigger RAPTOR tree build
@@ -378,7 +477,7 @@ export function createKBWebRoutes(): Router {
 export function createKBWorkerRoutes(): Router {
   const router = Router();
 
-  // POST /api/worker/kb/search — search KBs by scope
+  // POST /api/worker/kb/search — search KBs by scope (backward compat)
   router.post("/search", async (req: Request, res: Response) => {
     try {
       const { query, scopes, max_chunks, min_score } = req.body;
@@ -402,6 +501,63 @@ export function createKBWorkerRoutes(): Router {
       res.json({ results });
     } catch (err: any) {
       log.error("Worker KB search error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/worker/kb/research — run research pipeline (JSON or NDJSON streaming)
+  router.post("/research", async (req: Request, res: Response) => {
+    try {
+      const { query, scopes, strategy, consumer } = req.body;
+
+      if (!query || typeof query !== "string") {
+        res.status(400).json({ error: "query is required" });
+        return;
+      }
+      if (!scopes || !Array.isArray(scopes)) {
+        res.status(400).json({ error: "scopes is required (array)" });
+        return;
+      }
+
+      const wantsStream = req.headers.accept?.includes("text/x-ndjson");
+
+      if (wantsStream) {
+        // NDJSON streaming mode — send events as they happen
+        res.setHeader("Content-Type", "text/x-ndjson; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no");
+
+        const result = await researchKnowledgeBases({
+          query,
+          scopes: scopes as KBScope[],
+          strategy: (strategy as ResearchStrategy) || "deep",
+          consumer,
+          onEvent: (event) => {
+            res.write(`${JSON.stringify(event)}\n`);
+          },
+        });
+
+        // Write final result event
+        res.write(`${JSON.stringify({ type: "result", ...result })}\n`);
+        res.end();
+      } else {
+        // Standard JSON response
+        const result = await researchKnowledgeBases({
+          query,
+          scopes: scopes as KBScope[],
+          strategy: (strategy as ResearchStrategy) || "deep",
+          consumer,
+        });
+
+        res.json({
+          context: result.context,
+          chunks: result.chunks,
+          metrics: result.metrics,
+          session_id: result.session_id,
+        });
+      }
+    } catch (err: any) {
+      log.error("Worker research error", { error: err.message });
       res.status(500).json({ error: err.message });
     }
   });

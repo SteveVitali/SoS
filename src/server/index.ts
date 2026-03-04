@@ -3,6 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createLogger } from "../shared/logger.js";
+import { getModelRegistry } from "../shared/modelConfig.js";
 import { createRouter } from "./api/router.js";
 import { initChatTitleGenerator } from "./chat/titleGen.js";
 import { loadServerConfig } from "./config.js";
@@ -15,6 +16,7 @@ import {
   ensureKBIndexes,
   initVectorStore,
 } from "./kb/index.js";
+import { resetStaleBuildingStatuses } from "./kb/raptor/raptorRepo.js";
 import { createLLMProvider } from "./llm/index.js";
 import { closeMongo, connectMongo } from "./mongo.js";
 import { initGraphExecutor, initRoutingConfig } from "./routing/index.js";
@@ -31,6 +33,12 @@ const __dirname = path.dirname(__filename);
 async function main() {
   const config = loadServerConfig();
 
+  // Log active model registry
+  const modelRegistry = getModelRegistry();
+  log.info("Model registry", {
+    models: Object.fromEntries(Object.entries(modelRegistry).map(([role, r]) => [role, r.model])),
+  });
+
   // Connect to MongoDB
   await connectMongo(config.mongoUri, config.mongoDb);
 
@@ -45,6 +53,9 @@ async function main() {
     await ensureKBIndexes();
     await ensureKBDocumentIndexes();
     log.info("Knowledge base subsystem initialized", { storagePath: kbStoragePath });
+
+    // Reset any RAPTOR builds that were in-progress when the server last stopped
+    await resetStaleBuildingStatuses();
   } catch (err: any) {
     log.warn("Failed to initialize knowledge base subsystem (non-fatal)", { error: err.message });
   }

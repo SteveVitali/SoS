@@ -3,6 +3,7 @@ import { createLogger } from "../shared/logger.js";
 import type { JobDoc } from "../shared/types.js";
 import { ensureConversationIndexes } from "./chat/conversationRepo.js";
 import { ensureRaptorIndexes } from "./kb/raptor/raptorRepo.js";
+import { initResearchSessionsCollection } from "./kb/research/auditRepo.js";
 
 const log = createLogger("server:mongo");
 
@@ -16,6 +17,7 @@ export async function connectMongo(uri: string, dbName: string): Promise<Db> {
   log.info("Connected to MongoDB", { db: dbName });
   await ensureIndexes(db);
   await ensureConversationIndexes();
+  await initResearchSessionsCollection(db);
   await ensureRaptorIndexes();
   return db;
 }
