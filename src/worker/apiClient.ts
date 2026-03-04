@@ -285,6 +285,61 @@ export class WorkerApiClient {
     }
   }
 
+  async researchKnowledgeBases(params: {
+    query: string;
+    scopes: string[];
+    strategy?: string;
+    consumer?: { type: string; id?: string };
+  }): Promise<{
+    context: string;
+    chunks: Array<{
+      content: string;
+      source_file: string;
+      kb_name: string;
+      score: number;
+      metadata: { section?: string; page?: number };
+    }>;
+    metrics: {
+      total_duration_ms: number;
+      iterations: number;
+      llm_calls: number;
+      retrieval_calls: number;
+      chunks_retrieved: number;
+      chunks_used: number;
+      prompt_tokens: number;
+      completion_tokens: number;
+      estimated_cost_usd: number;
+    };
+    session_id: string;
+  }> {
+    try {
+      return await this.request("POST", "/api/worker/kb/research", {
+        query: params.query,
+        scopes: params.scopes,
+        strategy: params.strategy || "deep",
+        consumer: params.consumer,
+      });
+    } catch (err: unknown) {
+      log.warn("KB research failed (non-fatal)", { error: (err as Error).message });
+      return {
+        context: "",
+        chunks: [],
+        metrics: {
+          total_duration_ms: 0,
+          iterations: 0,
+          llm_calls: 0,
+          retrieval_calls: 0,
+          chunks_retrieved: 0,
+          chunks_used: 0,
+          prompt_tokens: 0,
+          completion_tokens: 0,
+          estimated_cost_usd: 0,
+        },
+        session_id: "",
+      };
+    }
+  }
+
   // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   async fetchSlackThread(channelId: string, threadTs: string): Promise<any[]> {
     try {

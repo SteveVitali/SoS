@@ -15,6 +15,13 @@ import type {
 } from "../../shared/kbTypes.js";
 import { pathToBreadcrumb } from "../../shared/kbUtils.js";
 import { createLogger } from "../../shared/logger.js";
+import type {
+  ResearchConfig,
+  ResearchConsumer,
+  ResearchResult,
+  ResearchStrategy,
+  ResearchStreamEvent,
+} from "../../shared/researchTypes.js";
 import { getEmbeddingProvider } from "./embeddings.js";
 import { type IngestedFile, ingestFiles } from "./ingestion.js";
 import {
@@ -29,6 +36,8 @@ import {
   removeDocumentRecord,
   updateKB,
 } from "./kbRepo.js";
+import { runResearchPipeline } from "./research/pipeline.js";
+import { getStrategyConfig } from "./research/strategies.js";
 import {
   addToKBTable,
   countDocumentRows,
@@ -184,6 +193,8 @@ async function embedAndStoreFile(
     file_path: chunk.filePath,
     parent_dir: chunk.parentDir,
     created_at: new Date().toISOString(),
+    level: 0,
+    children_ids: "[]",
   }));
 
   await addToKBTable(kbId, records);
@@ -550,4 +561,27 @@ export async function searchSingleKB(
       parent_dir: r.parent_dir || undefined,
     },
   }));
+}
+
+/**
+ * Advanced research pipeline entry point.
+ * Runs a multi-stage RAG research pipeline with the given strategy.
+ */
+export async function researchKnowledgeBases(params: {
+  query: string;
+  scopes: KBScope[];
+  strategy?: ResearchStrategy;
+  config_overrides?: Partial<ResearchConfig>;
+  consumer?: ResearchConsumer;
+  owner?: string;
+  onEvent?: (event: ResearchStreamEvent) => void;
+}): Promise<ResearchResult> {
+  const strategy = params.strategy || "deep";
+  const config = getStrategyConfig(strategy, params.config_overrides);
+
+  return runResearchPipeline(params.query, params.scopes, config, {
+    owner: params.owner,
+    consumer: params.consumer,
+    onEvent: params.onEvent,
+  });
 }

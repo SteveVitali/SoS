@@ -53,6 +53,8 @@ export interface VectorRecord {
   file_path: string;
   parent_dir: string;
   created_at: string;
+  level: number; // 0 = raw chunk, 1+ = RAPTOR summary level
+  children_ids: string; // JSON-encoded string[] of child node IDs (empty for level 0)
 }
 
 export interface VectorSearchResult {
@@ -65,6 +67,8 @@ export interface VectorSearchResult {
   file_path: string;
   parent_dir: string;
   created_at: string;
+  level: number;
+  children_ids: string;
   _distance: number;
 }
 
@@ -140,6 +144,8 @@ export async function searchKBTable(
       "file_path",
       "parent_dir",
       "created_at",
+      "level",
+      "children_ids",
     ])
     .limit(limit)
     .toArray();
@@ -154,6 +160,8 @@ export async function searchKBTable(
     file_path: r.file_path || "",
     parent_dir: r.parent_dir || "",
     created_at: r.created_at || "",
+    level: r.level ?? 0,
+    children_ids: r.children_ids || "[]",
     _distance: r._distance ?? 1,
   }));
 }
