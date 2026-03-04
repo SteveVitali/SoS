@@ -383,6 +383,10 @@ export async function ingestIntoKBWithJob(
     }
   };
 
+  // Emit job_created BEFORE starting background processing so the client
+  // receives the job_id before any file progress events.
+  emit({ type: "job_created", job_id: job.job_id });
+
   // Fire-and-forget background processing
   const processFiles = async () => {
     const embeddingProvider = getEmbeddingProvider();

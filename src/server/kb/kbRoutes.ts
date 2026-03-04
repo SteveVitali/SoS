@@ -14,8 +14,6 @@ import {
   getDocumentChunks,
   getKBDocuments,
   getKnowledgeBase,
-  ingestIntoKB,
-  ingestIntoKBStreaming,
   ingestIntoKBWithJob,
   listKnowledgeBases,
   removeDocument,
@@ -244,16 +242,14 @@ export function createKBWebRoutes(): Router {
           closed = true;
         });
 
+        // ingestIntoKBWithJob emits job_created as its first event (before
+        // background processing starts) so the client gets the job_id first.
         const job = await ingestIntoKBWithJob(kbId, files, (event) => {
           if (closed) return;
           res.write(JSON.stringify(event) + "\n");
         });
 
-        // Write job_id as the first line so client can reconnect via polling
-        res.write(JSON.stringify({ type: "job_created", job_id: job.job_id }) + "\n");
-
-        // The background processing will close the stream via the "complete" event.
-        // We just need to wait for it. Poll the job until done.
+        // Poll the job until done so we can close the response.
         const waitForCompletion = async () => {
           const POLL_MS = 500;
           const MAX_WAIT = 10 * 60 * 1000; // 10 minutes

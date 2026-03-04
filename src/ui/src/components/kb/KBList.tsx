@@ -24,6 +24,23 @@ import {
   UploadProgressBadge,
 } from "./kbShared.js";
 
+const raptorActionBtnStyle: React.CSSProperties = {
+  background: "none",
+  border: "1px solid var(--border)",
+  borderRadius: "var(--radius)",
+  cursor: "pointer",
+  fontSize: 10,
+  padding: "1px 6px",
+  marginLeft: 2,
+};
+
+/** Convert an array of upload jobs to a kb_id → job map (most recent per KB). */
+function uploadsToMap(uploads: UploadJob[]): Record<string, UploadJob> {
+  const map: Record<string, UploadJob> = {};
+  for (const u of uploads) map[u.kb_id] = u;
+  return map;
+}
+
 function RaptorBadge({
   status,
   onBuild,
@@ -35,10 +52,10 @@ function RaptorBadge({
 }) {
   const isBuilding = building || !!status?.building;
 
-  if (isBuilding && status) {
-    const phase = status.phase || "Building";
+  if (isBuilding) {
+    const phase = status?.phase || "Starting";
     const pct =
-      status.clusters_total && status.clusters_total > 0
+      status?.clusters_total && status.clusters_total > 0
         ? Math.round(((status.clusters_completed ?? 0) / status.clusters_total) * 100)
         : null;
     return (
@@ -55,7 +72,7 @@ function RaptorBadge({
         <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span>
         <span>
           🌲 {phase}
-          {status.current_level != null && ` L${status.current_level}`}
+          {status?.current_level != null && ` L${status.current_level}`}
           {pct != null && ` — ${pct}%`}
         </span>
         {pct != null && (
@@ -107,16 +124,7 @@ function RaptorBadge({
         <button
           type="button"
           onClick={onBuild}
-          style={{
-            background: "none",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            color: "var(--fg2)",
-            cursor: "pointer",
-            fontSize: 10,
-            padding: "1px 6px",
-            marginLeft: 2,
-          }}
+          style={{ ...raptorActionBtnStyle, color: "var(--fg2)" }}
           title="Rebuild RAPTOR index"
         >
           Rebuild
@@ -142,16 +150,7 @@ function RaptorBadge({
         <button
           type="button"
           onClick={onBuild}
-          style={{
-            background: "none",
-            border: "1px solid var(--border)",
-            borderRadius: "var(--radius)",
-            color: "var(--fg2)",
-            cursor: "pointer",
-            fontSize: 10,
-            padding: "1px 6px",
-            marginLeft: 2,
-          }}
+          style={{ ...raptorActionBtnStyle, color: "var(--fg2)" }}
           title="Retry RAPTOR build"
         >
           Retry
@@ -177,16 +176,7 @@ function RaptorBadge({
       <button
         type="button"
         onClick={onBuild}
-        style={{
-          background: "none",
-          border: "1px solid var(--border)",
-          borderRadius: "var(--radius)",
-          color: "var(--accent)",
-          cursor: "pointer",
-          fontSize: 10,
-          padding: "1px 6px",
-          marginLeft: 2,
-        }}
+        style={{ ...raptorActionBtnStyle, color: "var(--accent)" }}
         title="Build RAPTOR index"
       >
         Build
@@ -248,9 +238,7 @@ export function KBList() {
       // Also refresh upload statuses
       try {
         const { uploads } = await getAllActiveUploads();
-        const map: Record<string, UploadJob> = {};
-        for (const u of uploads) map[u.kb_id] = u;
-        setActiveUploads(map);
+        setActiveUploads(uploadsToMap(uploads));
       } catch {
         // non-critical
       }
@@ -261,11 +249,7 @@ export function KBList() {
   // Fetch active uploads on mount
   useEffect(() => {
     getAllActiveUploads()
-      .then(({ uploads }) => {
-        const map: Record<string, UploadJob> = {};
-        for (const u of uploads) map[u.kb_id] = u;
-        setActiveUploads(map);
-      })
+      .then(({ uploads }) => setActiveUploads(uploadsToMap(uploads)))
       .catch(() => {});
   }, []);
 
