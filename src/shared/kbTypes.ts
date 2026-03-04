@@ -89,3 +89,12 @@ export interface KBSearchWithRoutingResult {
     probes: KBProbeResult[];
   };
 }
+
+/**
+ * Convert a file path like "docs/api/auth.md" into a breadcrumb like "docs > api > auth.md".
+ * Falls back to source_file if file_path is not available.
+ */
+export function formatPathBreadcrumb(result: KBSearchResult): string {
+  const path = result.metadata.file_path || result.source_file;
+  return path.replace(/[/]/g, " > ");
+}

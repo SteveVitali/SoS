@@ -16,7 +16,11 @@
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import type { KBScope, KBSearchResult } from "../../../shared/kbTypes.js";
+import {
+  formatPathBreadcrumb,
+  type KBScope,
+  type KBSearchResult,
+} from "../../../shared/kbTypes.js";
 import { createLogger } from "../../../shared/logger.js";
 import { searchKnowledgeBases } from "../../kb/kbService.js";
 import type { LLMProvider } from "../../llm/llmProvider.js";
@@ -31,8 +35,7 @@ const log = createLogger("server:routing:graphs:corrective-rag");
 function formatChunksForLLM(chunks: KBSearchResult[]): string {
   return chunks
     .map((c, i) => {
-      const path = c.metadata.file_path || c.source_file;
-      const breadcrumb = path.replace(/[/]/g, " > ");
+      const breadcrumb = formatPathBreadcrumb(c);
       const sectionSuffix = c.metadata.section ? ` > ${c.metadata.section}` : "";
       return `[${i + 1}] (${c.kb_name} > ${breadcrumb}${sectionSuffix}, score: ${c.score.toFixed(2)})\n${c.content}`;
     })

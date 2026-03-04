@@ -1,4 +1,4 @@
-import type { KBScope, KBSearchResult } from "../../shared/kbTypes.js";
+import { formatPathBreadcrumb, type KBScope, type KBSearchResult } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
 import { queryJobs } from "../jobs/jobService.js";
@@ -119,8 +119,7 @@ async function buildKBContext(userMessage: string, scopes: KBScope[]): Promise<s
     const entries: string[] = [];
 
     for (const r of results) {
-      const path = r.metadata.file_path || r.source_file;
-      const breadcrumb = path.replace(/[/]/g, " > ");
+      const breadcrumb = formatPathBreadcrumb(r);
       const sectionSuffix = r.metadata.section ? ` > ${r.metadata.section}` : "";
       const entry = `[${r.kb_name} > ${breadcrumb}${sectionSuffix}] (score: ${r.score.toFixed(2)}):\n${r.content}`;
       if (totalChars + entry.length > maxChars) break;
