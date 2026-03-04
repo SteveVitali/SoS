@@ -16,11 +16,8 @@
  */
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
-import {
-  formatPathBreadcrumb,
-  type KBScope,
-  type KBSearchResult,
-} from "../../../shared/kbTypes.js";
+import type { KBScope, KBSearchResult } from "../../../shared/kbTypes.js";
+import { formatPathBreadcrumb } from "../../../shared/kbUtils.js";
 import { createLogger } from "../../../shared/logger.js";
 import { searchKnowledgeBases } from "../../kb/kbService.js";
 import type { LLMProvider } from "../../llm/llmProvider.js";

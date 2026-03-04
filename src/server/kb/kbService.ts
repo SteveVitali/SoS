@@ -12,6 +12,7 @@ import type {
   KBSearchWithRoutingResult,
   KnowledgeBase,
 } from "../../shared/kbTypes.js";
+import { pathToBreadcrumb } from "../../shared/kbUtils.js";
 import { createLogger } from "../../shared/logger.js";
 import { getEmbeddingProvider } from "./embeddings.js";
 import { ingestFiles } from "./ingestion.js";
@@ -167,7 +168,9 @@ export async function ingestIntoKB(
 
   for (const file of ingestionResult.files) {
     for (const chunk of file.chunks) {
+      // || for filePath: empty string is not a meaningful path, so fall through
       const filePath = chunk.metadata.file_path || file.filePath || file.name;
+      // ?? for parentDir: empty string is valid (means file is at root level)
       const parentDir =
         chunk.metadata.parent_dir ?? (dirname(filePath) === "." ? "" : dirname(filePath));
       allChunks.push({
@@ -185,7 +188,7 @@ export async function ingestIntoKB(
   // Prepending the hierarchy path and section improves vector similarity
   // for queries that reference the document structure ("contextual chunking").
   const enrichedTexts = allChunks.map((c) => {
-    const pathBreadcrumb = c.filePath.replace(/[/]/g, " > ");
+    const pathBreadcrumb = pathToBreadcrumb(c.filePath);
     const lines: string[] = [`Source: ${pathBreadcrumb}`];
     if (c.section) lines.push(`Section: ${c.section}`);
     lines.push("", c.content);

@@ -1,4 +1,5 @@
-import { formatPathBreadcrumb, type KBScope, type KBSearchResult } from "../../shared/kbTypes.js";
+import type { KBScope, KBSearchResult } from "../../shared/kbTypes.js";
+import { formatPathBreadcrumb } from "../../shared/kbUtils.js";
 import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
 import { queryJobs } from "../jobs/jobService.js";
