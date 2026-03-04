@@ -286,6 +286,41 @@ export async function reloadRoutingConfig(): Promise<{ ok: boolean }> {
   return request("POST", "/routing-config/reload");
 }
 
+// --- Model Config ---
+
+export interface ModelRoleInfo {
+  model: string;
+  description: string;
+  envVar: string;
+  default: string;
+  fileOverride?: string;
+  envOverride?: string;
+  source: "default" | "file" | "env";
+}
+
+export interface ModelConfigResponse {
+  models: Record<string, ModelRoleInfo>;
+  overrides: Record<string, string>;
+  path: string;
+}
+
+export async function getModelConfig(): Promise<ModelConfigResponse> {
+  return request("GET", "/model-config");
+}
+
+export async function saveModelConfig(
+  overrides: Record<string, string>,
+): Promise<{ ok: boolean; models: Record<string, ModelRoleInfo> }> {
+  return request("PUT", "/model-config", { overrides });
+}
+
+export async function reloadModelConfig(): Promise<{
+  ok: boolean;
+  models: Record<string, ModelRoleInfo>;
+}> {
+  return request("POST", "/model-config/reload");
+}
+
 export interface WorktreeSlotStatus {
   slotName: string;
   inUse: boolean;

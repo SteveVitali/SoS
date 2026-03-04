@@ -3,7 +3,13 @@ import path from "node:path";
 import { type Request, type Response, Router } from "express";
 import { parse as parseYaml, stringify as stringifyYaml } from "yaml";
 import { createLogger } from "../../shared/logger.js";
-import { getModelRegistry } from "../../shared/modelConfig.js";
+import {
+  getModelConfigPath,
+  getModelConfigRaw,
+  getModelRegistry,
+  reloadModelConfig,
+  saveModelConfig,
+} from "../../shared/modelConfig.js";
 import type { ServerConfig } from "../config.js";
 import {
   CreateAddReviewCommentsSchema,
@@ -639,6 +645,55 @@ export function createWebRoutes(config: ServerConfig): Router {
   router.get("/models", (_req: Request, res: Response) => {
     const registry = getModelRegistry();
     res.json({ models: registry });
+  });
+
+  // --- Model Config (YAML file overrides) ---
+
+  // GET /api/web/model-config — read model-config.yaml overrides + resolved registry
+  router.get("/model-config", (_req: Request, res: Response) => {
+    try {
+      const configPath = getModelConfigPath();
+      const registry = getModelRegistry();
+      const overrides = getModelConfigRaw();
+      res.json({ models: registry, overrides, path: configPath || "" });
+    } catch (err: unknown) {
+      log.error("Read model config error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // PUT /api/web/model-config — write overrides to model-config.yaml
+  router.put("/model-config", (req: Request, res: Response) => {
+    try {
+      const configPath = getModelConfigPath();
+      if (!configPath) {
+        res.status(501).json({ error: "Model config not initialized" });
+        return;
+      }
+      const overrides = req.body?.overrides;
+      if (!overrides || typeof overrides !== "object") {
+        res.status(400).json({ error: "Missing or invalid overrides object in body" });
+        return;
+      }
+      saveModelConfig(overrides);
+      const registry = getModelRegistry();
+      res.json({ ok: true, models: registry });
+    } catch (err: unknown) {
+      log.error("Write model config error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
+    }
+  });
+
+  // POST /api/web/model-config/reload — force reload from disk
+  router.post("/model-config/reload", (_req: Request, res: Response) => {
+    try {
+      reloadModelConfig();
+      const registry = getModelRegistry();
+      res.json({ ok: true, models: registry });
+    } catch (err: unknown) {
+      log.error("Reload model config error", { error: (err as Error).message });
+      res.status(500).json({ error: (err as Error).message });
+    }
   });
 
   // --- Routing Config ---
