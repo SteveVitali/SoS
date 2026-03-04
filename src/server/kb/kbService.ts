@@ -5,6 +5,7 @@
 import { dirname } from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import type {
+  IngestProgressEvent,
   KBProbeResult,
   KBScope,
   KBSearchRequest,
@@ -253,6 +254,147 @@ export async function ingestIntoKB(
     chunks_added: records.length,
     skipped: ingestionResult.skipped,
     errors: ingestionResult.errors,
+  };
+}
+
+/**
+ * Streaming variant of ingestIntoKB — processes files one at a time and
+ * yields NDJSON-friendly progress events so the client can show real-time
+ * per-file progress.
+ */
+export async function* ingestIntoKBStreaming(
+  kbId: string,
+  files: Array<{ filename: string; buffer: Buffer }>,
+): AsyncGenerator<IngestProgressEvent> {
+  const kb = await findKB(kbId);
+  if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
+
+  const embeddingProvider = getEmbeddingProvider();
+  const options = { chunkSize: kb.chunk_size, chunkOverlap: kb.chunk_overlap };
+
+  let totalDocsAdded = 0;
+  let totalChunksAdded = 0;
+  const allSkipped: string[] = [];
+  const allErrors: Array<{ file: string; error: string }> = [];
+
+  yield { type: "start", total_uploads: files.length };
+
+  for (const file of files) {
+    yield { type: "file_start", file: file.filename };
+
+    try {
+      // Process single uploaded file (may expand to multiple docs if archive)
+      const ingestionResult = await ingestFiles([file], options);
+
+      allSkipped.push(...ingestionResult.skipped);
+      allErrors.push(...ingestionResult.errors);
+
+      // Report per-error from archive extraction etc.
+      for (const err of ingestionResult.errors) {
+        yield { type: "file_error", file: err.file, error: err.error };
+      }
+      for (const skipped of ingestionResult.skipped) {
+        yield { type: "file_skip", file: skipped, reason: "unsupported or empty" };
+      }
+
+      if (ingestionResult.files.length === 0) {
+        if (ingestionResult.errors.length === 0) {
+          yield { type: "file_skip", file: file.filename, reason: "no extractable content" };
+        }
+        continue;
+      }
+
+      // Process each ingested document through the embed → store → record pipeline
+      for (const ingestedFile of ingestionResult.files) {
+        const fileChunks: Array<{
+          content: string;
+          sourceFile: string;
+          section?: string;
+          page?: number;
+          filePath: string;
+          parentDir: string;
+        }> = [];
+
+        for (const chunk of ingestedFile.chunks) {
+          const filePath = chunk.metadata.file_path || ingestedFile.filePath || ingestedFile.name;
+          const parentDir =
+            chunk.metadata.parent_dir ?? (dirname(filePath) === "." ? "" : dirname(filePath));
+          fileChunks.push({
+            content: chunk.content,
+            sourceFile: ingestedFile.name,
+            section: chunk.metadata.section,
+            page: chunk.metadata.page,
+            filePath,
+            parentDir,
+          });
+        }
+
+        // Build breadcrumb-enriched content for embedding
+        const enrichedTexts = fileChunks.map((c) => {
+          const pathBreadcrumb = pathToBreadcrumb(c.filePath);
+          const lines: string[] = [`Source: ${pathBreadcrumb}`];
+          if (c.section) lines.push(`Section: ${c.section}`);
+          lines.push("", c.content);
+          return lines.join("\n");
+        });
+
+        // Embed
+        const embeddings = await embeddingProvider.embed(enrichedTexts);
+
+        // Build vector records
+        const records: VectorRecord[] = fileChunks.map((chunk, i) => ({
+          id: uuidv4(),
+          kb_id: kbId,
+          source_file: chunk.sourceFile,
+          content: enrichedTexts[i],
+          vector: embeddings[i],
+          section: chunk.section || "",
+          page: chunk.page || 0,
+          file_path: chunk.filePath,
+          parent_dir: chunk.parentDir,
+          created_at: new Date().toISOString(),
+        }));
+
+        // Store in LanceDB
+        await addToKBTable(kbId, records);
+
+        // Update MongoDB metadata
+        await addDocumentRecord(kbId, {
+          name: ingestedFile.name,
+          size_bytes: ingestedFile.sizeBytes,
+          chunk_count: ingestedFile.chunks.length,
+          ingested_at: new Date(),
+        });
+
+        await incrementKBStats(kbId, {
+          chunk_count: records.length,
+          document_count: 1,
+          total_size_bytes: ingestedFile.sizeBytes,
+        });
+
+        totalDocsAdded++;
+        totalChunksAdded += records.length;
+
+        yield { type: "file_done", file: ingestedFile.name, chunks: records.length };
+      }
+    } catch (err: any) {
+      allErrors.push({ file: file.filename, error: err.message });
+      yield { type: "file_error", file: file.filename, error: err.message };
+    }
+  }
+
+  log.info("Streaming ingestion complete", {
+    kbId,
+    documents: totalDocsAdded,
+    chunks: totalChunksAdded,
+  });
+
+  yield {
+    type: "complete",
+    documents_added: totalDocsAdded,
+    chunks_added: totalChunksAdded,
+    skipped: allSkipped,
+    errors: allErrors,
   };
 }
 

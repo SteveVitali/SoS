@@ -4,6 +4,7 @@ import {
   type ChunkRecord,
   deleteKBDocument,
   getKB,
+  type IngestProgressEvent,
   ingestKBFiles,
   type KBDocument,
   type KBScope,
@@ -23,9 +24,11 @@ export function KBDetail() {
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState("");
   const [ingesting, setIngesting] = useState(false);
-  const [ingestResult, setIngestResult] = useState<string>("");
+  const [progressEvents, setProgressEvents] = useState<IngestProgressEvent[]>([]);
   const fileInputRef = useRef<HTMLInputElement>(null);
   const folderInputRef = useRef<HTMLInputElement>(null);
+  const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
+  const uploadMenuRef = useRef<HTMLDivElement>(null);
 
   // Chunk exploration state
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
@@ -115,18 +118,27 @@ export function KBDetail() {
     }
   };
 
+  // Close upload menu on outside click
+  useEffect(() => {
+    if (!uploadMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (uploadMenuRef.current && !uploadMenuRef.current.contains(e.target as Node)) {
+        setUploadMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [uploadMenuOpen]);
+
   const ingestFileList = async (files: File[]) => {
     if (files.length === 0 || !kb) return;
     setIngesting(true);
-    setIngestResult("");
+    setProgressEvents([]);
     setError("");
     try {
-      const result = await ingestKBFiles(kb.kb_id, files);
-      setIngestResult(
-        `Added ${result.documents_added} docs, ${result.chunks_added} chunks` +
-          (result.skipped.length ? `. Skipped: ${result.skipped.length}` : "") +
-          (result.errors.length ? `. Errors: ${result.errors.length}` : ""),
-      );
+      await ingestKBFiles(kb.kb_id, files, (event) => {
+        setProgressEvents((prev) => [...prev, event]);
+      });
       await refresh();
     } catch (err: any) {
       setError(err.message);
@@ -140,6 +152,7 @@ export function KBDetail() {
   const handleIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
     const files = e.target.files;
     if (!files) return;
+    setUploadMenuOpen(false);
     await ingestFileList(Array.from(files));
   };
 
@@ -349,41 +362,162 @@ export function KBDetail() {
 
       {/* Upload section */}
       <div style={css.card}>
-        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Upload Files</h3>
+        <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Upload</h3>
         <p style={{ fontSize: 13, color: "var(--fg2)", marginBottom: 12 }}>
-          Upload text files, PDFs, archives (.zip, .tar.gz), or entire folders. Archives and folders
-          are auto-expanded and the directory hierarchy is preserved.
+          Text files, PDFs, archives (.zip, .tar.gz), or entire folders. Archives and folders are
+          auto-expanded and the directory hierarchy is preserved.
         </p>
-        <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
-          <input
-            ref={fileInputRef}
-            type="file"
-            multiple
-            onChange={handleIngest}
-            disabled={ingesting}
-            style={{ fontSize: 13 }}
-          />
-          <input
-            ref={folderInputRef}
-            type="file"
-            /* @ts-expect-error webkitdirectory is non-standard but widely supported */
-            webkitdirectory=""
-            onChange={handleIngest}
-            disabled={ingesting}
-            style={{ display: "none" }}
-          />
+
+        {/* Hidden file inputs */}
+        <input
+          ref={fileInputRef}
+          type="file"
+          multiple
+          onChange={handleIngest}
+          disabled={ingesting}
+          style={{ display: "none" }}
+        />
+        <input
+          ref={folderInputRef}
+          type="file"
+          /* @ts-expect-error webkitdirectory is non-standard but widely supported */
+          webkitdirectory=""
+          onChange={handleIngest}
+          disabled={ingesting}
+          style={{ display: "none" }}
+        />
+
+        {/* Unified upload dropdown button */}
+        <div ref={uploadMenuRef} style={{ position: "relative", display: "inline-block" }}>
           <button
             type="button"
             style={css.btn}
             disabled={ingesting}
-            onClick={() => folderInputRef.current?.click()}
+            onClick={() => setUploadMenuOpen((v) => !v)}
           >
-            Upload Folder
+            {ingesting ? "Uploading…" : "Upload ▾"}
           </button>
-          {ingesting && <span style={{ fontSize: 13, color: "var(--fg2)" }}>Ingesting...</span>}
+          {uploadMenuOpen && (
+            <div
+              style={{
+                position: "absolute",
+                top: "calc(100% + 4px)",
+                left: 0,
+                background: "var(--bg2)",
+                border: "1px solid var(--border)",
+                borderRadius: "var(--radius)",
+                boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+                zIndex: 10,
+                minWidth: 160,
+                overflow: "hidden",
+              }}
+            >
+              {(["Files", "Folder"] as const).map((label) => (
+                <button
+                  key={label}
+                  type="button"
+                  onClick={() =>
+                    label === "Files"
+                      ? fileInputRef.current?.click()
+                      : folderInputRef.current?.click()
+                  }
+                  style={{
+                    display: "block",
+                    width: "100%",
+                    padding: "8px 14px",
+                    background: "none",
+                    border: "none",
+                    color: "var(--fg)",
+                    fontSize: 13,
+                    textAlign: "left",
+                    cursor: "pointer",
+                  }}
+                  onMouseEnter={(e) =>
+                    ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg)")
+                  }
+                  onMouseLeave={(e) =>
+                    ((e.currentTarget as HTMLButtonElement).style.background = "none")
+                  }
+                >
+                  {label === "Files" ? "Select Files" : "Select Folder"}
+                </button>
+              ))}
+            </div>
+          )}
         </div>
-        {ingestResult && (
-          <div style={{ marginTop: 8, fontSize: 13, color: "var(--green)" }}>{ingestResult}</div>
+
+        {/* Real-time progress log */}
+        {progressEvents.length > 0 && (
+          <div
+            style={{
+              marginTop: 12,
+              border: "1px solid var(--border)",
+              borderRadius: "var(--radius)",
+              maxHeight: 220,
+              overflowY: "auto",
+              fontSize: 12,
+              fontFamily: "monospace",
+              background: "var(--bg)",
+            }}
+          >
+            {progressEvents.map((ev, i) => {
+              let icon = "";
+              let color = "var(--fg2)";
+              let text = "";
+              switch (ev.type) {
+                case "start":
+                  icon = "◦";
+                  text = `Starting ingestion (${ev.total_uploads} upload${ev.total_uploads !== 1 ? "s" : ""})`;
+                  break;
+                case "file_start":
+                  icon = "⟳";
+                  color = "var(--accent)";
+                  text = ev.file;
+                  break;
+                case "file_done":
+                  icon = "✓";
+                  color = "var(--green)";
+                  text = `${ev.file}  (${ev.chunks} chunk${ev.chunks !== 1 ? "s" : ""})`;
+                  break;
+                case "file_skip":
+                  icon = "–";
+                  text = `${ev.file}  (${ev.reason})`;
+                  break;
+                case "file_error":
+                  icon = "✗";
+                  color = "var(--red)";
+                  text = `${ev.file}: ${ev.error}`;
+                  break;
+                case "complete":
+                  icon = "●";
+                  color = "var(--green)";
+                  text =
+                    `Done — ${ev.documents_added} doc${ev.documents_added !== 1 ? "s" : ""}, ${ev.chunks_added} chunk${ev.chunks_added !== 1 ? "s" : ""}` +
+                    (ev.skipped.length ? `, ${ev.skipped.length} skipped` : "") +
+                    (ev.errors.length
+                      ? `, ${ev.errors.length} error${ev.errors.length !== 1 ? "s" : ""}`
+                      : "");
+                  break;
+              }
+              return (
+                <div
+                  key={i}
+                  style={{
+                    padding: "4px 10px",
+                    color,
+                    borderBottom:
+                      i < progressEvents.length - 1 ? "1px solid var(--border)" : "none",
+                    whiteSpace: "nowrap",
+                    overflow: "hidden",
+                    textOverflow: "ellipsis",
+                  }}
+                >
+                  <span style={{ marginRight: 6 }}>{icon}</span>
+                  {text}
+                </div>
+              );
+            })}
+          </div>
         )}
       </div>
 

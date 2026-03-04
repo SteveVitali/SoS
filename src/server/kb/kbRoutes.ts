@@ -14,6 +14,7 @@ import {
   getKBDocuments,
   getKnowledgeBase,
   ingestIntoKB,
+  ingestIntoKBStreaming,
   listKnowledgeBases,
   removeDocument,
   searchKnowledgeBases,
@@ -187,6 +188,8 @@ export function createKBWebRoutes(): Router {
   });
 
   // POST /api/web/kb/:id/ingest — upload and ingest files
+  // Streams NDJSON progress events when Accept: text/x-ndjson is requested;
+  // otherwise falls back to the original JSON response.
   router.post("/:id/ingest", upload.array("files", 500), async (req: Request, res: Response) => {
     try {
       const kbId = pstr(req.params.id);
@@ -207,11 +210,34 @@ export function createKBWebRoutes(): Router {
         buffer: f.buffer,
       }));
 
-      const result = await ingestIntoKB(kbId, files);
-      res.json(result);
+      const wantsStream = req.headers.accept?.includes("text/x-ndjson");
+
+      if (wantsStream) {
+        res.setHeader("Content-Type", "text/x-ndjson; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering
+        res.flushHeaders();
+
+        for await (const event of ingestIntoKBStreaming(kbId, files)) {
+          res.write(JSON.stringify(event) + "\n");
+        }
+        res.end();
+      } else {
+        // Legacy non-streaming fallback
+        const result = await ingestIntoKB(kbId, files);
+        res.json(result);
+      }
     } catch (err: any) {
       log.error("Ingest error", { error: err.message });
-      res.status(500).json({ error: err.message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      } else {
+        // Stream already started — write error event and close
+        res.write(
+          JSON.stringify({ type: "file_error", file: "_fatal", error: err.message }) + "\n",
+        );
+        res.end();
+      }
     }
   });
 

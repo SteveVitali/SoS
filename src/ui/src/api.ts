@@ -542,15 +542,29 @@ export async function deleteKB(id: string): Promise<{ ok: boolean }> {
   return request("DELETE", `/kb/${id}`);
 }
 
+export type IngestProgressEvent =
+  | { type: "start"; total_uploads: number }
+  | { type: "file_start"; file: string }
+  | { type: "file_done"; file: string; chunks: number }
+  | { type: "file_skip"; file: string; reason: string }
+  | { type: "file_error"; file: string; error: string }
+  | {
+      type: "complete";
+      documents_added: number;
+      chunks_added: number;
+      skipped: string[];
+      errors: Array<{ file: string; error: string }>;
+    };
+
+/**
+ * Upload and ingest files into a KB, streaming NDJSON progress events.
+ * Calls `onProgress` for each event; resolves with the final "complete" event.
+ */
 export async function ingestKBFiles(
   kbId: string,
   files: File[],
-): Promise<{
-  documents_added: number;
-  chunks_added: number;
-  skipped: string[];
-  errors: Array<{ file: string; error: string }>;
-}> {
+  onProgress?: (event: IngestProgressEvent) => void,
+): Promise<Extract<IngestProgressEvent, { type: "complete" }>> {
   const token = localStorage.getItem("sos_token") || "";
   const formData = new FormData();
   for (const file of files) {
@@ -562,14 +576,49 @@ export async function ingestKBFiles(
   }
   const res = await fetch(`${BASE}/kb/${kbId}/ingest`, {
     method: "POST",
-    headers: { ...(token ? { Authorization: `Bearer ${token}` } : {}) },
+    headers: {
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: "text/x-ndjson",
+    },
     body: formData,
   });
   if (!res.ok) {
     const text = await res.text().catch(() => "");
     throw new Error(`${res.status}: ${text}`);
   }
-  return res.json();
+
+  // Read the NDJSON stream line by line
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let completeEvent: Extract<IngestProgressEvent, { type: "complete" }> | null = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    // Process complete lines
+    for (;;) {
+      const newlineIdx = buffer.indexOf("\n");
+      if (newlineIdx === -1) break;
+      const line = buffer.slice(0, newlineIdx).trim();
+      buffer = buffer.slice(newlineIdx + 1);
+      if (!line) continue;
+      try {
+        const event: IngestProgressEvent = JSON.parse(line);
+        if (event.type === "complete") completeEvent = event;
+        onProgress?.(event);
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+
+  if (!completeEvent) {
+    throw new Error("Ingestion stream ended without a complete event");
+  }
+  return completeEvent;
 }
 
 export async function searchKB(
