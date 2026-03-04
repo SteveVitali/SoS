@@ -12,6 +12,7 @@ import type {
   KBSearchResult,
   KBSearchWithRoutingResult,
   KnowledgeBase,
+  UploadJob,
 } from "../../shared/kbTypes.js";
 import { pathToBreadcrumb } from "../../shared/kbUtils.js";
 import { createLogger } from "../../shared/logger.js";
@@ -38,6 +39,13 @@ import {
 } from "./kbRepo.js";
 import { runResearchPipeline } from "./research/pipeline.js";
 import { getStrategyConfig } from "./research/strategies.js";
+import {
+  completeUploadJob,
+  createUploadJob,
+  deleteUploadJobsForKB,
+  failUploadJob,
+  updateUploadFileStatus,
+} from "./uploadRepo.js";
 import {
   addToKBTable,
   countDocumentRows,
@@ -344,6 +352,138 @@ export async function* ingestIntoKBStreaming(
 }
 
 /**
+ * Job-based ingestion — creates a durable upload job in MongoDB, processes
+ * files in the background, and updates per-file status as processing proceeds.
+ *
+ * Returns the UploadJob immediately. The caller can optionally pass an
+ * `onEvent` callback for real-time NDJSON streaming (used when the client
+ * stays connected). Processing continues even if the callback is removed
+ * (e.g. client disconnects).
+ */
+export async function ingestIntoKBWithJob(
+  kbId: string,
+  files: Array<{ filename: string; buffer: Buffer }>,
+  onEvent?: (event: IngestProgressEvent) => void,
+): Promise<UploadJob> {
+  const kb = await findKB(kbId);
+  if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
+
+  const fileNames = files.map((f) => f.filename);
+  const job = await createUploadJob(kbId, fileNames);
+
+  // Mutable ref so we can nullify it when the client disconnects
+  let eventCb: ((event: IngestProgressEvent) => void) | null = onEvent ?? null;
+
+  const emit = (event: IngestProgressEvent) => {
+    try {
+      eventCb?.(event);
+    } catch {
+      // Client disconnected — stop emitting but keep processing
+      eventCb = null;
+    }
+  };
+
+  // Fire-and-forget background processing
+  const processFiles = async () => {
+    const embeddingProvider = getEmbeddingProvider();
+    const options = { chunkSize: kb.chunk_size, chunkOverlap: kb.chunk_overlap };
+
+    let totalDocsAdded = 0;
+    let totalChunksAdded = 0;
+    let totalSkipped = 0;
+    let totalErrors = 0;
+
+    emit({ type: "start", total_uploads: files.length });
+
+    for (const file of files) {
+      emit({ type: "file_start", file: file.filename });
+      await updateUploadFileStatus(job.job_id, file.filename, "processing");
+
+      try {
+        const ingestionResult = await ingestFiles([file], options);
+
+        for (const err of ingestionResult.errors) {
+          emit({ type: "file_error", file: err.file, error: err.error });
+          await updateUploadFileStatus(job.job_id, err.file, "error", { error: err.error });
+          totalErrors++;
+        }
+        for (const skipped of ingestionResult.skipped) {
+          const reason = "unsupported or empty";
+          emit({ type: "file_skip", file: skipped, reason });
+          await updateUploadFileStatus(job.job_id, skipped, "skipped", { skip_reason: reason });
+          totalSkipped++;
+        }
+
+        if (ingestionResult.files.length === 0) {
+          if (ingestionResult.errors.length === 0 && ingestionResult.skipped.length === 0) {
+            const reason = "no extractable content";
+            emit({ type: "file_skip", file: file.filename, reason });
+            await updateUploadFileStatus(job.job_id, file.filename, "skipped", {
+              skip_reason: reason,
+            });
+            totalSkipped++;
+          }
+          continue;
+        }
+
+        for (const ingestedFile of ingestionResult.files) {
+          const chunkCount = await embedAndStoreFile(kbId, ingestedFile, embeddingProvider);
+          totalDocsAdded++;
+          totalChunksAdded += chunkCount;
+          emit({ type: "file_done", file: ingestedFile.name, chunks: chunkCount });
+          await updateUploadFileStatus(job.job_id, ingestedFile.name, "done", {
+            chunks: chunkCount,
+          });
+        }
+      } catch (err: any) {
+        totalErrors++;
+        emit({ type: "file_error", file: file.filename, error: err.message });
+        await updateUploadFileStatus(job.job_id, file.filename, "error", {
+          error: err.message,
+        });
+      }
+    }
+
+    emit({
+      type: "complete",
+      documents_added: totalDocsAdded,
+      chunks_added: totalChunksAdded,
+      skipped: [],
+      errors: [],
+    });
+
+    await completeUploadJob(job.job_id, {
+      documents_added: totalDocsAdded,
+      chunks_added: totalChunksAdded,
+      skipped: totalSkipped,
+      errors: totalErrors,
+    });
+
+    log.info("Job-based ingestion complete", {
+      job_id: job.job_id,
+      kbId,
+      documents: totalDocsAdded,
+      chunks: totalChunksAdded,
+    });
+  };
+
+  // Start processing in background — don't await
+  processFiles().catch(async (err) => {
+    log.error("Upload job failed fatally", { job_id: job.job_id, error: err.message });
+    await failUploadJob(job.job_id, err.message).catch(() => {});
+  });
+
+  return job;
+}
+
+/**
+ * Detach the NDJSON event callback from a running upload job.
+ * Called when the streaming response closes (client navigates away).
+ * This is a no-op — the background processing continues regardless.
+ * The function signature is kept for documentation clarity.
+ */
+
+/**
  * Remove a document from a knowledge base.
  */
 export async function removeDocument(kbId: string, docName: string): Promise<boolean> {
@@ -379,6 +519,9 @@ export async function removeDocument(kbId: string, docName: string): Promise<boo
 export async function deleteKnowledgeBase(kbId: string): Promise<boolean> {
   // Drop the vector table
   await dropKBTable(kbId);
+
+  // Clean up upload jobs
+  await deleteUploadJobsForKB(kbId);
 
   // Delete from MongoDB
   return deleteKB(kbId);

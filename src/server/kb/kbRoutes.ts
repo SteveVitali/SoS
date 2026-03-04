@@ -16,6 +16,7 @@ import {
   getKnowledgeBase,
   ingestIntoKB,
   ingestIntoKBStreaming,
+  ingestIntoKBWithJob,
   listKnowledgeBases,
   removeDocument,
   researchKnowledgeBases,
@@ -27,6 +28,12 @@ import {
 import { getBatchRaptorStatus, getRaptorStatus } from "./raptor/raptorRepo.js";
 import { buildRaptorTree } from "./raptor/treeBuilder.js";
 import { findResearchSession, listResearchSessions } from "./research/auditRepo.js";
+import {
+  getActiveUploadsForKB,
+  getAllActiveUploads,
+  getRecentUploadsForKB,
+  getUploadJob,
+} from "./uploadRepo.js";
 import { listRaptorNodes } from "./vectorStore.js";
 
 const log = createLogger("server:kb:routes");
@@ -199,8 +206,9 @@ export function createKBWebRoutes(): Router {
   });
 
   // POST /api/web/kb/:id/ingest — upload and ingest files
+  // Creates a durable upload job and processes files in the background.
   // Streams NDJSON progress events when Accept: text/x-ndjson is requested;
-  // otherwise falls back to the original JSON response.
+  // otherwise returns the job immediately.
   router.post("/:id/ingest", upload.array("files", 500), async (req: Request, res: Response) => {
     try {
       const kbId = pstr(req.params.id);
@@ -224,31 +232,101 @@ export function createKBWebRoutes(): Router {
       const wantsStream = req.headers.accept?.includes("text/x-ndjson");
 
       if (wantsStream) {
+        // Stream NDJSON events while also persisting job state in MongoDB.
+        // If the client disconnects, background processing continues.
         res.setHeader("Content-Type", "text/x-ndjson; charset=utf-8");
         res.setHeader("Cache-Control", "no-cache");
         res.setHeader("X-Accel-Buffering", "no"); // disable nginx buffering
         res.flushHeaders();
 
-        for await (const event of ingestIntoKBStreaming(kbId, files)) {
+        let closed = false;
+        res.on("close", () => {
+          closed = true;
+        });
+
+        const job = await ingestIntoKBWithJob(kbId, files, (event) => {
+          if (closed) return;
           res.write(JSON.stringify(event) + "\n");
-        }
-        res.end();
+        });
+
+        // Write job_id as the first line so client can reconnect via polling
+        res.write(JSON.stringify({ type: "job_created", job_id: job.job_id }) + "\n");
+
+        // The background processing will close the stream via the "complete" event.
+        // We just need to wait for it. Poll the job until done.
+        const waitForCompletion = async () => {
+          const POLL_MS = 500;
+          const MAX_WAIT = 10 * 60 * 1000; // 10 minutes
+          const start = Date.now();
+          while (!closed && Date.now() - start < MAX_WAIT) {
+            const current = await getUploadJob(job.job_id);
+            if (!current || current.status !== "processing") break;
+            await new Promise((r) => setTimeout(r, POLL_MS));
+          }
+          if (!closed) res.end();
+        };
+
+        waitForCompletion().catch(() => {
+          if (!closed) res.end();
+        });
       } else {
-        // Legacy non-streaming fallback
-        const result = await ingestIntoKB(kbId, files);
-        res.json(result);
+        // Non-streaming: create job and return immediately
+        const job = await ingestIntoKBWithJob(kbId, files);
+        res.status(202).json({ job_id: job.job_id, status: job.status });
       }
     } catch (err: any) {
       log.error("Ingest error", { error: err.message });
       if (!res.headersSent) {
         res.status(500).json({ error: err.message });
       } else {
-        // Stream already started — write error event and close
         res.write(
           JSON.stringify({ type: "file_error", file: "_fatal", error: err.message }) + "\n",
         );
         res.end();
       }
+    }
+  });
+
+  // ─── Upload Job Routes ──────────────────────────────────
+
+  // GET /api/web/kb/uploads/active — all active upload jobs across all KBs
+  router.get("/uploads/active", async (_req: Request, res: Response) => {
+    try {
+      const uploads = await getAllActiveUploads();
+      res.json({ uploads });
+    } catch (err: any) {
+      log.error("List active uploads error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/web/kb/:id/uploads — upload jobs for a specific KB
+  router.get("/:id/uploads", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const activeOnly = req.query.active === "true";
+      const uploads = activeOnly
+        ? await getActiveUploadsForKB(kbId)
+        : await getRecentUploadsForKB(kbId);
+      res.json({ uploads });
+    } catch (err: any) {
+      log.error("List KB uploads error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/web/kb/:id/uploads/:jobId — get specific upload job
+  router.get("/:id/uploads/:jobId", async (req: Request, res: Response) => {
+    try {
+      const job = await getUploadJob(pstr(req.params.jobId));
+      if (!job) {
+        res.status(404).json({ error: "Upload job not found" });
+        return;
+      }
+      res.json({ job });
+    } catch (err: any) {
+      log.error("Get upload job error", { error: err.message });
+      res.status(500).json({ error: err.message });
     }
   });
 

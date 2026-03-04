@@ -1,5 +1,5 @@
-import { useCallback, useState } from "react";
-import type { KBScope, KBSearchResult } from "../../api.js";
+import { type RefObject, useCallback, useState } from "react";
+import type { KBScope, KBSearchResult, UploadJob } from "../../api.js";
 import { css } from "../../styles/theme.js";
 
 export const SCOPE_COLORS: Record<string, string> = {
@@ -94,6 +94,167 @@ export function ScopeToggleButtons({
           {scope}
         </button>
       ))}
+    </div>
+  );
+}
+
+export function UploadDropdown({
+  menuRef,
+  open,
+  onToggle,
+  disabled,
+  onSelectFiles,
+  onSelectFolder,
+}: {
+  menuRef: RefObject<HTMLDivElement | null>;
+  open: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+  onSelectFiles: () => void;
+  onSelectFolder: () => void;
+}) {
+  const items = [
+    { label: "Select Files", action: onSelectFiles },
+    { label: "Select Folder", action: onSelectFolder },
+  ];
+  return (
+    <div ref={menuRef} style={{ position: "relative", display: "inline-block" }}>
+      <button type="button" style={css.btn} disabled={disabled} onClick={onToggle}>
+        {disabled ? "Uploading…" : "Upload ▾"}
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            background: "var(--bg2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            zIndex: 10,
+            minWidth: 160,
+            overflow: "hidden",
+          }}
+        >
+          {items.map(({ label, action }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={action}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "8px 14px",
+                background: "none",
+                border: "none",
+                color: "var(--fg)",
+                fontSize: 13,
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.background = "none")
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Compact badge showing upload progress for a KB.
+ * Used on both the listing page (KB cards) and the detail page.
+ */
+export function UploadProgressBadge({ job }: { job: UploadJob }) {
+  const total = job.files.length;
+  const done = job.files.filter(
+    (f) => f.status === "done" || f.status === "skipped" || f.status === "error",
+  ).length;
+  const pct = total > 0 ? Math.round((done / total) * 100) : 0;
+
+  if (job.status === "completed") {
+    const s = job.summary;
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 11,
+          color: "var(--green)",
+        }}
+      >
+        <span>✓</span>
+        <span>
+          Upload complete
+          {s
+            ? ` — ${s.documents_added} doc${s.documents_added !== 1 ? "s" : ""}, ${s.chunks_added} chunks`
+            : ""}
+        </span>
+      </div>
+    );
+  }
+
+  if (job.status === "failed") {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          fontSize: 11,
+          color: "var(--red)",
+        }}
+      >
+        <span>✗</span>
+        <span>Upload failed</span>
+      </div>
+    );
+  }
+
+  return (
+    <div
+      style={{
+        display: "inline-flex",
+        alignItems: "center",
+        gap: 6,
+        fontSize: 11,
+        color: "var(--accent)",
+      }}
+    >
+      <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span>
+      <span>
+        Uploading {done}/{total} files
+      </span>
+      {total > 0 && (
+        <div
+          style={{
+            width: 60,
+            height: 4,
+            borderRadius: 2,
+            background: "var(--border)",
+            overflow: "hidden",
+          }}
+        >
+          <div
+            style={{
+              height: "100%",
+              width: `${pct}%`,
+              background: "var(--accent)",
+              borderRadius: 2,
+              transition: "width 0.3s ease",
+            }}
+          />
+        </div>
+      )}
     </div>
   );
 }

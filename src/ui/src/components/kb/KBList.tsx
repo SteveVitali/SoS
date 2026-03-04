@@ -1,18 +1,27 @@
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { Link } from "react-router-dom";
 import {
   createKB,
   deleteKB,
+  getAllActiveUploads,
+  ingestKBFilesAsync,
   type KBScope,
   type KnowledgeBase,
   listKBs,
   type RaptorStatus,
+  type UploadJob,
   updateKB,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { KBPlayground } from "./KBPlayground.js";
-import { formatBytes, ScopeBadge, ScopeToggleButtons } from "./kbShared.js";
+import {
+  formatBytes,
+  ScopeBadge,
+  ScopeToggleButtons,
+  UploadDropdown,
+  UploadProgressBadge,
+} from "./kbShared.js";
 
 function RaptorBadge({ status }: { status?: RaptorStatus }) {
   if (!status) return null;
@@ -123,7 +132,18 @@ export function KBList() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
+  // File upload in create form
+  const [createFiles, setCreateFiles] = useState<File[]>([]);
+  const createFileRef = useRef<HTMLInputElement>(null);
+  const createFolderRef = useRef<HTMLInputElement>(null);
+  const [createUploadMenuOpen, setCreateUploadMenuOpen] = useState(false);
+  const createUploadMenuRef = useRef<HTMLDivElement>(null);
+
+  // Active upload jobs across all KBs
+  const [activeUploads, setActiveUploads] = useState<Record<string, UploadJob>>({});
+
   const anyBuilding = Object.values(raptorStatuses).some((s) => s.building);
+  const anyUploading = Object.values(activeUploads).some((u) => u.status === "processing");
 
   const refresh = useCallback(async () => {
     try {
@@ -141,27 +161,97 @@ export function KBList() {
     refresh();
   }, [refresh]);
 
-  // Poll every 3s while any KB has an in-progress RAPTOR build
+  // Poll every 3s while any KB has an in-progress RAPTOR build or active upload
   useEffect(() => {
-    if (!anyBuilding) return;
-    const interval = setInterval(refresh, 3000);
+    if (!anyBuilding && !anyUploading) return;
+    const interval = setInterval(async () => {
+      await refresh();
+      // Also refresh upload statuses
+      try {
+        const { uploads } = await getAllActiveUploads();
+        const map: Record<string, UploadJob> = {};
+        for (const u of uploads) map[u.kb_id] = u;
+        setActiveUploads(map);
+      } catch {
+        // non-critical
+      }
+    }, 3000);
     return () => clearInterval(interval);
-  }, [anyBuilding, refresh]);
+  }, [anyBuilding, anyUploading, refresh]);
+
+  // Fetch active uploads on mount
+  useEffect(() => {
+    getAllActiveUploads()
+      .then(({ uploads }) => {
+        const map: Record<string, UploadJob> = {};
+        for (const u of uploads) map[u.kb_id] = u;
+        setActiveUploads(map);
+      })
+      .catch(() => {});
+  }, []);
+
+  // Close create upload menu on outside click
+  useEffect(() => {
+    if (!createUploadMenuOpen) return;
+    const handler = (e: MouseEvent) => {
+      if (createUploadMenuRef.current && !createUploadMenuRef.current.contains(e.target as Node)) {
+        setCreateUploadMenuOpen(false);
+      }
+    };
+    document.addEventListener("mousedown", handler);
+    return () => document.removeEventListener("mousedown", handler);
+  }, [createUploadMenuOpen]);
+
+  const handleCreateFileSelect = (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    setCreateUploadMenuOpen(false);
+    setCreateFiles(Array.from(files));
+  };
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
     setCreating(true);
     setError("");
     try {
-      await createKB({
+      const { kb } = await createKB({
         name: newName.trim(),
         description: newDesc.trim(),
         scopes: newScopes,
       });
+
+      // If files were selected, start async upload
+      if (createFiles.length > 0) {
+        try {
+          const { job_id } = await ingestKBFilesAsync(kb.kb_id, createFiles);
+          // Add to active uploads immediately so badge shows
+          setActiveUploads((prev) => ({
+            ...prev,
+            [kb.kb_id]: {
+              job_id,
+              kb_id: kb.kb_id,
+              status: "processing",
+              files: createFiles.map((f) => ({
+                name: f.webkitRelativePath || f.name,
+                status: "pending" as const,
+              })),
+              created_at: new Date().toISOString(),
+              updated_at: new Date().toISOString(),
+            },
+          }));
+        } catch (uploadErr: any) {
+          // KB created but upload failed — show error but don't block
+          setError(`KB created but upload failed: ${uploadErr.message}`);
+        }
+      }
+
       setNewName("");
       setNewDesc("");
       setNewScopes(["chat"]);
+      setCreateFiles([]);
       setShowCreate(false);
+      if (createFileRef.current) createFileRef.current.value = "";
+      if (createFolderRef.current) createFolderRef.current.value = "";
       await refresh();
     } catch (err: any) {
       setError(err.message);
@@ -233,13 +323,72 @@ export function KBList() {
             <label style={css.label}>Scopes (which actions can use this KB)</label>
             <ScopeToggleButtons scopes={newScopes} onToggle={toggleScope} />
           </div>
+          <div style={css.field}>
+            <label style={css.label}>Upload Files (optional)</label>
+            <p style={{ fontSize: 12, color: "var(--fg2)", margin: "0 0 8px" }}>
+              Select files or a folder to upload immediately after creation.
+            </p>
+            {/* Hidden file inputs */}
+            <input
+              ref={createFileRef}
+              type="file"
+              multiple
+              onChange={handleCreateFileSelect}
+              style={{ display: "none" }}
+            />
+            <input
+              ref={createFolderRef}
+              type="file"
+              /* @ts-expect-error webkitdirectory is non-standard but widely supported */
+              webkitdirectory=""
+              onChange={handleCreateFileSelect}
+              style={{ display: "none" }}
+            />
+            <div style={{ display: "flex", alignItems: "center", gap: 10 }}>
+              <UploadDropdown
+                menuRef={createUploadMenuRef}
+                open={createUploadMenuOpen}
+                onToggle={() => setCreateUploadMenuOpen((v) => !v)}
+                disabled={false}
+                onSelectFiles={() => createFileRef.current?.click()}
+                onSelectFolder={() => createFolderRef.current?.click()}
+              />
+              {createFiles.length > 0 && (
+                <span style={{ fontSize: 12, color: "var(--fg2)" }}>
+                  {createFiles.length} file{createFiles.length !== 1 ? "s" : ""} selected
+                  <button
+                    type="button"
+                    onClick={() => {
+                      setCreateFiles([]);
+                      if (createFileRef.current) createFileRef.current.value = "";
+                      if (createFolderRef.current) createFolderRef.current.value = "";
+                    }}
+                    style={{
+                      background: "none",
+                      border: "none",
+                      color: "var(--red)",
+                      cursor: "pointer",
+                      fontSize: 11,
+                      marginLeft: 6,
+                    }}
+                  >
+                    Clear
+                  </button>
+                </span>
+              )}
+            </div>
+          </div>
           <button
             type="button"
             style={css.btnPrimary}
             disabled={creating || !newName.trim()}
             onClick={handleCreate}
           >
-            {creating ? "Creating..." : "Create Knowledge Base"}
+            {creating
+              ? "Creating..."
+              : createFiles.length > 0
+                ? `Create & Upload ${createFiles.length} file${createFiles.length !== 1 ? "s" : ""}`
+                : "Create Knowledge Base"}
           </button>
         </div>
       )}
@@ -304,6 +453,11 @@ export function KBList() {
                     <span>model: {kb.embedding_model}</span>
                   </div>
                   <RaptorBadge status={raptorStatuses[kb.kb_id]} />
+                  {activeUploads[kb.kb_id] && (
+                    <div style={{ marginTop: 6 }}>
+                      <UploadProgressBadge job={activeUploads[kb.kb_id]} />
+                    </div>
+                  )}
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Link to={`/knowledge/${kb.kb_id}`}>
