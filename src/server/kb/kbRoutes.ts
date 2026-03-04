@@ -22,6 +22,9 @@ import {
   searchSingleKB,
   updateKnowledgeBase,
 } from "./kbService.js";
+import { getBatchRaptorStatus, getRaptorStatus } from "./raptor/raptorRepo.js";
+import { buildRaptorTree } from "./raptor/treeBuilder.js";
+import { listRaptorNodes } from "./vectorStore.js";
 
 const log = createLogger("server:kb:routes");
 
@@ -106,12 +109,17 @@ export function createKBWebRoutes(): Router {
     }
   });
 
-  // GET /api/web/kb — list knowledge bases
+  // GET /api/web/kb — list knowledge bases (includes raptor_status map)
   router.get("/", async (req: Request, res: Response) => {
     try {
       const owner = req.query.owner ? pstr(req.query.owner) : undefined;
       const kbs = await listKnowledgeBases(owner);
-      res.json({ kbs });
+
+      // Batch-fetch RAPTOR status for all KBs
+      const kbIds = kbs.map((kb) => kb.kb_id);
+      const raptorStatuses = await getBatchRaptorStatus(kbIds);
+
+      res.json({ kbs, raptor_status: raptorStatuses });
     } catch (err: any) {
       log.error("List KBs error", { error: err.message });
       res.status(500).json({ error: "Internal error" });
@@ -301,6 +309,62 @@ export function createKBWebRoutes(): Router {
       res.json({ ok: true });
     } catch (err: any) {
       log.error("Remove document error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── RAPTOR Routes ────────────────────────────────────────
+
+  // POST /api/web/kb/:id/raptor/build — trigger RAPTOR tree build
+  router.post("/:id/raptor/build", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const kb = await getKnowledgeBase(kbId);
+      if (!kb) {
+        res.status(404).json({ error: "Knowledge base not found" });
+        return;
+      }
+
+      // Run build asynchronously, return immediately
+      const config = req.body.config || {};
+      buildRaptorTree(kbId, kb.chunk_count, config).catch((err) => {
+        log.error("RAPTOR build failed", { kbId, error: err.message });
+      });
+
+      res.json({ ok: true, message: "RAPTOR build started" });
+    } catch (err: any) {
+      log.error("RAPTOR build trigger error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/web/kb/:id/raptor/status — get RAPTOR build status
+  router.get("/:id/raptor/status", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const status = await getRaptorStatus(kbId);
+      res.json({
+        status: status || {
+          built: false,
+          levels: 0,
+          nodes_per_level: {},
+          total_nodes: 0,
+        },
+      });
+    } catch (err: any) {
+      log.error("RAPTOR status error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // GET /api/web/kb/:id/raptor/tree — get RAPTOR tree nodes for visualization
+  router.get("/:id/raptor/tree", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const nodes = await listRaptorNodes(kbId);
+      res.json({ nodes });
+    } catch (err: any) {
+      log.error("RAPTOR tree error", { error: err.message });
       res.status(500).json({ error: err.message });
     }
   });

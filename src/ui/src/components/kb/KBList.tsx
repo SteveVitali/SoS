@@ -6,6 +6,7 @@ import {
   type KBScope,
   type KnowledgeBase,
   listKBs,
+  type RaptorStatus,
   updateKB,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
@@ -13,8 +14,107 @@ import { PageHeader } from "../shared/PageHeader.js";
 import { KBPlayground } from "./KBPlayground.js";
 import { formatBytes, ScopeBadge, ScopeToggleButtons } from "./kbShared.js";
 
+function RaptorBadge({ status }: { status?: RaptorStatus }) {
+  if (!status) return null;
+
+  if (status.building) {
+    const phase = status.phase || "Building";
+    const pct =
+      status.clusters_total && status.clusters_total > 0
+        ? Math.round(((status.clusters_completed ?? 0) / status.clusters_total) * 100)
+        : null;
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          marginTop: 6,
+          fontSize: 11,
+          color: "var(--accent)",
+        }}
+      >
+        <span style={{ animation: "spin 1s linear infinite", display: "inline-block" }}>⟳</span>
+        <span>
+          🌲 {phase}
+          {status.current_level != null && ` L${status.current_level}`}
+          {pct != null && ` — ${pct}%`}
+        </span>
+        {/* Inline mini progress bar */}
+        {pct != null && (
+          <div
+            style={{
+              width: 60,
+              height: 4,
+              borderRadius: 2,
+              background: "var(--border)",
+              overflow: "hidden",
+            }}
+          >
+            <div
+              style={{
+                height: "100%",
+                width: `${pct}%`,
+                background: "var(--accent)",
+                borderRadius: 2,
+                transition: "width 0.3s ease",
+              }}
+            />
+          </div>
+        )}
+      </div>
+    );
+  }
+
+  if (status.built) {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          marginTop: 6,
+          fontSize: 11,
+          color: "var(--fg2)",
+        }}
+      >
+        <span>🌲</span>
+        <span>
+          RAPTOR: {status.levels} levels, {status.total_nodes} nodes
+        </span>
+        {status.last_built && (
+          <span style={{ color: "var(--fg2)", opacity: 0.7 }}>
+            · {new Date(status.last_built).toLocaleDateString()}
+          </span>
+        )}
+      </div>
+    );
+  }
+
+  if (status.error_message) {
+    return (
+      <div
+        style={{
+          display: "inline-flex",
+          alignItems: "center",
+          gap: 6,
+          marginTop: 6,
+          fontSize: 11,
+          color: "var(--red)",
+        }}
+      >
+        <span>🌲</span>
+        <span>RAPTOR build failed</span>
+      </div>
+    );
+  }
+
+  return null;
+}
+
 export function KBList() {
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
+  const [raptorStatuses, setRaptorStatuses] = useState<Record<string, RaptorStatus>>({});
   const [loading, setLoading] = useState(true);
   const [showCreate, setShowCreate] = useState(false);
   const [newName, setNewName] = useState("");
@@ -23,10 +123,13 @@ export function KBList() {
   const [creating, setCreating] = useState(false);
   const [error, setError] = useState("");
 
+  const anyBuilding = Object.values(raptorStatuses).some((s) => s.building);
+
   const refresh = useCallback(async () => {
     try {
-      const { kbs: data } = await listKBs();
+      const { kbs: data, raptor_status } = await listKBs();
       setKbs(data);
+      setRaptorStatuses(raptor_status || {});
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -37,6 +140,13 @@ export function KBList() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Poll every 3s while any KB has an in-progress RAPTOR build
+  useEffect(() => {
+    if (!anyBuilding) return;
+    const interval = setInterval(refresh, 3000);
+    return () => clearInterval(interval);
+  }, [anyBuilding, refresh]);
 
   const handleCreate = async () => {
     if (!newName.trim()) return;
@@ -193,6 +303,7 @@ export function KBList() {
                     <span>{formatBytes(kb.total_size_bytes)}</span>
                     <span>model: {kb.embedding_model}</span>
                   </div>
+                  <RaptorBadge status={raptorStatuses[kb.kb_id]} />
                 </div>
                 <div style={{ display: "flex", gap: 8 }}>
                   <Link to={`/knowledge/${kb.kb_id}`}>

@@ -79,6 +79,8 @@ function makeSearchResult(overrides: Partial<VectorSearchResult> = {}): VectorSe
     file_path: "docs/test.md",
     parent_dir: "docs",
     created_at: new Date().toISOString(),
+    level: 0,
+    children_ids: "[]",
     _distance: 0.5,
     ...overrides,
   };
