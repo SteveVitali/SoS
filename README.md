@@ -238,7 +238,6 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **Worker cancellation checks** — honor cancel requests mid-execution before expensive steps
 - **Cost budgets** — per-user/team spending limits based on the existing per-job cost tracking
 - **Multi-model executors** — plug in Aider, OpenHands, or custom scripts alongside Claude Code
-- **Advanced RAG research pipeline** — query enhancement, iterative retrieval with correction, RAPTOR tree preprocessing, ReAct agent loop
 
 ---
 

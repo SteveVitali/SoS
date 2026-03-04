@@ -112,42 +112,24 @@ export async function runPlanJob(
       }
     }
 
-    // 4) Fetch KB context via research pipeline (non-fatal, falls back to simple search)
+    // 4) Fetch KB context (non-fatal)
     let kbContext: string | undefined;
     try {
-      const research = await api.researchKnowledgeBases({
-        query: job.task_text,
-        scopes: ["plan_job", "all"],
-        strategy: "simple",
-        consumer: { type: "worker_job", id: job.task_id },
-      });
-      if (research.context) {
-        kbContext = research.context;
-        log.info("KB research context fetched for plan job", {
+      const kbResults = await api.searchKnowledgeBases(job.task_text, ["plan_job", "all"]);
+      if (kbResults.length > 0) {
+        kbContext = kbResults
+          .map(
+            (r) =>
+              `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
+          )
+          .join("\n\n---\n\n");
+        log.info("KB context fetched for plan job", {
           task_id: job.task_id,
-          session_id: research.session_id,
-          chunks: research.metrics.chunks_used,
+          chunks: kbResults.length,
         });
       }
     } catch {
-      // Fall back to legacy simple search
-      try {
-        const kbResults = await api.searchKnowledgeBases(job.task_text, ["plan_job", "all"]);
-        if (kbResults.length > 0) {
-          kbContext = kbResults
-            .map(
-              (r) =>
-                `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
-            )
-            .join("\n\n---\n\n");
-          log.info("KB context fetched via fallback for plan job", {
-            task_id: job.task_id,
-            chunks: kbResults.length,
-          });
-        }
-      } catch {
-        // Non-fatal
-      }
+      // Non-fatal
     }
 
     // 5) Run Claude Code CLI in planning mode (read-only)

@@ -53,8 +53,8 @@ export interface VectorRecord {
   file_path: string;
   parent_dir: string;
   created_at: string;
-  level: number; // 0 = raw chunk, 1+ = RAPTOR summary level
-  children_ids: string; // JSON-encoded string[] of child node IDs (empty for level 0)
+  level: number; // 0 = raw chunk (reserved for future hierarchical summarization)
+  children_ids: string; // JSON-encoded string[] (reserved, always "[]" for now)
 }
 
 export interface VectorSearchResult {

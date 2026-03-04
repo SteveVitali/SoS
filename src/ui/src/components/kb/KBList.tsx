@@ -12,9 +12,6 @@ import { css } from "../../styles/theme.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { KBPlayground } from "./KBPlayground.js";
 import { formatBytes, ScopeBadge, ScopeToggleButtons } from "./kbShared.js";
-import { ResearchHistory } from "./ResearchHistory.js";
-import { ResearchPlayground } from "./ResearchPlayground.js";
-import { StrategyComparison } from "./StrategyComparison.js";
 
 export function KBList() {
   const [kbs, setKbs] = useState<KnowledgeBase[]>([]);
@@ -138,9 +135,6 @@ export function KBList() {
       )}
 
       <KBPlayground />
-      <ResearchPlayground />
-      <StrategyComparison />
-      <ResearchHistory />
 
       {loading ? (
         <div style={{ color: "var(--fg2)", padding: 20 }}>Loading...</div>

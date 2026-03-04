@@ -448,6 +448,7 @@ son-of-steve/
 │   │       ├── runPlanJob.ts          # Pre-flight planning workflow (read-only Claude)
 │   │       ├── runGithubSummaryJob.ts # GitHub recap summary (data fetch → Claude → format)
 │   │       ├── runRespondToComments.ts # PR comment review workflow
+│   │       ├── errors.ts              # Sentinel errors (RequeueError, LeaseAbortedError)
 │   │       ├── repoRegistry.ts        # YAML registry loader
 │   │       ├── repoResolver.ts        # Hint/keyword-based repo resolution
 │   │       ├── workspace.ts           # Git clone management (ensureClone)
