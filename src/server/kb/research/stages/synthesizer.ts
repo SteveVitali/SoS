@@ -1,12 +1,19 @@
 /**
- * Synthesizer stage — assembles final context string from accumulated chunks
- * with inline citations mapping back to specific sources.
+ * Synthesizer stage — two modes:
+ *
+ * 1. runSynthesizer() — assembles a raw context string with inline citations
+ *    for injection into the routing LLM's system prompt ({KB_CONTEXT}).
+ *
+ * 2. synthesizeForUser() — calls the research LLM to produce a coherent
+ *    markdown answer with inline citations, used by the kb_search executor
+ *    when the output goes directly to the user.
  */
 
 import type { KBSearchResult } from "../../../../shared/kbTypes.js";
 import { createLogger } from "../../../../shared/logger.js";
 import type { ResearchConfig } from "../../../../shared/researchTypes.js";
 import type { StepRecorder } from "../auditLog.js";
+import type { LLMClient } from "../llmClient.js";
 
 const log = createLogger("server:kb:research:synthesizer");
 
@@ -16,24 +23,126 @@ export interface SynthesisResult {
   reasoning_trace: string;
 }
 
+export interface UserSynthesisResult {
+  answer: string;
+  chunks_used: KBSearchResult[];
+}
+
+// ─── Shared helpers ─────────────────────────────────────────
+
+interface ChunkCitations {
+  sourceLines: string[];
+  contextBlocks: string[];
+}
+
+function buildChunkCitations(
+  chunks: KBSearchResult[],
+  options?: { includeScore?: boolean },
+): ChunkCitations {
+  const sourceLines: string[] = [];
+  const contextBlocks: string[] = [];
+  for (let i = 0; i < chunks.length; i++) {
+    const c = chunks[i];
+    const section = c.metadata.section ? ` > ${c.metadata.section}` : "";
+    const score = options?.includeScore ? ` (score: ${c.score.toFixed(2)})` : "";
+    sourceLines.push(`[${i + 1}] ${c.kb_name}: ${c.source_file}${section}${score}`);
+    contextBlocks.push(`[${i + 1}] ${c.content}`);
+  }
+  return { sourceLines, contextBlocks };
+}
+
+// ─── LLM Synthesis Prompt (for user-facing answers) ──────────
+
+const SYNTHESIS_SYSTEM_PROMPT = `You are a knowledgeable assistant answering questions using retrieved documentation.
+
+Rules:
+- Answer the question directly and thoroughly using ONLY the provided context.
+- Use inline citation numbers like [1], [2] to reference your sources.
+- If the context doesn't contain enough information, say so clearly.
+- Be concise but complete. Avoid repeating the question back.
+- Do NOT mention "the context" or "the documents" — just answer naturally as if you know the material.
+
+Formatting rules (your output must work in Slack):
+- Use **bold text** for section headers — do NOT use # or ## markdown headings.
+- Use bullet lists (- item) instead of markdown tables.
+- Use \`backtick\` for inline code and \`\`\` for code blocks.
+- Separate sections with blank lines for readability.`;
+
+function buildSynthesisUserPrompt(
+  query: string,
+  chunks: KBSearchResult[],
+  reasoningTrace: string,
+): string {
+  const { sourceLines, contextBlocks } = buildChunkCitations(chunks);
+
+  const parts = [
+    `Question: ${query}`,
+    "",
+    "Sources:",
+    ...sourceLines,
+    "",
+    "Retrieved context:",
+    contextBlocks.join("\n\n---\n\n"),
+  ];
+
+  if (reasoningTrace) {
+    parts.push("", "Research reasoning:", reasoningTrace);
+  }
+
+  return parts.join("\n");
+}
+
 /**
- * Build a formatted context string with inline citations.
- *
- * Format:
- *   ## Knowledge Base Context
- *   The following context was retrieved via deep research...
- *
- *   ### Sources
- *   [1] KB Name: source_file > Section (score: 0.87)
- *   [2] KB Name: source_file (score: 0.72)
- *   ...
- *
- *   ### Retrieved Context
- *   [1] <chunk content>
- *   ---
- *   [2] <chunk content>
- *   ...
+ * Synthesize a user-facing answer by calling the research LLM.
+ * Used by the kb_search executor to produce a coherent response instead
+ * of returning raw chunks.
  */
+export async function synthesizeForUser(
+  query: string,
+  chunks: KBSearchResult[],
+  reasoningTrace: string,
+  config: ResearchConfig,
+  llm: LLMClient,
+): Promise<UserSynthesisResult> {
+  const topChunks = chunks.slice(0, config.max_chunks_per_query);
+
+  if (topChunks.length === 0) {
+    return { answer: "", chunks_used: [] };
+  }
+
+  const userMessage = buildSynthesisUserPrompt(query, topChunks, reasoningTrace);
+
+  try {
+    const response = await llm.chat(
+      [
+        { role: "system", content: SYNTHESIS_SYSTEM_PROMPT },
+        { role: "user", content: userMessage },
+      ],
+      { max_tokens: 2048 },
+    );
+
+    log.info("User-facing synthesis complete", {
+      chunks_used: topChunks.length,
+      answer_length: response.content.length,
+      duration_ms: response.duration_ms,
+    });
+
+    return {
+      answer: response.content,
+      chunks_used: topChunks,
+    };
+  } catch (err) {
+    log.warn("LLM synthesis failed, falling back to raw context", {
+      error: (err as Error).message,
+    });
+    // Graceful fallback: return raw chunk dump
+    const fallback = topChunks.map((c, i) => `[${i + 1}] ${c.content}`).join("\n\n");
+    return { answer: fallback, chunks_used: topChunks };
+  }
+}
+
+// ─── Raw Context Builder (for system prompt injection) ───────
+
 export function runSynthesizer(
   query: string,
   chunks: KBSearchResult[],
@@ -61,21 +170,8 @@ export function runSynthesizer(
   // Take the top chunks (already sorted by evaluation score / vector score)
   const topChunks = chunks.slice(0, config.max_chunks_per_query);
 
-  // Build source citation index
-  const sourceLines: string[] = [];
-  for (let i = 0; i < topChunks.length; i++) {
-    const c = topChunks[i];
-    const section = c.metadata.section ? ` > ${c.metadata.section}` : "";
-    sourceLines.push(
-      `[${i + 1}] ${c.kb_name}: ${c.source_file}${section} (score: ${c.score.toFixed(2)})`,
-    );
-  }
-
-  // Build context blocks with citation markers
-  const contextBlocks: string[] = [];
-  for (let i = 0; i < topChunks.length; i++) {
-    contextBlocks.push(`[${i + 1}] ${topChunks[i].content}`);
-  }
+  // Build source citation index and context blocks
+  const { sourceLines, contextBlocks } = buildChunkCitations(topChunks, { includeScore: true });
 
   // Assemble final context
   const parts: string[] = [

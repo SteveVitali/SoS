@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+import type { KBSearchResult } from "../../shared/kbTypes.js";
 import type { ResearchResult } from "../../shared/researchTypes.js";
 import type { CommandContext } from "../slack/commandExecutor.js";
 import type { RoutedAction } from "../slack/messageRouter.js";
@@ -10,9 +11,38 @@ vi.mock("../kb/kbService.js", () => ({
   researchKnowledgeBases: vi.fn(),
 }));
 
+// Mock the LLM synthesis layer
+vi.mock("../kb/research/llmClient.js", () => ({
+  getResearchLLMClient: vi.fn(() => ({ chat: vi.fn() })),
+}));
+
+vi.mock("../kb/research/stages/synthesizer.js", () => ({
+  synthesizeForUser: vi.fn(),
+}));
+
+vi.mock("../kb/research/strategies.js", () => ({
+  getStrategyConfig: vi.fn(() => ({
+    strategy: "simple",
+    max_iterations: 1,
+    max_llm_calls: 3,
+    max_retrieval_calls: 10,
+    max_wall_time_ms: 10_000,
+    enable_decomposition: false,
+    enable_hyde: true,
+    enable_step_back: false,
+    enable_crag: true,
+    enable_ircot: false,
+    max_chunks_per_query: 5,
+    min_similarity_score: 0.3,
+    dedup_threshold: 0.92,
+  })),
+}));
+
 import { researchKnowledgeBases } from "../kb/kbService.js";
+import { synthesizeForUser } from "../kb/research/stages/synthesizer.js";
 
 const mockResearch = vi.mocked(researchKnowledgeBases);
+const mockSynthesize = vi.mocked(synthesizeForUser);
 
 // --- Helpers ---
 
@@ -37,13 +67,24 @@ const baseExecDef: ResearchExecution = {
   show_trace: true,
 };
 
+function makeChunk(content = "chunk content"): KBSearchResult {
+  return {
+    content,
+    source_file: "docs/test.md",
+    kb_name: "Test KB",
+    kb_id: "kb-1",
+    score: 0.85,
+    metadata: { section: "Intro" },
+  };
+}
+
 function makeResearchResult(overrides?: Partial<ResearchResult>): ResearchResult {
   return {
     session_id: "sess-abc",
     strategy: "simple",
     original_query: "test query",
-    context: "The answer from the research pipeline.",
-    chunks: [],
+    context: "Raw context from the pipeline.",
+    chunks: [makeChunk()],
     reasoning_trace: "",
     metrics: {
       total_duration_ms: 2100,
@@ -64,6 +105,11 @@ function makeResearchResult(overrides?: Partial<ResearchResult>): ResearchResult
 describe("executeResearch", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    // Default: synthesizeForUser returns a coherent answer
+    mockSynthesize.mockResolvedValue({
+      answer: "The synthesized answer from the LLM.",
+      chunks_used: [makeChunk()],
+    });
   });
 
   it("returns helpful error when no query is provided", async () => {
@@ -75,16 +121,17 @@ describe("executeResearch", () => {
     expect(mockResearch).not.toHaveBeenCalled();
   });
 
-  it("runs research pipeline with simple strategy and returns answer", async () => {
+  it("runs research pipeline and synthesizes a user-facing answer", async () => {
     mockResearch.mockResolvedValue(makeResearchResult());
 
     const action = makeAction({ query: "how does X work?" });
     const result = await executeResearch(action, makeCtx(), baseExecDef);
 
-    expect(result.reply).toContain("The answer from the research pipeline.");
+    expect(result.reply).toContain("The synthesized answer from the LLM.");
     expect(result.actionTaken).toContain("research:simple");
     expect(result.actionTaken).toContain("sess-abc");
     expect(mockResearch).toHaveBeenCalledTimes(1);
+    expect(mockSynthesize).toHaveBeenCalledTimes(1);
     expect(mockResearch).toHaveBeenCalledWith(
       expect.objectContaining({
         query: "how does X work?",
@@ -92,6 +139,28 @@ describe("executeResearch", () => {
         scopes: ["chat", "all"],
       }),
     );
+  });
+
+  it("falls back to raw context when synthesis fails", async () => {
+    mockResearch.mockResolvedValue(makeResearchResult());
+    mockSynthesize.mockRejectedValue(new Error("LLM unavailable"));
+
+    const action = makeAction({ query: "test" });
+    const execDef: ResearchExecution = { ...baseExecDef, show_trace: false };
+    const result = await executeResearch(action, makeCtx(), execDef);
+
+    expect(result.reply).toContain("Raw context from the pipeline.");
+  });
+
+  it("skips synthesis when no chunks are returned", async () => {
+    mockResearch.mockResolvedValue(makeResearchResult({ chunks: [], context: "" }));
+
+    const action = makeAction({ query: "test" });
+    const execDef: ResearchExecution = { ...baseExecDef, show_trace: false };
+    const result = await executeResearch(action, makeCtx(), execDef);
+
+    expect(mockSynthesize).not.toHaveBeenCalled();
+    expect(result.reply).toContain("couldn't find any relevant information");
   });
 
   it("uses LLM-selected strategy from action args", async () => {
@@ -160,7 +229,7 @@ describe("executeResearch", () => {
     const result = await executeResearch(action, makeCtx(), execDef);
 
     expect(result.reply).not.toContain("📎");
-    expect(result.reply).toBe("The answer from the research pipeline.");
+    expect(result.reply).toBe("The synthesized answer from the LLM.");
   });
 
   it("prepends routing reply when it is meaningful", async () => {
@@ -248,7 +317,7 @@ describe("executeResearch", () => {
     };
     const result = await executeResearch(action, makeCtx(), execDef);
 
-    expect(result.reply).toBe("Found via simple: The answer from the research pipeline.");
+    expect(result.reply).toBe("Found via simple: The synthesized answer from the LLM.");
   });
 
   it("passes agent strategy through to research pipeline", async () => {
@@ -285,5 +354,22 @@ describe("executeResearch", () => {
     const result = await executeResearch(action, makeCtx(), execDef);
 
     expect(result.reply).toContain("couldn't find any relevant information");
+  });
+
+  it("passes reasoning_trace to synthesizeForUser", async () => {
+    mockResearch.mockResolvedValue(
+      makeResearchResult({ reasoning_trace: "Deep analysis of the topic" }),
+    );
+
+    const action = makeAction({ query: "test" });
+    await executeResearch(action, makeCtx(), baseExecDef);
+
+    expect(mockSynthesize).toHaveBeenCalledWith(
+      "test",
+      expect.any(Array),
+      "Deep analysis of the topic",
+      expect.any(Object),
+      expect.any(Object),
+    );
   });
 });

@@ -1,5 +1,6 @@
 import { App } from "@slack/bolt";
 import { createLogger } from "../../shared/logger.js";
+import { markdownToSlack } from "../../shared/slackMarkdown.js";
 import type { ServerConfig } from "../config.js";
 import { createAppMentionHandler } from "./eventHandlers.js";
 import type { SlackPoster } from "./slackClient.js";
@@ -25,7 +26,7 @@ export async function startSlackSocketMode(
     if (reply) {
       // biome-ignore lint/suspicious/noExplicitAny: Slack API type
       const threadTs = (event as any).thread_ts ?? event.ts;
-      await say({ text: reply, thread_ts: threadTs });
+      await say({ text: markdownToSlack(reply), thread_ts: threadTs });
     }
   });
 
