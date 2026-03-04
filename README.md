@@ -17,6 +17,8 @@ Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your re
 - **Enterprise-ready** — worktree pooling with build cache preservation for large monorepos (Bazel, etc.)
 - **Worker management** — spawn, monitor, and shut down worker processes from the web UI with live log streaming
 - **Knowledge bases** — upload documents (text, PDF, archives) or entire folders, chunk and embed them locally with hierarchical path metadata, and inject relevant context into LLM calls via semantic search; real-time per-file ingestion progress
+- **Advanced research pipeline** — multi-stage RAG with three strategy profiles (simple/deep/agent): LLM-driven query analysis and decomposition, HyDE expansion, CRAG evaluation, IRCoT iterative reasoning, and a ReAct research agent — all with full audit logging, NDJSON streaming, and a Research Playground UI
+- **RAPTOR tree indexing** — recursive clustering and LLM summarization of KB chunks for hierarchical retrieval at multiple abstraction levels; interactive tree visualization in the UI
 - **Observable** — web dashboard with job timeline, PR stats, worker health, live Claude output, and Slack thread updates
 - **Crash-safe** — lease-based job claims with automatic recovery when workers crash
 - **Cost tracking** — per-session token counts and estimated USD cost from Claude API pricing
@@ -176,7 +178,8 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack app creation, LLM routi
    - **PRs** — view open PRs across registered repos with comment/review thread stats
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
    - **Repos** — edit the repo registry (YAML) directly from the browser
-   - **Knowledge** — create knowledge bases, upload documents or folders (with real-time progress), test semantic search in the playground, configure scopes and chunking
+   - **Knowledge** — create knowledge bases, upload documents or folders (with real-time progress), test semantic search in the playground, configure scopes and chunking, RAPTOR tree visualization and build management
+   - **Research** — global research config (chat/Slack strategy, max context tokens), Research Playground (run queries with simple/deep/agent strategies, real-time pipeline timeline, model selector), Strategy Comparison (side-by-side benchmark), Research History (session browser with timeline drill-down)
    - **Routing** — visual editor for LLM action routing config (parameters, execution types, reply templates) with raw YAML fallback
 
 ---
@@ -238,7 +241,6 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **Worker cancellation checks** — honor cancel requests mid-execution before expensive steps
 - **Cost budgets** — per-user/team spending limits based on the existing per-job cost tracking
 - **Multi-model executors** — plug in Aider, OpenHands, or custom scripts alongside Claude Code
-- **Advanced RAG research pipeline** — query enhancement, iterative retrieval with correction, RAPTOR tree preprocessing, ReAct agent loop
 
 ---
 
@@ -249,6 +251,7 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **[docs/SLACK_SETUP.md](docs/SLACK_SETUP.md)** — Slack app creation, LLM routing, thread context & attachments
 - **[docs/API.md](docs/API.md)** — HTTP API reference for worker and web endpoints
 - **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** — development setup, conventions, and how to add features
+- **[docs/RESEARCH_PIPELINE_DESIGN.md](docs/RESEARCH_PIPELINE_DESIGN.md)** — advanced RAG research pipeline design (strategies, stages, RAPTOR, agent, audit logging)
 
 ---
 

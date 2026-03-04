@@ -1,9 +1,11 @@
 import type { KBScope, KBSearchResult } from "../../shared/kbTypes.js";
 import { formatPathBreadcrumb } from "../../shared/kbUtils.js";
 import { createLogger } from "../../shared/logger.js";
+import { getModelForRole } from "../../shared/modelConfig.js";
+import type { ResearchStrategy } from "../../shared/researchTypes.js";
 import type { JobAttachment } from "../../shared/types.js";
 import { queryJobs } from "../jobs/jobService.js";
-import { searchKnowledgeBases } from "../kb/kbService.js";
+import { researchKnowledgeBases, searchKnowledgeBases } from "../kb/kbService.js";
 import type { ContentBlock, LLMProvider, ToolDefinition } from "../llm/index.js";
 import {
   buildActionsPromptSection,
@@ -53,7 +55,7 @@ function buildSystemPromptAndTools(): {
 }
 
 let provider: LLMProvider | null = null;
-let configuredModel = "claude-sonnet-4-20250514";
+let configuredModel = getModelForRole("routing");
 
 export function initMessageRouter(llmProvider: LLMProvider, model: string) {
   provider = llmProvider;
@@ -94,52 +96,114 @@ const CHARS_PER_TOKEN = 4;
 const DEFAULT_KB_MAX_TOKENS = 2000;
 
 /**
+ * Format basic vector search results into a context string, truncated to maxChars.
+ */
+function formatSearchResults(results: KBSearchResult[], maxChars: number): string {
+  let totalChars = 0;
+  const entries: string[] = [];
+  for (const r of results) {
+    const breadcrumb = formatPathBreadcrumb(r);
+    const sectionSuffix = r.metadata.section ? ` > ${r.metadata.section}` : "";
+    const entry = `[${r.kb_name} > ${breadcrumb}${sectionSuffix}] (score: ${r.score.toFixed(2)}):\n${r.content}`;
+    if (totalChars + entry.length > maxChars) break;
+    entries.push(entry);
+    totalChars += entry.length;
+  }
+  return entries.length ? entries.join("\n\n---\n\n") : "";
+}
+
+/**
+ * Basic vector search fallback — search KBs and format results.
+ */
+async function basicKBSearch(query: string, scopes: KBScope[], maxChars: number): Promise<string> {
+  const results = await searchKnowledgeBases({ query, scopes });
+  if (!results.length) return "(No knowledge base context available)";
+  const formatted = formatSearchResults(results, maxChars);
+  return formatted || "(No knowledge base context available)";
+}
+
+/**
  * Build knowledge base context by searching enabled KBs with the user's message.
- * Returns a formatted string for injection into the system prompt.
+ * When `kb_research_strategy` is set in routing config, uses the advanced research
+ * pipeline for richer context. Otherwise falls back to basic vector search.
  */
 async function buildKBContext(userMessage: string, scopes: KBScope[]): Promise<string> {
   try {
-    const results = await searchKnowledgeBases({
-      query: userMessage,
-      scopes,
-    });
-
-    if (!results.length) return "(No knowledge base context available)";
-
-    // Get the max tokens from routing config, or use default
+    // Check if the research pipeline should be used
+    let researchStrategy: ResearchStrategy | undefined;
     let maxTokens = DEFAULT_KB_MAX_TOKENS;
     try {
       const config = getRoutingConfig();
       if (config.kb_context_max_tokens) {
         maxTokens = config.kb_context_max_tokens;
       }
+      if (config.kb_research_strategy) {
+        researchStrategy = config.kb_research_strategy;
+      }
     } catch {}
 
     const maxChars = maxTokens * CHARS_PER_TOKEN;
-    let totalChars = 0;
-    const entries: string[] = [];
 
-    for (const r of results) {
-      const breadcrumb = formatPathBreadcrumb(r);
-      const sectionSuffix = r.metadata.section ? ` > ${r.metadata.section}` : "";
-      const entry = `[${r.kb_name} > ${breadcrumb}${sectionSuffix}] (score: ${r.score.toFixed(2)}):\n${r.content}`;
-      if (totalChars + entry.length > maxChars) break;
-      entries.push(entry);
-      totalChars += entry.length;
+    // Use research pipeline if strategy is configured
+    if (researchStrategy) {
+      return buildResearchKBContext(userMessage, scopes, researchStrategy, maxChars);
     }
 
-    if (!entries.length) return "(No knowledge base context available)";
+    // Fallback: basic vector search
+    const context = await basicKBSearch(userMessage, scopes, maxChars);
 
-    log.info("KB context built for routing", {
-      results: results.length,
-      included: entries.length,
-      chars: totalChars,
-    });
+    if (context !== "(No knowledge base context available)") {
+      log.info("KB context built for routing", { chars: context.length });
+    }
 
-    return entries.join("\n\n---\n\n");
+    return context;
   } catch (err: any) {
     log.warn("Failed to build KB context", { error: err.message });
     return "(Knowledge base search unavailable)";
+  }
+}
+
+/**
+ * Build KB context using the advanced research pipeline.
+ * Produces richer context with query enhancement, evaluation, and reasoning.
+ */
+async function buildResearchKBContext(
+  userMessage: string,
+  scopes: KBScope[],
+  strategy: ResearchStrategy,
+  maxChars: number,
+): Promise<string> {
+  try {
+    const result = await researchKnowledgeBases({
+      query: userMessage,
+      scopes,
+      strategy,
+      consumer: { type: "chat", id: "message-router" },
+    });
+
+    if (!result.context) return "(No knowledge base context available)";
+
+    // Truncate if needed
+    const context =
+      result.context.length > maxChars
+        ? `${result.context.slice(0, maxChars)}\n[truncated]`
+        : result.context;
+
+    log.info("Research KB context built for routing", {
+      strategy,
+      chunks: result.chunks.length,
+      context_length: context.length,
+      session_id: result.session_id,
+      metrics: result.metrics,
+    });
+
+    return context;
+  } catch (err: any) {
+    log.warn("Research pipeline failed for chat context, falling back to basic search", {
+      error: err.message,
+      strategy,
+    });
+    return basicKBSearch(userMessage, scopes, maxChars);
   }
 }
 

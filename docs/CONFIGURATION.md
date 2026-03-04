@@ -44,6 +44,31 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `SOS_EMBEDDING_BASE_URL` | No | Custom base URL for the embedding API (e.g., a LiteLLM proxy). Defaults to `https://api.openai.com/v1`. |
 | `SOS_KB_STORAGE_DIR` | No | Directory for LanceDB vector data. Defaults to `$SOS_WORKSPACE_ROOT/kb` or `.sos-kb` in the project root. |
 
+## Research Pipeline (LLM)
+
+The research pipeline uses a separate, typically cheaper LLM for its internal reasoning calls (query analysis, evaluation, reasoning, agent loop). This is independent of the main LLM provider used for Slack/chat routing.
+
+| Variable | Required | Description |
+|---|---|---|
+| `SOS_RESEARCH_LLM_MODEL` | No (default: `gpt-4o-mini`) | Model for research reasoning calls. Supports any OpenAI-compatible model. |
+| `SOS_RESEARCH_LLM_API_KEY` | Only if research pipeline is used | API key for the research LLM. Falls back to `OPENAI_API_KEY` if not set. |
+| `SOS_RESEARCH_LLM_BASE_URL` | No (default: `https://api.openai.com/v1`) | Base URL for the research LLM API (e.g., a LiteLLM proxy). |
+| `SOS_RESEARCH_LLM_TEMPERATURE` | No (default: `0.0`) | Temperature for research LLM calls. `0.0` for deterministic reasoning. |
+| `SOS_RESEARCH_LLM_MAX_TOKENS` | No (default: `2048`) | Max output tokens per research LLM call. |
+
+The model can also be overridden per-session via the Research Playground's model selector or `config_overrides.model` in API calls.
+
+## Routing Config: Research Strategy
+
+The `routing-config.yaml` supports an optional `kb_research_strategy` field at the top level to enable the research pipeline for chat/Slack KB context injection:
+
+```yaml
+kb_research_strategy: "simple"  # "simple", "deep", or "agent" — omit to use basic vector search
+kb_context_max_tokens: 4000     # max token budget for KB context (optional)
+```
+
+When set, the message router uses the research pipeline (instead of basic vector search) to build KB context for LLM calls. This applies to both Slack and web chat conversations.
+
 ## Worker
 
 The worker reads from the same `.env` file.

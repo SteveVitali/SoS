@@ -9,6 +9,7 @@ import { KBDetail } from "./components/kb/KBDetail.js";
 import { KBList } from "./components/kb/KBList.js";
 import { PrsList } from "./components/prs/PrsList.js";
 import { RepoRegistryEditor } from "./components/registry/RepoRegistryEditor.js";
+import { ResearchPage } from "./components/research/ResearchPage.js";
 import { RoutingConfigEditor } from "./components/routing/RoutingConfigEditor.js";
 import { NavTab } from "./components/shared/NavTab.js";
 import { TokenSetup } from "./components/TokenSetup.js";
@@ -31,6 +32,7 @@ function AppShell() {
   const isReposTab = path === "/repos";
   const isKnowledgeTab = path === "/knowledge" || path.startsWith("/knowledge/");
   const showKnowledgeList = path === "/knowledge";
+  const isResearchTab = path === "/research";
   const isRoutingTab = path === "/routing";
 
   return (
@@ -47,6 +49,7 @@ function AppShell() {
             <NavTab to="/workers" label="Workers" active={isWorkersTab} />
             <NavTab to="/repos" label="Repos" active={isReposTab} />
             <NavTab to="/knowledge" label="Knowledge" active={isKnowledgeTab} />
+            <NavTab to="/research" label="Research" active={isResearchTab} />
             <NavTab to="/routing" label="Routing" active={isRoutingTab} />
           </div>
         </div>
@@ -87,6 +90,7 @@ function AppShell() {
         <Route path="/chats/:id" element={<ChatDetail />} />
         <Route path="/repos" element={<RepoRegistryEditor />} />
         <Route path="/knowledge/:id" element={<KBDetail />} />
+        <Route path="/research" element={<ResearchPage />} />
         <Route path="/routing" element={<RoutingConfigEditor />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />
         <Route path="/jobs/:taskId" element={<JobDetail />} />

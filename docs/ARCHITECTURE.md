@@ -53,7 +53,7 @@ The server is the **single source of truth** for job state. It:
 6. **Manages an in-memory worker registry** (register, deregister, status, stale detection)
 7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
 8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
-9. **Manages knowledge bases** with vector-indexed document storage (hierarchical path metadata, breadcrumb-enriched embeddings), semantic search, streaming ingestion progress, and context injection into LLM calls
+9. **Manages knowledge bases** with vector-indexed document storage (hierarchical path metadata, breadcrumb-enriched embeddings), semantic search, streaming ingestion progress, context injection into LLM calls, an **advanced research pipeline** (multi-stage RAG with simple/deep/agent strategies, LLM-driven query analysis, CRAG evaluation, IRCoT reasoning, and a ReAct agent), full **audit logging** of research sessions, and **RAPTOR tree** preprocessing (recursive clustering and summarization of KB chunks for hierarchical retrieval)
 10. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
 11. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
 12. **Serves the React SPA** as static files (production build)
@@ -81,12 +81,13 @@ Workers are **stateless** — all persistent state lives in MongoDB via the serv
 
 ### MongoDB
 
-Four collections:
+Five collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
 - **`knowledge_bases`** — Knowledge base metadata (name, scopes, embedding config, stats).
 - **`kb_documents`** — Per-document metadata for ingested files (name, size, chunk count).
+- **`research_sessions`** — Research pipeline audit logs (query, strategy, config, steps with LLM/retrieval call records, metrics, consumer link).
 
 **Key indexes:**
 - `source.event_id` — unique partial (idempotency for Slack events)
@@ -105,7 +106,8 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 - **PRs** — open PRs across registered repos with review thread / unresolved comment stats
 - **Workers** — live worker health dashboard with per-loop status, spawn new workers, shutdown, live log terminal with Claude output streaming via SSE
 - **Repos** — in-browser YAML editor for the repo registry
-- **Knowledge** — create/manage knowledge bases, upload documents or folders (with real-time per-file progress), test semantic search in the KBPlayground, configure scopes and chunking parameters
+- **Knowledge** — create/manage knowledge bases, upload documents or folders (with real-time per-file progress), test semantic search in the KBPlayground, configure scopes and chunking parameters, **RAPTOR tree** visualization (build/rebuild indices, interactive cluster hierarchy explorer)
+- **Research** — global research config controls (chat/Slack strategy, max context tokens persisted to routing-config.yaml), **Research Playground** (run queries with simple/deep/agent strategies, real-time NDJSON-streamed pipeline timeline, model selector), **Strategy Comparison** (side-by-side all-strategies benchmark), **Research History** (paginated session browser with timeline drill-down), and per-job **Research Audit** sections on the Jobs detail page
 - **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 13 execution types, reply template management, with a raw YAML fallback view
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
@@ -358,6 +360,7 @@ son-of-steve/
 │   ├── shared/                # Shared between server and worker
 │   │   ├── types.ts           # Zod schemas, JobDoc, event types, worker registry types
 │   │   ├── kbTypes.ts         # Knowledge base shared types (KnowledgeBase, KBDocument, KBSearchResult, IngestProgressEvent)
+│   │   ├── researchTypes.ts   # Research pipeline types (strategies, sessions, steps, metrics, RAPTOR, agent, streaming events)
 │   │   ├── kbUtils.ts         # KB utilities (pathToBreadcrumb, formatPathBreadcrumb)
 │   │   ├── modelPricing.ts    # Claude model pricing for cost estimation
 │   │   ├── cache.ts           # Generic TTL cache with getOrSet
@@ -421,14 +424,36 @@ son-of-steve/
 │   │   │   ├── userResolver.ts    # Resolve Slack user IDs to display names
 │   │   │   └── formatting.ts      # Slack message templates
 │   │   ├── kb/
-│   │   │   ├── vectorStore.ts     # LanceDB wrapper (init, create/add/search/delete tables)
+│   │   │   ├── vectorStore.ts     # LanceDB wrapper (init, create/add/search/delete tables, RAPTOR node listing)
 │   │   │   ├── chunker.ts         # Markdown-aware text chunking (headings → paragraphs → sentences)
 │   │   │   ├── embeddings.ts      # OpenAI/LiteLLM embedding provider with batching
 │   │   │   ├── ingestion.ts       # File ingestion pipeline (text, PDF, archives)
 │   │   │   ├── kbRepo.ts          # MongoDB CRUD for KB + document metadata
-│   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion (batch + streaming), embedding, search
-│   │   │   ├── kbRoutes.ts        # Express routes: web (/api/web/kb) + worker (/api/worker/kb); NDJSON streaming ingest
-│   │   │   └── index.ts           # Barrel export
+│   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion, embedding, search, researchKnowledgeBases() entry point
+│   │   │   ├── kbRoutes.ts        # Express routes: web + worker KB, research, and RAPTOR endpoints; NDJSON streaming
+│   │   │   ├── index.ts           # Barrel export
+│   │   │   ├── research/          # Advanced RAG research pipeline
+│   │   │   │   ├── pipeline.ts        # Pipeline runner/orchestrator (simple + deep strategies, budget enforcement)
+│   │   │   │   ├── llmClient.ts       # Lightweight OpenAI-compatible LLM client for research reasoning calls
+│   │   │   │   ├── auditLog.ts        # AuditEmitter + StepRecorder for structured audit logging
+│   │   │   │   ├── auditRepo.ts       # MongoDB CRUD for research_sessions collection
+│   │   │   │   ├── strategies.ts      # Strategy profile definitions (simple/deep/agent budget caps + toggles)
+│   │   │   │   ├── stages/
+│   │   │   │   │   ├── queryAnalyzer.ts   # Query decomposition, complexity classification, step-back queries
+│   │   │   │   │   ├── queryExpander.ts   # HyDE hypothetical document generation + multi-query embedding
+│   │   │   │   │   ├── retriever.ts       # Multi-query vector search wrapper (wraps existing twoStageSearch)
+│   │   │   │   │   ├── evaluator.ts       # LLM reranking + CRAG relevance evaluation + re-query generation
+│   │   │   │   │   ├── reasoner.ts        # IRCoT iterative reasoning loop (convergence detection)
+│   │   │   │   │   └── synthesizer.ts     # Final context assembly with inline citations
+│   │   │   │   └── agent/
+│   │   │   │       ├── agentLoop.ts       # ReAct agent loop (Phase 4)
+│   │   │   │       ├── agentTools.ts      # Tool definitions: search_kb, evaluate_relevance, generate_hyde, etc.
+│   │   │   │       └── agentPrompts.ts    # Agent system prompt builder
+│   │   │   └── raptor/            # RAPTOR tree preprocessing
+│   │   │       ├── clusterer.ts       # K-means clustering of chunk embeddings
+│   │   │       ├── summarizer.ts      # LLM-based cluster summarization
+│   │   │       ├── treeBuilder.ts     # Recursive tree construction orchestrator
+│   │   │       └── raptorRepo.ts      # MongoDB metadata for RAPTOR build status
 │   │   └── api/
 │   │       ├── router.ts        # Mount worker + web + chat + KB routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)
@@ -438,7 +463,7 @@ son-of-steve/
 │   ├── worker/                # sos-worker process
 │   │   ├── index.ts           # Entry point: register, start loops, connect WS
 │   │   ├── config.ts          # Environment variable parsing
-│   │   ├── apiClient.ts       # Typed HTTP client for server API (incl. KB search)
+│   │   ├── apiClient.ts       # Typed HTTP client for server API (KB search, research pipeline w/ NDJSON streaming)
 │   │   ├── poller.ts          # Poll → claim → report status → execute → repeat
 │   │   ├── heartbeat.ts       # Interval-based lease extension manager
 │   │   ├── events.ts          # Event emission helper
@@ -448,6 +473,7 @@ son-of-steve/
 │   │       ├── runPlanJob.ts          # Pre-flight planning workflow (read-only Claude)
 │   │       ├── runGithubSummaryJob.ts # GitHub recap summary (data fetch → Claude → format)
 │   │       ├── runRespondToComments.ts # PR comment review workflow
+│   │       ├── errors.ts              # Sentinel errors (RequeueError, LeaseAbortedError)
 │   │       ├── repoRegistry.ts        # YAML registry loader
 │   │       ├── repoResolver.ts        # Hint/keyword-based repo resolution
 │   │       ├── workspace.ts           # Git clone management (ensureClone)
@@ -474,8 +500,8 @@ son-of-steve/
 │           │   └── AppDataContext.tsx  # Shared state + polling (jobs, PRs, workers, etc.)
 │           └── components/
 │               ├── chat/          # ChatsList, ChatDetail
-│               ├── jobs/          # JobsList, JobDetail, JobRow, etc.
-│               ├── kb/            # KBList, KBDetail, KBPlayground, kbShared (upload, search, settings, playground)
+│               ├── jobs/          # JobsList, JobDetail (incl. ResearchAudit), JobRow, etc.
+│               ├── kb/            # KBList, KBDetail, KBPlayground, kbShared, ResearchPlayground, ResearchTimeline, ResearchHistory, RaptorStatus, RaptorTree, StrategyComparison
 │               ├── prs/           # PrsList, PrRow
 │               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal
 │               ├── registry/      # RepoRegistryEditor
