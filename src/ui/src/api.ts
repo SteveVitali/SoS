@@ -699,3 +699,210 @@ export async function buildRaptorTree(
 ): Promise<{ ok: boolean; message: string }> {
   return request("POST", `/kb/${kbId}/raptor/build`, { config });
 }
+
+// --- Research Pipeline ---
+
+export type ResearchStrategy = "simple" | "deep" | "agent";
+
+export interface ResearchMetrics {
+  total_duration_ms: number;
+  iterations: number;
+  llm_calls: number;
+  retrieval_calls: number;
+  chunks_retrieved: number;
+  chunks_used: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  estimated_cost_usd: number;
+}
+
+export type ResearchStage =
+  | "query_analysis"
+  | "query_expansion"
+  | "retrieval"
+  | "evaluation"
+  | "reasoning"
+  | "synthesis";
+
+export interface ResearchStep {
+  step_id: string;
+  stage: ResearchStage;
+  iteration: number;
+  input: Record<string, unknown>;
+  output: Record<string, unknown>;
+  duration_ms: number;
+  llm_calls: Array<{
+    call_id: string;
+    stage: ResearchStage;
+    purpose: string;
+    model: string;
+    prompt_tokens: number;
+    completion_tokens: number;
+    cost_usd?: number;
+    duration_ms: number;
+    input_preview: string;
+    output_preview: string;
+  }>;
+  retrieval_calls: Array<{
+    call_id: string;
+    query_text: string;
+    query_type: string;
+    kb_ids_searched: string[];
+    results_count: number;
+    top_score: number;
+    duration_ms: number;
+  }>;
+}
+
+export interface ResearchSession {
+  session_id: string;
+  original_query: string;
+  scopes: string[];
+  config: {
+    strategy: ResearchStrategy;
+    max_iterations: number;
+    max_llm_calls: number;
+    max_retrieval_calls: number;
+    max_wall_time_ms: number;
+    [key: string]: unknown;
+  };
+  steps: ResearchStep[];
+  status: "running" | "completed" | "failed" | "budget_exhausted";
+  consumer?: { type: string; id?: string };
+  created_at: string;
+  completed_at?: string;
+}
+
+export interface ResearchResult {
+  session_id: string;
+  strategy: ResearchStrategy;
+  original_query: string;
+  context: string;
+  chunks: KBSearchResult[];
+  reasoning_trace: string;
+  metrics: ResearchMetrics;
+  audit: ResearchSession;
+}
+
+export type ResearchStreamEvent =
+  | { type: "session_start"; session_id: string; strategy: ResearchStrategy }
+  | { type: "step_start"; stage: ResearchStage; iteration: number }
+  | { type: "llm_call"; purpose: string; duration_ms: number; model: string }
+  | { type: "retrieval"; kb: string; results: number; top_score: number }
+  | {
+      type: "step_complete";
+      stage: ResearchStage;
+      duration_ms: number;
+      details?: Record<string, unknown>;
+    }
+  | {
+      type: "session_complete";
+      session_id: string;
+      total_ms: number;
+      llm_calls: number;
+      cost_usd: number;
+    }
+  | { type: "session_error"; session_id: string; error: string }
+  | ({ type: "result" } & ResearchResult);
+
+/**
+ * Run the research pipeline, returning the full result.
+ */
+export async function runResearch(params: {
+  query: string;
+  scopes?: KBScope[];
+  strategy?: ResearchStrategy;
+  config_overrides?: Record<string, unknown>;
+}): Promise<ResearchResult> {
+  return request("POST", "/kb/research", {
+    query: params.query,
+    scopes: params.scopes || ["chat", "all"],
+    strategy: params.strategy || "deep",
+    config_overrides: params.config_overrides,
+  });
+}
+
+/**
+ * Run the research pipeline with NDJSON streaming for real-time progress.
+ */
+export async function runResearchStreaming(
+  params: {
+    query: string;
+    scopes?: KBScope[];
+    strategy?: ResearchStrategy;
+    config_overrides?: Record<string, unknown>;
+  },
+  onEvent?: (event: ResearchStreamEvent) => void,
+): Promise<ResearchResult | null> {
+  const token = localStorage.getItem("sos_token") || "";
+  const res = await fetch(`${BASE}/kb/research`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      Accept: "text/x-ndjson",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+    },
+    body: JSON.stringify({
+      query: params.query,
+      scopes: params.scopes || ["chat", "all"],
+      strategy: params.strategy || "deep",
+      config_overrides: params.config_overrides,
+    }),
+  });
+
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status}: ${text}`);
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let result: ResearchResult | null = null;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    for (;;) {
+      const idx = buffer.indexOf("\n");
+      if (idx === -1) break;
+      const line = buffer.slice(0, idx).trim();
+      buffer = buffer.slice(idx + 1);
+      if (!line) continue;
+      try {
+        const event: ResearchStreamEvent = JSON.parse(line);
+        if (event.type === "result") {
+          const { type, ...rest } = event;
+          result = rest as ResearchResult;
+        }
+        onEvent?.(event);
+      } catch {
+        // skip
+      }
+    }
+  }
+
+  return result;
+}
+
+export async function listResearchSessions(params?: {
+  limit?: number;
+  offset?: number;
+  strategy?: ResearchStrategy;
+  consumer_type?: string;
+  consumer_id?: string;
+}): Promise<{ sessions: ResearchSession[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.offset) qs.set("offset", String(params.offset));
+  if (params?.strategy) qs.set("strategy", params.strategy);
+  if (params?.consumer_type) qs.set("consumer_type", params.consumer_type);
+  if (params?.consumer_id) qs.set("consumer_id", params.consumer_id);
+  return request("GET", `/kb/research/sessions?${qs.toString()}`);
+}
+
+export async function getResearchSession(sessionId: string): Promise<{ session: ResearchSession }> {
+  return request("GET", `/kb/research/sessions/${sessionId}`);
+}

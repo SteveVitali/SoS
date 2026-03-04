@@ -56,11 +56,13 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 ### File Organization
 
-- **`src/shared/`** — code imported by both server and worker (types, utilities)
+- **`src/shared/`** — code imported by both server and worker (types, utilities); includes `researchTypes.ts` for research pipeline types
 - **`src/server/`** — server-only code (never imported by worker)
 - **`src/server/routing/`** — YAML-driven LLM action routing: config loading, type definitions, executors, tool building, and template rendering
 - **`src/server/routing/graphs/`** — LangGraph-based execution graphs (e.g., corrective RAG); state machines that run as `langgraph` execution types
 - **`src/server/kb/`** — knowledge base module: vector store, chunker, embeddings, ingestion, MongoDB repo, service, API routes
+- **`src/server/kb/research/`** — advanced RAG research pipeline: pipeline runner, LLM client, audit logging, strategy profiles, and stages (queryAnalyzer, queryExpander, retriever, evaluator, reasoner, synthesizer) + agent/ (ReAct agent loop, tools, prompts)
+- **`src/server/kb/raptor/`** — RAPTOR tree preprocessing: k-means clustering, LLM summarization, recursive tree building, MongoDB metadata
 - **`src/worker/`** — worker-only code (never imported by server)
 - **`src/ui/`** — React SPA with its own `tsconfig.json` (excluded from server compilation)
 

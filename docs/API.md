@@ -907,6 +907,204 @@ Removes a document and its chunks from both the vector store and MongoDB.
 
 ---
 
+## Research Pipeline Endpoints (`/api/web/kb`)
+
+### Run Research Pipeline
+
+```
+POST /api/web/kb/research
+```
+
+Runs the advanced RAG research pipeline on a query against selected knowledge base scopes.
+
+**Body:**
+```json
+{
+  "query": "how does the auth module handle rate limiting?",
+  "scopes": ["chat", "all"],
+  "strategy": "deep",
+  "config_overrides": { "max_iterations": 2, "model": "gpt-4o" },
+  "owner": "default"
+}
+```
+
+- `strategy` — `"simple"`, `"deep"`, or `"agent"` (default: `"simple"`)
+- `config_overrides` — optional partial `ResearchConfig` to override strategy defaults (budget caps, stage toggles, model)
+
+#### Streaming mode (NDJSON)
+
+When the request includes `Accept: text/x-ndjson`, the endpoint streams real-time pipeline events as newline-delimited JSON, followed by the final result as the last line.
+
+**Event types:**
+
+| Event type | Fields | Meaning |
+|---|---|---|
+| `session_start` | `session_id`, `strategy` | Pipeline started |
+| `step_start` | `stage`, `iteration` | A pipeline stage is beginning |
+| `llm_call` | `purpose`, `duration_ms`, `model` | An LLM call completed |
+| `retrieval` | `kb`, `results`, `top_score` | A vector search completed |
+| `step_complete` | `stage`, `duration_ms`, `details` | A pipeline stage finished |
+| `session_complete` | `session_id`, `total_ms`, `llm_calls`, `cost_usd` | Pipeline finished |
+| `session_error` | `session_id`, `error` | Pipeline failed |
+| `result` | Full `ResearchResult` fields | Final result (last line) |
+
+#### Standard mode (JSON)
+
+Without the `Accept: text/x-ndjson` header, the endpoint returns a single JSON `ResearchResult`:
+
+```json
+{
+  "session_id": "uuid",
+  "strategy": "deep",
+  "original_query": "...",
+  "context": "formatted context string for LLM injection",
+  "chunks": [{ "content": "...", "source_file": "...", "kb_name": "...", "score": 0.87, ... }],
+  "reasoning_trace": "Step-by-step reasoning...",
+  "metrics": {
+    "total_duration_ms": 5420,
+    "iterations": 1,
+    "llm_calls": 4,
+    "retrieval_calls": 6,
+    "chunks_retrieved": 12,
+    "chunks_used": 5,
+    "prompt_tokens": 3200,
+    "completion_tokens": 1800,
+    "estimated_cost_usd": 0.012
+  },
+  "audit": { "session_id": "...", "steps": [...] }
+}
+```
+
+### List Research Sessions
+
+```
+GET /api/web/kb/research/sessions?limit=20&offset=0&strategy=deep&consumer_type=playground&consumer_id=...
+```
+
+Returns past research sessions. All query params are optional.
+
+**Response:**
+```json
+{
+  "sessions": [{ "session_id": "...", "original_query": "...", "config": { "strategy": "deep", ... }, "status": "completed", "created_at": "..." }],
+  "total": 42
+}
+```
+
+### Get Research Session
+
+```
+GET /api/web/kb/research/sessions/:id
+```
+
+Returns the full research session with all steps, LLM call records, and retrieval records.
+
+**Response:** `{ "session": { ... } }`
+
+### Run Research Pipeline (Worker)
+
+```
+POST /api/worker/kb/research
+```
+
+Worker-facing research endpoint. Same as the web endpoint but with `consumer` instead of `owner`.
+
+**Body:**
+```json
+{
+  "query": "how does the auth module work",
+  "scopes": ["create_job", "all"],
+  "strategy": "deep",
+  "consumer": { "type": "worker_job", "id": "task-uuid" }
+}
+```
+
+Supports both `Accept: text/x-ndjson` (streaming) and standard JSON responses. JSON response returns a flat object:
+
+```json
+{
+  "context": "...",
+  "chunks": [...],
+  "metrics": { ... },
+  "session_id": "..."
+}
+```
+
+---
+
+## RAPTOR Endpoints (`/api/web/kb`)
+
+### Build RAPTOR Tree
+
+```
+POST /api/web/kb/:id/raptor/build
+```
+
+Triggers an asynchronous RAPTOR tree build for the specified knowledge base. Returns immediately; build runs in the background.
+
+**Body (optional):**
+```json
+{
+  "config": {
+    "target_cluster_size": 8,
+    "min_cluster_size": 5,
+    "max_levels": 4,
+    "summary_model": "gpt-4o-mini",
+    "max_summary_input_tokens": 4000
+  }
+}
+```
+
+**Response (200):** `{ "ok": true, "message": "RAPTOR build started" }`
+
+### Get RAPTOR Status
+
+```
+GET /api/web/kb/:id/raptor/status
+```
+
+Returns the current RAPTOR build status for a knowledge base.
+
+**Response:**
+```json
+{
+  "status": {
+    "built": true,
+    "levels": 3,
+    "nodes_per_level": { "1": 24, "2": 5, "3": 1 },
+    "total_nodes": 30,
+    "last_built": "2026-03-04T...",
+    "build_duration_ms": 45000
+  }
+}
+```
+
+### Get RAPTOR Tree Nodes
+
+```
+GET /api/web/kb/:id/raptor/tree
+```
+
+Returns all RAPTOR tree nodes (level > 0) for visualization. Leaf-level (level 0) chunks are not included.
+
+**Response:**
+```json
+{
+  "nodes": [
+    {
+      "id": "uuid",
+      "level": 1,
+      "children_ids": ["child-uuid-1", "child-uuid-2"],
+      "content": "Summary of clustered chunks...",
+      "source_file": "docs/auth.md",
+      "section": "Authentication"
+    }
+  ]
+}
+```
+
+---
+
 ## Job Document Schema
 
 ```typescript
