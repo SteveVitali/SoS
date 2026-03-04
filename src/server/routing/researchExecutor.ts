@@ -79,12 +79,13 @@ export async function executeResearch(
     });
 
     // Run research with optional timeout
+    // Note: owner is intentionally omitted — KBs are shared, not per-user.
+    // The owner filter would exclude KBs that lack an owner field.
     let resultPromise = researchKnowledgeBases({
       query,
       scopes,
       strategy,
       consumer: { type: "chat", id: `routing:${ctx.userId}` },
-      owner: ctx.ownerId,
     });
 
     if (Number.isFinite(timeoutMs)) {
@@ -111,6 +112,7 @@ export async function executeResearch(
     });
 
     // Build the reply from the synthesized context
+    const hasContent = result.context && result.context.trim().length > 0;
     let reply = execDef.reply_template
       ? renderTemplate(
           execDef.reply_template,
@@ -124,7 +126,9 @@ export async function executeResearch(
             total_duration_ms: result.metrics.total_duration_ms,
           }),
         )
-      : result.context;
+      : hasContent
+        ? result.context
+        : "I searched the knowledge bases but couldn't find any relevant information. Try rephrasing your question or checking that the relevant knowledge bases are enabled.";
 
     // Append trace/metrics footer when show_trace is enabled
     if (showTrace && result.metrics) {

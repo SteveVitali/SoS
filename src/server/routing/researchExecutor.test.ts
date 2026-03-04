@@ -260,7 +260,7 @@ describe("executeResearch", () => {
     expect(mockResearch).toHaveBeenCalledWith(expect.objectContaining({ strategy: "agent" }));
   });
 
-  it("passes consumer and owner from context", async () => {
+  it("passes consumer from context but not owner", async () => {
     mockResearch.mockResolvedValue(makeResearchResult());
 
     const action = makeAction({ query: "test" });
@@ -269,8 +269,21 @@ describe("executeResearch", () => {
     expect(mockResearch).toHaveBeenCalledWith(
       expect.objectContaining({
         consumer: { type: "chat", id: "routing:U123" },
-        owner: "owner1",
       }),
     );
+    // owner should NOT be passed — KBs are shared, not per-user
+    expect(mockResearch).toHaveBeenCalledWith(
+      expect.not.objectContaining({ owner: expect.anything() }),
+    );
+  });
+
+  it("returns friendly message when context is empty", async () => {
+    mockResearch.mockResolvedValue(makeResearchResult({ context: "", chunks: [] }));
+
+    const action = makeAction({ query: "test" });
+    const execDef: ResearchExecution = { ...baseExecDef, show_trace: false };
+    const result = await executeResearch(action, makeCtx(), execDef);
+
+    expect(result.reply).toContain("couldn't find any relevant information");
   });
 });
