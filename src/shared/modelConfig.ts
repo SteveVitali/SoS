@@ -11,9 +11,9 @@
  * ┌──────────────────────┬──────────────────────────────┬──────────────────────────────────┐
  * │ Role                 │ Default model                │ Env override                     │
  * ├──────────────────────┼──────────────────────────────┼──────────────────────────────────┤
- * │ routing              │ claude-opus-4-0-20250514     │ SOS_LLM_MODEL                    │
+ * │ routing              │ claude-opus-4.5     │ SOS_LLM_MODEL                    │
  * │ titleGeneration      │ (inherits routing)           │ SOS_TITLE_MODEL                  │
- * │ research             │ claude-opus-4-0-20250514     │ SOS_RESEARCH_LLM_MODEL           │
+ * │ research             │ claude-opus-4.5     │ SOS_RESEARCH_LLM_MODEL           │
  * │ raptorSummarization  │ (inherits research)          │ SOS_RAPTOR_MODEL                 │
  * │ embedding            │ text-embedding-3-small       │ SOS_EMBEDDING_MODEL              │
  * └──────────────────────┴──────────────────────────────┴──────────────────────────────────┘
@@ -52,10 +52,27 @@ export type ModelRoleName =
   | "raptorSummarization"
   | "embedding";
 
+export type LLMProviderType = "anthropic" | "openai_compatible";
+
+const VALID_PROVIDERS = new Set<string>(["anthropic", "openai_compatible"]);
+
+export interface ProviderSettings {
+  provider?: LLMProviderType;
+  base_url?: string;
+  api_key?: string;
+}
+
+export interface ResolvedProviderSettings {
+  provider: LLMProviderType;
+  base_url: string;
+  api_key: string;
+  source: { provider: string; base_url: string; api_key: string };
+}
+
 // ─── Defaults ───────────────────────────────────────────────────
 
-const DEFAULT_ROUTING_MODEL = "claude-opus-4-0-20250514";
-const DEFAULT_RESEARCH_MODEL = "claude-opus-4-0-20250514";
+const DEFAULT_ROUTING_MODEL = "claude-opus-4.5";
+const DEFAULT_RESEARCH_MODEL = "claude-opus-4.5";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 
 const VALID_ROLES: ModelRoleName[] = [
@@ -69,6 +86,7 @@ const VALID_ROLES: ModelRoleName[] = [
 // ─── File-based override layer ──────────────────────────────────
 
 let cachedOverrides: Partial<Record<ModelRoleName, string>> = {};
+let cachedProvider: ProviderSettings = {};
 let modelConfigPath: string | null = null;
 let watcherActive = false;
 let suppressNextWatch = false;
@@ -91,29 +109,51 @@ export function generateDefaultModelConfig(): string {
   ].join("\n");
 }
 
+interface ParsedConfig {
+  overrides: Partial<Record<ModelRoleName, string>>;
+  provider: ProviderSettings;
+}
+
 /**
- * Parse the YAML file into an overrides map.
- * Only keeps keys that are valid ModelRoleName values with string model values.
+ * Parse the YAML file into model overrides + provider settings.
+ * Model role keys go into overrides; provider/base_url/api_key go into provider.
  */
-function parseOverrides(filePath: string): Partial<Record<ModelRoleName, string>> {
+function parseConfigFile(filePath: string): ParsedConfig {
   try {
     const raw = readFileSync(filePath, "utf-8");
     const data = parseYaml(raw);
-    if (!data || typeof data !== "object") return {};
+    if (!data || typeof data !== "object") return { overrides: {}, provider: {} };
 
-    const result: Partial<Record<ModelRoleName, string>> = {};
+    const overrides: Partial<Record<ModelRoleName, string>> = {};
     for (const role of VALID_ROLES) {
       if (typeof data[role] === "string" && data[role].trim()) {
-        result[role] = data[role].trim();
+        overrides[role] = data[role].trim();
       }
     }
-    return result;
+
+    const provider: ProviderSettings = {};
+    if (typeof data.provider === "string" && data.provider.trim()) {
+      const raw = data.provider.trim();
+      if (VALID_PROVIDERS.has(raw)) {
+        provider.provider = raw as LLMProviderType;
+      } else {
+        log.warn("Unknown provider in model config, ignoring", { provider: raw });
+      }
+    }
+    if (typeof data.base_url === "string" && data.base_url.trim()) {
+      provider.base_url = data.base_url.trim();
+    }
+    if (typeof data.api_key === "string" && data.api_key.trim()) {
+      provider.api_key = data.api_key.trim();
+    }
+
+    return { overrides, provider };
   } catch (err: unknown) {
     log.error("Failed to parse model config file", {
       path: filePath,
       error: (err as Error).message,
     });
-    return {};
+    return { overrides: {}, provider: {} };
   }
 }
 
@@ -131,9 +171,15 @@ export function initModelConfig(filePath: string): void {
     log.info("Default model config written", { path: filePath });
   }
 
-  cachedOverrides = parseOverrides(filePath);
+  const parsed = parseConfigFile(filePath);
+  cachedOverrides = parsed.overrides;
+  cachedProvider = parsed.provider;
   const overrideCount = Object.keys(cachedOverrides).length;
-  log.info("Model config loaded", { path: filePath, overrides: overrideCount });
+  log.info("Model config loaded", {
+    path: filePath,
+    overrides: overrideCount,
+    provider: cachedProvider.provider || "(not set)",
+  });
 
   if (!watcherActive) {
     try {
@@ -145,7 +191,9 @@ export function initModelConfig(filePath: string): void {
           }
           log.info("Model config file changed, reloading");
           try {
-            cachedOverrides = parseOverrides(filePath);
+            const parsed = parseConfigFile(filePath);
+            cachedOverrides = parsed.overrides;
+            cachedProvider = parsed.provider;
           } catch (err: unknown) {
             log.error("Failed to reload model config, keeping previous", {
               error: (err as Error).message,
@@ -171,18 +219,54 @@ export function getModelConfigPath(): string | null {
  * Get the raw overrides map from the YAML file.
  */
 export function getModelConfigRaw(): Partial<Record<ModelRoleName, string>> {
-  if (!modelConfigPath) return {};
-  return parseOverrides(modelConfigPath);
+  return { ...cachedOverrides };
 }
 
 /**
- * Save model overrides to disk as YAML and reload the cache.
+ * Get the provider settings from model-config.yaml.
  */
-export function saveModelConfig(overrides: Partial<Record<ModelRoleName, string>>): void {
+export function getProviderSettings(): ProviderSettings {
+  return { ...cachedProvider };
+}
+
+/**
+ * Get the resolved provider settings (YAML > env > default).
+ */
+export function getResolvedProviderSettings(): ResolvedProviderSettings {
+  const fileProvider = cachedProvider.provider;
+  const envProvider = process.env.SOS_LLM_PROVIDER as LLMProviderType | undefined;
+  const provider = fileProvider || envProvider || "openai_compatible";
+  const providerSource = fileProvider ? "file" : envProvider ? "env" : "default";
+
+  const fileBaseUrl = cachedProvider.base_url;
+  const envBaseUrl = process.env.SOS_LLM_BASE_URL;
+  const base_url = fileBaseUrl || envBaseUrl || "";
+  const baseUrlSource = fileBaseUrl ? "file" : envBaseUrl ? "env" : "default";
+
+  const fileApiKey = cachedProvider.api_key;
+  const envApiKey = process.env.SOS_LLM_API_KEY || process.env.ANTHROPIC_API_KEY;
+  const api_key = fileApiKey || envApiKey || "";
+  const apiKeySource = fileApiKey ? "file" : envApiKey ? "env" : "default";
+
+  return {
+    provider,
+    base_url,
+    api_key,
+    source: { provider: providerSource, base_url: baseUrlSource, api_key: apiKeySource },
+  };
+}
+
+/**
+ * Save model overrides and provider settings to disk as YAML and reload the cache.
+ */
+export function saveModelConfig(
+  overrides: Partial<Record<ModelRoleName, string>>,
+  providerSettings?: ProviderSettings,
+): void {
   if (!modelConfigPath) {
     throw new Error("Model config not initialized. Call initModelConfig() first.");
   }
-  // Filter out empty/invalid values
+  // Filter out empty/invalid model role values
   const clean: Record<string, string> = {};
   for (const role of VALID_ROLES) {
     const val = overrides[role];
@@ -191,15 +275,29 @@ export function saveModelConfig(overrides: Partial<Record<ModelRoleName, string>
     }
   }
 
+  // Merge provider settings
+  const providerToSave = providerSettings ?? cachedProvider;
+  const combined: Record<string, string> = {};
+  if (providerToSave.provider?.trim()) combined.provider = providerToSave.provider.trim();
+  if (providerToSave.base_url?.trim()) combined.base_url = providerToSave.base_url.trim();
+  if (providerToSave.api_key?.trim()) combined.api_key = providerToSave.api_key.trim();
+  Object.assign(combined, clean);
+
   const yaml =
-    Object.keys(clean).length > 0
-      ? stringifyYaml(clean, { lineWidth: 120 })
+    Object.keys(combined).length > 0
+      ? stringifyYaml(combined, { lineWidth: 120 })
       : generateDefaultModelConfig();
 
   suppressNextWatch = true;
   writeFileSync(modelConfigPath, yaml, "utf-8");
-  log.info("Model config saved", { path: modelConfigPath, overrides: Object.keys(clean) });
-  cachedOverrides = parseOverrides(modelConfigPath);
+  log.info("Model config saved", {
+    path: modelConfigPath,
+    overrides: Object.keys(clean),
+    provider: !!providerSettings,
+  });
+  const parsed = parseConfigFile(modelConfigPath);
+  cachedOverrides = parsed.overrides;
+  cachedProvider = parsed.provider;
 }
 
 /**
@@ -209,8 +307,13 @@ export function reloadModelConfig(): void {
   if (!modelConfigPath) {
     throw new Error("Model config not initialized.");
   }
-  cachedOverrides = parseOverrides(modelConfigPath);
-  log.info("Model config reloaded", { overrides: Object.keys(cachedOverrides) });
+  const parsed = parseConfigFile(modelConfigPath);
+  cachedOverrides = parsed.overrides;
+  cachedProvider = parsed.provider;
+  log.info("Model config reloaded", {
+    overrides: Object.keys(cachedOverrides),
+    provider: cachedProvider.provider || "(not set)",
+  });
 }
 
 // ─── Registry ───────────────────────────────────────────────────

@@ -1,4 +1,4 @@
-import { useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { css } from "../../styles/theme.js";
 
 interface ModelAutocompleteProps {
@@ -9,6 +9,8 @@ interface ModelAutocompleteProps {
   loading?: boolean;
 }
 
+const DROPDOWN_MAX_HEIGHT = 240;
+
 export function ModelAutocomplete({
   value,
   onChange,
@@ -18,6 +20,12 @@ export function ModelAutocomplete({
 }: ModelAutocompleteProps) {
   const [open, setOpen] = useState(false);
   const [highlighted, setHighlighted] = useState(-1);
+  const [dropdownPos, setDropdownPos] = useState<{
+    top: number;
+    left: number;
+    width: number;
+    flipUp: boolean;
+  } | null>(null);
   const containerRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLInputElement>(null);
   const listRef = useRef<HTMLDivElement>(null);
@@ -27,6 +35,20 @@ export function ModelAutocomplete({
     : models;
 
   const showDropdown = open && filtered.length > 0;
+
+  // Compute fixed position from the input's bounding rect
+  const updatePosition = useCallback(() => {
+    if (!inputRef.current) return;
+    const rect = inputRef.current.getBoundingClientRect();
+    const spaceBelow = window.innerHeight - rect.bottom;
+    const flipUp = spaceBelow < DROPDOWN_MAX_HEIGHT && rect.top > spaceBelow;
+    setDropdownPos({
+      top: flipUp ? rect.top : rect.bottom,
+      left: rect.left,
+      width: rect.width,
+      flipUp,
+    });
+  }, []);
 
   // Close on outside click
   useEffect(() => {
@@ -38,6 +60,18 @@ export function ModelAutocomplete({
     document.addEventListener("mousedown", handler);
     return () => document.removeEventListener("mousedown", handler);
   }, []);
+
+  // Reposition on scroll/resize while open
+  useEffect(() => {
+    if (!showDropdown) return;
+    updatePosition();
+    window.addEventListener("scroll", updatePosition, true);
+    window.addEventListener("resize", updatePosition);
+    return () => {
+      window.removeEventListener("scroll", updatePosition, true);
+      window.removeEventListener("resize", updatePosition);
+    };
+  }, [showDropdown, updatePosition]);
 
   // Scroll highlighted item into view
   useEffect(() => {
@@ -137,25 +171,31 @@ export function ModelAutocomplete({
         )}
       </div>
 
-      {showDropdown && (
+      {showDropdown && dropdownPos && (
         <div
           ref={listRef}
           role="listbox"
           style={{
-            position: "absolute",
-            top: "100%",
-            left: 0,
-            right: 0,
-            maxHeight: 240,
+            position: "fixed",
+            top: dropdownPos.flipUp ? undefined : dropdownPos.top,
+            bottom: dropdownPos.flipUp ? window.innerHeight - dropdownPos.top : undefined,
+            left: dropdownPos.left,
+            width: dropdownPos.width,
+            maxHeight: DROPDOWN_MAX_HEIGHT,
             overflowY: "auto",
             background: "var(--bg2)",
             border: "1px solid var(--border)",
-            borderTop: "none",
-            borderRadius: "0 0 var(--radius) var(--radius)",
+            borderTop: dropdownPos.flipUp ? undefined : "none",
+            borderBottom: dropdownPos.flipUp ? "none" : undefined,
+            borderRadius: dropdownPos.flipUp
+              ? "var(--radius) var(--radius) 0 0"
+              : "0 0 var(--radius) var(--radius)",
             margin: 0,
             padding: 0,
-            zIndex: 100,
-            boxShadow: "0 4px 12px rgba(0,0,0,0.15)",
+            zIndex: 9999,
+            boxShadow: dropdownPos.flipUp
+              ? "0 -4px 12px rgba(0,0,0,0.15)"
+              : "0 4px 12px rgba(0,0,0,0.15)",
           }}
         >
           {filtered.map((model, i) => {

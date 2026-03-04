@@ -7,6 +7,9 @@ import {
   getModelConfigPath,
   getModelConfigRaw,
   getModelRegistry,
+  getProviderSettings,
+  getResolvedProviderSettings,
+  type ProviderSettings,
   reloadModelConfig,
   saveModelConfig,
 } from "../../shared/modelConfig.js";
@@ -647,17 +650,80 @@ export function createWebRoutes(config: ServerConfig): Router {
     res.json({ models: registry });
   });
 
-  // GET /api/web/available-models — dynamically fetch model list from LLM provider
-  // When using openai_compatible (LiteLLM), proxies GET /v1/models to list available models.
-  // Results are cached for 60 seconds to avoid hammering the upstream.
+  // GET /api/web/available-models — fetch chat models from LiteLLM.
+  // Uses /model/info (fast) for the model group list, and /health (slow, ~30-60s)
+  // as a best-effort background filter. Health data is cached separately and used
+  // to filter out unhealthy groups when available.
   let cachedModelList: { models: string[]; provider: string; fetchedAt: number } | null = null;
+  let cachedHealthyDeployments: { deployments: Set<string>; fetchedAt: number } | null = null;
+  let healthFetchInFlight = false;
   const MODEL_LIST_CACHE_TTL_MS = 60_000;
+  const HEALTH_CACHE_TTL_MS = 120_000; // health is slow, cache longer
+
+  interface ModelInfoEntry {
+    model_name: string;
+    litellm_params?: { model?: string };
+    model_info?: { mode?: string };
+  }
+
+  /** Extract chat-mode model groups from /model/info data, optionally filtered by health. */
+  function extractModelGroups(
+    entries: ModelInfoEntry[],
+    healthyDeployments: Set<string> | null,
+  ): string[] {
+    const groups = new Set<string>();
+    for (const entry of entries) {
+      const group = entry.model_name;
+      const deployment = entry.litellm_params?.model;
+      const mode = entry.model_info?.mode;
+      if (!group || !deployment) continue;
+      if (mode && mode !== "chat" && mode !== "completion") continue;
+      // If we have health data, only include groups with ≥1 healthy deployment
+      if (healthyDeployments && !healthyDeployments.has(deployment)) continue;
+      groups.add(group);
+    }
+    return [...groups].sort();
+  }
+
+  /** Fire-and-forget background fetch of /health to populate the health cache. */
+  function refreshHealthCache(base: string, headers: Record<string, string>): void {
+    if (healthFetchInFlight) return;
+    if (
+      cachedHealthyDeployments &&
+      Date.now() - cachedHealthyDeployments.fetchedAt < HEALTH_CACHE_TTL_MS
+    )
+      return;
+    healthFetchInFlight = true;
+    fetch(`${base}/health`, { headers, signal: AbortSignal.timeout(90_000) })
+      .then(async (res) => {
+        if (!res.ok) {
+          log.warn("Background health fetch returned non-OK", { status: res.status });
+          return;
+        }
+        const data = (await res.json()) as { healthy_endpoints?: { model?: string }[] };
+        const deployments = new Set(
+          (data.healthy_endpoints || []).map((e) => e.model).filter(Boolean) as string[],
+        );
+        cachedHealthyDeployments = { deployments, fetchedAt: Date.now() };
+        // Invalidate model list cache so next request uses the new health data
+        cachedModelList = null;
+        log.info("Background health cache refreshed", { healthy_deployments: deployments.size });
+      })
+      .catch((err: unknown) => {
+        log.warn("Background health fetch failed (non-fatal)", { error: (err as Error).message });
+      })
+      .finally(() => {
+        healthFetchInFlight = false;
+      });
+  }
 
   router.get("/available-models", async (_req: Request, res: Response) => {
     try {
-      const provider = config.llmProvider;
-      const baseUrl = config.llmBaseUrl;
-      const apiKey = config.llmApiKey;
+      // Use resolved provider settings (YAML > env > default)
+      const resolved = getResolvedProviderSettings();
+      const provider = resolved.provider;
+      const baseUrl = resolved.base_url;
+      const apiKey = resolved.api_key;
 
       if (provider !== "openai_compatible" || !baseUrl) {
         res.json({
@@ -675,32 +741,41 @@ export function createWebRoutes(config: ServerConfig): Router {
         return;
       }
 
-      // Fetch from upstream /v1/models
-      const url = `${baseUrl.replace(/\/+$/, "")}/v1/models`;
-      const upstream = await fetch(url, {
-        headers: {
-          Authorization: `Bearer ${apiKey}`,
-          Accept: "application/json",
-        },
-        signal: AbortSignal.timeout(10_000),
+      const base = baseUrl.replace(/\/+$/, "");
+      const headers = { Authorization: `Bearer ${apiKey}`, Accept: "application/json" };
+
+      // Kick off background health fetch (non-blocking)
+      refreshHealthCache(base, headers);
+
+      // Fetch /model/info (fast, ~1-2s)
+      const modelInfoRes = await fetch(`${base}/model/info`, {
+        headers,
+        signal: AbortSignal.timeout(15_000),
       });
 
-      if (!upstream.ok) {
-        const text = await upstream.text().catch(() => "");
-        log.warn("Failed to fetch models from LLM provider", {
-          status: upstream.status,
+      if (!modelInfoRes.ok) {
+        const text = await modelInfoRes.text().catch(() => "");
+        log.warn("Failed to fetch model info from LLM provider", {
+          status: modelInfoRes.status,
           body: text.slice(0, 200),
         });
         res.json({
           models: cachedModelList?.models || [],
           provider,
-          error: `Upstream returned ${upstream.status}`,
+          error: `Upstream returned ${modelInfoRes.status}`,
         });
         return;
       }
 
-      const data = (await upstream.json()) as { data?: Array<{ id: string }> };
-      const models = (data.data || []).map((m) => m.id).sort();
+      const modelInfoData = (await modelInfoRes.json()) as { data?: ModelInfoEntry[] };
+      const healthyDeps = cachedHealthyDeployments?.deployments ?? null;
+      const models = extractModelGroups(modelInfoData.data || [], healthyDeps);
+
+      log.info("Fetched available models from LLM provider", {
+        total_deployments: (modelInfoData.data || []).length,
+        health_filter_active: !!healthyDeps,
+        result_count: models.length,
+      });
 
       cachedModelList = { models, provider, fetchedAt: Date.now() };
       res.json({ models, provider });
@@ -708,7 +783,7 @@ export function createWebRoutes(config: ServerConfig): Router {
       log.warn("Error fetching available models", { error: (err as Error).message });
       res.json({
         models: cachedModelList?.models || [],
-        provider: config.llmProvider,
+        provider: getResolvedProviderSettings().provider,
         error: (err as Error).message,
       });
     }
@@ -716,13 +791,26 @@ export function createWebRoutes(config: ServerConfig): Router {
 
   // --- Model Config (YAML file overrides) ---
 
-  // GET /api/web/model-config — read model-config.yaml overrides + resolved registry
+  // GET /api/web/model-config — read model-config.yaml overrides + resolved registry + provider
   router.get("/model-config", (_req: Request, res: Response) => {
     try {
       const configPath = getModelConfigPath();
       const registry = getModelRegistry();
       const overrides = getModelConfigRaw();
-      res.json({ models: registry, overrides, path: configPath || "" });
+      const providerRaw = getProviderSettings();
+      const providerResolved = getResolvedProviderSettings();
+      res.json({
+        models: registry,
+        overrides,
+        path: configPath || "",
+        provider: providerRaw,
+        providerResolved: {
+          provider: providerResolved.provider,
+          base_url: providerResolved.base_url,
+          api_key_set: !!providerResolved.api_key,
+          source: providerResolved.source,
+        },
+      });
     } catch (err: unknown) {
       log.error("Read model config error", { error: (err as Error).message });
       res.status(500).json({ error: (err as Error).message });
@@ -742,7 +830,11 @@ export function createWebRoutes(config: ServerConfig): Router {
         res.status(400).json({ error: "Missing or invalid overrides object in body" });
         return;
       }
-      saveModelConfig(overrides);
+      const providerSettings: ProviderSettings | undefined = req.body?.provider;
+      saveModelConfig(overrides, providerSettings);
+      // Invalidate caches so next fetch uses new provider settings
+      cachedModelList = null;
+      cachedHealthyDeployments = null;
       const registry = getModelRegistry();
       res.json({ ok: true, models: registry });
     } catch (err: unknown) {

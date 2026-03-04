@@ -1,9 +1,4 @@
-# Model Config — override model assignments per role.
-# Values here take precedence over env vars and hardcoded defaults.
-# Uncomment and change values as needed.
-
-# routing: claude-opus-4-0-20250514              # Env: SOS_LLM_MODEL
-# titleGeneration: (inherits routing)         # Env: SOS_TITLE_MODEL
-# research: claude-opus-4-0-20250514  # Env: SOS_RESEARCH_LLM_MODEL
-# raptorSummarization: (inherits research)    # Env: SOS_RAPTOR_MODEL
-# embedding: text-embedding-3-small       # Env: SOS_EMBEDDING_MODEL
+routing: claude-opus-4.5
+titleGeneration: claude-opus-4.5
+research: claude-opus-4.5
+raptorSummarization: claude-opus-4.5

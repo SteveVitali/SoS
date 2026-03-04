@@ -179,7 +179,6 @@ async function buildResearchKBContext(
       scopes,
       strategy,
       consumer: { type: "chat", id: "message-router" },
-      config_overrides: { skip_llm_synthesis: true },
     });
 
     if (!result.context) return "(No knowledge base context available)";
