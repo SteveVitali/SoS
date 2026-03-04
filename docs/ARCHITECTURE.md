@@ -273,7 +273,7 @@ The system prompt supports three placeholders: `{ACTIONS}` (replaced with the au
 
 ### Execution Types
 
-Each action has an `execution` block that determines what happens when the LLM picks it. There are 12 execution types:
+Each action has an `execution` block that determines what happens when the LLM picks it. There are 13 execution types:
 
 | Type | What it does |
 |---|---|
@@ -289,6 +289,7 @@ Each action has an `execution` block that determines what happens when the LLM p
 | `agent_task` | Create a job with custom YAML-defined instructions injected into the Claude prompt |
 | `leave_channel` | Leave the current Slack channel |
 | `dispatch` | Route to sub-executions based on a parameter value (polymorphic dispatch) |
+| `langgraph` | Run a LangGraph state machine (e.g., corrective RAG with iterative retrieve → grade → reformulate loops) |
 
 ### Template Engine
 
@@ -385,11 +386,16 @@ son-of-steve/
 │   │   │   └── titleGen.ts            # LLM-based conversation title generation
 │   │   ├── routing/
 │   │   │   ├── routingConfig.ts    # Load, save, reload, watch routing-config.yaml
-│   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema (12 execution types)
+│   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema (13 execution types)
 │   │   │   ├── defaultConfig.ts    # Default routing-config.yaml generation
-│   │   │   ├── executors.ts        # Action execution dispatch (12 handlers, one per execution type)
+│   │   │   ├── executors.ts        # Action execution dispatch (13 handlers, one per execution type)
 │   │   │   ├── toolBuilder.ts      # Build LLM tool definitions + prompt sections from YAML actions
 │   │   │   ├── template.ts         # Mustache-style template rendering for replies
+│   │   │   ├── graphs/             # LangGraph-based execution graphs
+│   │   │   │   ├── correctiveRag.ts    # Corrective RAG graph (retrieve → grade → reformulate → synthesize)
+│   │   │   │   ├── graphExecutor.ts    # Bridge between YAML executors and LangGraph graphs
+│   │   │   │   ├── types.ts            # Shared state, config, and result types for graphs
+│   │   │   │   └── index.ts            # Barrel export
 │   │   │   └── index.ts            # Barrel export
 │   │   ├── workers/
 │   │   │   ├── spawnWorker.ts     # Spawn/kill worker processes (detached process groups)

@@ -59,6 +59,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 - **`src/shared/`** — code imported by both server and worker (types, utilities)
 - **`src/server/`** — server-only code (never imported by worker)
 - **`src/server/routing/`** — YAML-driven LLM action routing: config loading, type definitions, executors, tool building, and template rendering
+- **`src/server/routing/graphs/`** — LangGraph-based execution graphs (e.g., corrective RAG); state machines that run as `langgraph` execution types
 - **`src/server/kb/`** — knowledge base module: vector store, chunker, embeddings, ingestion, MongoDB repo, service, API routes
 - **`src/worker/`** — worker-only code (never imported by server)
 - **`src/ui/`** — React SPA with its own `tsconfig.json` (excluded from server compilation)
@@ -101,6 +102,16 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 2. Create a new file (e.g., `src/server/llm/bedrockProvider.ts`)
 3. Register it in `src/server/llm/index.ts` so `createLLMProvider` returns it by provider name
 4. Document the required env vars in `docs/CONFIGURATION.md` and `docs/SLACK_SETUP.md`
+
+### Adding a new LangGraph execution graph
+
+1. Define your graph state and config types in `src/server/routing/graphs/types.ts` (or a new file)
+2. Create the graph in `src/server/routing/graphs/myGraph.ts` with a `runMyGraph()` convenience function
+3. Add a `case "my_graph"` to the switch in `src/server/routing/graphs/graphExecutor.ts` → `runGraph()`
+4. Export from the barrel file `src/server/routing/graphs/index.ts`
+5. Add tests in `src/server/routing/graphs/myGraph.test.ts` (mock `searchKnowledgeBases` and `LLMProvider`)
+6. Activate via `routing-config.yaml`: set `execution.type: langgraph` and `execution.graph: my_graph` on an action
+7. Configure graph-specific settings under `execution.graph_config` (see `EXAMPLE_YAML.md` for reference)
 
 ### Adding a new API endpoint
 
