@@ -25,6 +25,7 @@ export function KBDetail() {
   const [ingesting, setIngesting] = useState(false);
   const [ingestResult, setIngestResult] = useState<string>("");
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const folderInputRef = useRef<HTMLInputElement>(null);
 
   // Chunk exploration state
   const [expandedDoc, setExpandedDoc] = useState<string | null>(null);
@@ -114,14 +115,13 @@ export function KBDetail() {
     }
   };
 
-  const handleIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
-    const files = e.target.files;
-    if (!files || files.length === 0 || !kb) return;
+  const ingestFileList = async (files: File[]) => {
+    if (files.length === 0 || !kb) return;
     setIngesting(true);
     setIngestResult("");
     setError("");
     try {
-      const result = await ingestKBFiles(kb.kb_id, Array.from(files));
+      const result = await ingestKBFiles(kb.kb_id, files);
       setIngestResult(
         `Added ${result.documents_added} docs, ${result.chunks_added} chunks` +
           (result.skipped.length ? `. Skipped: ${result.skipped.length}` : "") +
@@ -133,7 +133,14 @@ export function KBDetail() {
     } finally {
       setIngesting(false);
       if (fileInputRef.current) fileInputRef.current.value = "";
+      if (folderInputRef.current) folderInputRef.current.value = "";
     }
+  };
+
+  const handleIngest = async (e: React.ChangeEvent<HTMLInputElement>) => {
+    const files = e.target.files;
+    if (!files) return;
+    await ingestFileList(Array.from(files));
   };
 
   const handleSearch = async () => {
@@ -344,7 +351,8 @@ export function KBDetail() {
       <div style={css.card}>
         <h3 style={{ fontSize: 15, fontWeight: 600, marginBottom: 12 }}>Upload Files</h3>
         <p style={{ fontSize: 13, color: "var(--fg2)", marginBottom: 12 }}>
-          Upload text files, PDFs, or archives (.zip, .tar.gz). Archives are auto-extracted.
+          Upload text files, PDFs, archives (.zip, .tar.gz), or entire folders. Archives and folders
+          are auto-expanded and the directory hierarchy is preserved.
         </p>
         <div style={{ display: "flex", alignItems: "center", gap: 12 }}>
           <input
@@ -355,6 +363,23 @@ export function KBDetail() {
             disabled={ingesting}
             style={{ fontSize: 13 }}
           />
+          <input
+            ref={folderInputRef}
+            type="file"
+            /* @ts-expect-error webkitdirectory is non-standard but widely supported */
+            webkitdirectory=""
+            onChange={handleIngest}
+            disabled={ingesting}
+            style={{ display: "none" }}
+          />
+          <button
+            type="button"
+            style={css.btn}
+            disabled={ingesting}
+            onClick={() => folderInputRef.current?.click()}
+          >
+            Upload Folder
+          </button>
           {ingesting && <span style={{ fontSize: 13, color: "var(--fg2)" }}>Ingesting...</span>}
         </div>
         {ingestResult && (

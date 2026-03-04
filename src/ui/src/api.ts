@@ -554,7 +554,11 @@ export async function ingestKBFiles(
   const token = localStorage.getItem("sos_token") || "";
   const formData = new FormData();
   for (const file of files) {
-    formData.append("files", file);
+    // When uploading a folder, webkitRelativePath preserves the hierarchy
+    // (e.g. "my-folder/sub/file.txt"). Pass it as the filename so the
+    // server sees the full relative path instead of just the basename.
+    const name = file.webkitRelativePath || file.name;
+    formData.append("files", file, name);
   }
   const res = await fetch(`${BASE}/kb/${kbId}/ingest`, {
     method: "POST",

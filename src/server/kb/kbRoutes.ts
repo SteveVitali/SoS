@@ -187,7 +187,7 @@ export function createKBWebRoutes(): Router {
   });
 
   // POST /api/web/kb/:id/ingest — upload and ingest files
-  router.post("/:id/ingest", upload.array("files", 50), async (req: Request, res: Response) => {
+  router.post("/:id/ingest", upload.array("files", 500), async (req: Request, res: Response) => {
     try {
       const kbId = pstr(req.params.id);
       const kb = await getKnowledgeBase(kbId);
