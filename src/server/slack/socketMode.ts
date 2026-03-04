@@ -4,6 +4,7 @@ import { markdownToSlack } from "../../shared/slackMarkdown.js";
 import type { ServerConfig } from "../config.js";
 import { createAppMentionHandler } from "./eventHandlers.js";
 import type { SlackPoster } from "./slackClient.js";
+import { splitForSlack } from "./slackClient.js";
 
 const log = createLogger("server:slack:socket");
 
@@ -26,7 +27,10 @@ export async function startSlackSocketMode(
     if (reply) {
       // biome-ignore lint/suspicious/noExplicitAny: Slack API type
       const threadTs = (event as any).thread_ts ?? event.ts;
-      await say({ text: markdownToSlack(reply), thread_ts: threadTs });
+      const chunks = splitForSlack(markdownToSlack(reply));
+      for (const chunk of chunks) {
+        await say({ text: chunk, thread_ts: threadTs });
+      }
     }
   });
 

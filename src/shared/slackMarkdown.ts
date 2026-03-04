@@ -58,8 +58,11 @@ export function markdownToSlack(text: string): string {
       continue;
     }
 
-    // Markdown links [text](url) → Slack links <url|text>
-    out.push(line.replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "<$2|$1>"));
+    // Markdown bold **text** → Slack bold *text*, then markdown links → Slack links
+    const converted = line
+      .replace(/\*\*([^*]+)\*\*/g, "*$1*")
+      .replace(/\[([^\]]+)\]\((https?:\/\/[^)]+)\)/g, "<$2|$1>");
+    out.push(converted);
     i++;
   }
 

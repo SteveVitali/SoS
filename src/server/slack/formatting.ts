@@ -31,8 +31,7 @@ export function fmtCiGreen(job: JobDoc, payload: any): string {
 
 export function fmtDone(job: JobDoc): string {
   const prs = job.pr_urls?.length ? `\nPRs: ${job.pr_urls.join(", ")}` : "";
-  const summaryLimit = job.job_type === "github_summary" ? 3500 : 500;
-  const summary = job.result_summary ? `\n${truncate(job.result_summary, summaryLimit)}` : "";
+  const summary = job.result_summary ? `\n${job.result_summary}` : "";
   return `Done ✅ \`task_id=${job.task_id}\`${prs}${summary}`;
 }
 

@@ -54,6 +54,17 @@ describe("markdownToSlack", () => {
     expect(markdownToSlack("### Sub")).toBe("*Sub*");
   });
 
+  it("converts markdown **bold** to Slack *bold*", () => {
+    expect(markdownToSlack("Hello **world**")).toBe("Hello *world*");
+    expect(markdownToSlack("**Where I'd invest:**")).toBe("*Where I'd invest:*");
+  });
+
+  it("converts bold inside numbered list items", () => {
+    expect(markdownToSlack("1. **Finish the migration** — details here")).toBe(
+      "1. *Finish the migration* — details here",
+    );
+  });
+
   it("converts markdown links to Slack links", () => {
     expect(markdownToSlack("[Example](https://example.com)")).toBe("<https://example.com|Example>");
   });
