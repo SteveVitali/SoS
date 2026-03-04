@@ -18,12 +18,11 @@ Registers a worker process with the server's in-memory registry.
   "worker_id": "steve-mbp-pid12345",
   "hostname": "steve-mbp",
   "pid": 12345,
-  "concurrency": 4,
   "version": "0.2.0"
 }
 ```
 
-**Response (200):** `{ "ok": true }`
+**Response (200):** `{ "worker": { "worker_id": "...", "hostname": "...", "pid": 12345, ... } }`
 
 ### Report Worker Status
 
@@ -223,12 +222,12 @@ Requeues a running job back to `QUEUED` with a backoff delay. Used when no workt
 ```json
 {
   "node_id": "steve-mbp:worker-0",
-  "reason": "no_worktree_slot",
-  "backoff_seconds": 30
+  "reason": "no_worktree_slot"
 }
 ```
 
-**Response (200):** `{ "ok": true, "not_before": "2025-..." }`
+**Response (200):** `{ "job": { ... } }`
+**Response (409):** `{ "error": "Requeue failed: not owner or not active" }`
 
 ### Await Approval
 
@@ -248,6 +247,26 @@ Sets job status to `WAITING_FOR_APPROVAL` after creating a draft PR. The job pau
 ```
 
 **Response (200):** `{ "job": { ... } }`
+
+### Submit Plan
+
+```
+POST /api/worker/jobs/:task_id/submit-plan
+```
+
+Submits the generated plan after a planning phase. Transitions job from `PLANNING` to `PENDING_CONFIRMATION`. Posts the plan to Slack for user review.
+
+**Body:**
+```json
+{
+  "node_id": "steve-mbp:worker-0",
+  "plan_summary": "## Implementation Plan\n1. Update auth module...\n2. Add tests...",
+  "metrics": { "durations": { "plan_ms": 12000 }, "claude": { "sessions": [...] } }
+}
+```
+
+**Response (200):** `{ "job": { ... } }`
+**Response (409):** `{ "error": "Submit plan failed: not owner or not in PLANNING status" }`
 
 ### Fetch Slack Thread (Proxy)
 
@@ -394,6 +413,42 @@ Sets status to `DELETED`. Cannot delete `RUNNING` or `FIXING_CI` jobs (cancel fi
 
 **Response (200):** `{ "job": { ... } }`
 **Response (409):** `{ "error": "Cannot delete: job is RUNNING or not found" }`
+
+### Self-Review PR
+
+```
+POST /api/web/jobs/self-review-pr
+```
+
+Creates a `self_review_pr` job that checks out an existing PR branch, runs a self-review pass (Claude as Staff Engineer reviewer), fixes issues, and pushes.
+
+**Body:**
+```json
+{
+  "requested_by": "U...",
+  "pr_url": "https://github.com/org/repo/pull/42"
+}
+```
+
+**Response (201):** `{ "job": { ... } }`
+
+### Add PR Review Comments
+
+```
+POST /api/web/jobs/add-review-comments
+```
+
+Creates an `add_pr_review_comments` job that reviews a PR and posts inline review comments on GitHub.
+
+**Body:**
+```json
+{
+  "requested_by": "U...",
+  "pr_url": "https://github.com/org/repo/pull/42"
+}
+```
+
+**Response (201):** `{ "job": { ... } }`
 
 ### Respond to PR Comments (Direct)
 
@@ -548,10 +603,12 @@ Returns the status of all worktree slots across all repos, including lock status
 **Response:**
 ```json
 {
-  "my-app": [
-    { "slot": "my-app-n-0", "locked": true, "branch": "sos/fix-auth" },
-    { "slot": "my-app-n-1", "locked": false }
-  ]
+  "worktrees": {
+    "my-app": [
+      { "slotName": "my-app-n-0", "inUse": true, "taskId": "abc123", "acquiredAt": "2025-..." },
+      { "slotName": "my-app-n-1", "inUse": false }
+    ]
+  }
 }
 ```
 
@@ -585,12 +642,7 @@ Returns a single worker's details.
 POST /api/web/workers/spawn
 ```
 
-Spawns a new detached worker process on the local machine via `child_process.spawn`.
-
-**Body:**
-```json
-{ "concurrency": 4 }
-```
+Spawns a new detached worker process on the local machine via `child_process.spawn`. No request body is needed.
 
 **Response (200):** `{ "ok": true, "pid": 12345 }`
 
@@ -667,7 +719,14 @@ Sends a user message and returns Steve's LLM-routed reply. May trigger job creat
 
 **Body:** `{ "text": "fix the auth bug in my-api" }`
 
-**Response:** `{ "reply": { "role": "assistant", "text": "..." }, "action": { ... } }`
+**Response:**
+```json
+{
+  "userMessage": { "id": "...", "role": "user", "text": "...", "at": "..." },
+  "assistantMessage": { "id": "...", "role": "assistant", "text": "...", "at": "...", "action": { "command": "create_job", "task_id": "..." } },
+  "action": { "command": "create_job", "taskId": "..." }
+}
+```
 
 ### Poll for Updates
 
@@ -686,6 +745,31 @@ DELETE /api/web/chats/:id
 ```
 
 **Response (200):** `{ "ok": true }`
+
+---
+
+## Model Registry Endpoints (`/api/web`)
+
+### Get Model Registry
+
+```
+GET /api/web/models
+```
+
+Returns the active model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding).
+
+**Response:**
+```json
+{
+  "models": {
+    "routing": { "model": "claude-sonnet-4-20250514", "envVar": "SOS_LLM_MODEL" },
+    "titleGeneration": { "model": "claude-sonnet-4-20250514", "envVar": "SOS_TITLE_MODEL" },
+    "research": { "model": "bedrock/amazon.nova-pro-v1:0", "envVar": "SOS_RESEARCH_LLM_MODEL" },
+    "raptorSummarization": { "model": "bedrock/amazon.nova-pro-v1:0", "envVar": "SOS_RAPTOR_MODEL" },
+    "embedding": { "model": "text-embedding-3-small", "envVar": "SOS_EMBEDDING_MODEL" }
+  }
+}
+```
 
 ---
 
@@ -1111,14 +1195,15 @@ Returns all RAPTOR tree nodes (level > 0) for visualization. Leaf-level (level 0
 interface JobDoc {
   _id?: ObjectId;
   task_id: string;                    // UUID, unique
-  job_type?: "create" | "respond_to_pr_comments" | "github_summary" | "plan";  // default: "create"
+  job_type?: "create" | "respond_to_pr_comments" | "self_review_pr" | "add_pr_review_comments" | "github_summary";  // default: "create"
   source: {
     type: "slack_app_mention" | "web_create";
     event_id?: string;                // Slack event ID (unique when present)
   };
   requested_by: string;               // Slack user ID or username
   slack_requester?: string;           // Original Slack user (when job owner differs)
-  status: "QUEUED" | "RUNNING" | "FIXING_CI" | "WAITING_FOR_APPROVAL"
+  status: "QUEUED" | "PLANNING" | "PENDING_CONFIRMATION" | "RUNNING"
+         | "FIXING_CI" | "WAITING_FOR_APPROVAL"
          | "DONE" | "FAILED" | "CANCELED" | "DELETED";
   created_at: Date;
   updated_at: Date;
@@ -1133,10 +1218,13 @@ interface JobDoc {
   title?: string;                     // LLM-generated job title
   task_text: string;
   repo_hint?: string;
-  pr_url?: string;                    // For respond_to_pr_comments jobs
+  pr_url?: string;                    // For respond_to_pr_comments / self_review_pr / add_pr_review_comments jobs
   test_level?: "fast" | "full" | "none";
   ci_fix_enabled?: boolean;
   reviewers?: string[];
+  needs_plan?: boolean;               // If true, run planning phase before execution
+  plan_summary?: string;              // Generated plan from planning phase
+  custom_instructions?: string;       // Custom instructions injected into Claude prompt
 
   // Lease
   claimed_by?: string;                // worker node ID
@@ -1178,7 +1266,7 @@ interface JobDoc {
     durations?: { total_ms?, claude_code_ms?, ci_wait_ms?, ... };
     claude?: {
       sessions?: Array<{
-        phase: "code" | "review" | "fix" | "respond_comments";
+        phase: "plan" | "code" | "review" | "fix" | "respond_comments" | "summary";
         model?: string;
         input_tokens?: number;
         output_tokens?: number;

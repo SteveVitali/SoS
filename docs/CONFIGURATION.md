@@ -50,13 +50,37 @@ The research pipeline uses a separate, typically cheaper LLM for its internal re
 
 | Variable | Required | Description |
 |---|---|---|
-| `SOS_RESEARCH_LLM_MODEL` | No (default: `gpt-4o-mini`) | Model for research reasoning calls. Supports any OpenAI-compatible model. |
+| `SOS_RESEARCH_LLM_MODEL` | No (default: `bedrock/amazon.nova-pro-v1:0`) | Model for research reasoning calls. Supports any OpenAI-compatible model. |
 | `SOS_RESEARCH_LLM_API_KEY` | Only if research pipeline is used | API key for the research LLM. Falls back to `OPENAI_API_KEY` if not set. |
 | `SOS_RESEARCH_LLM_BASE_URL` | No (default: `https://api.openai.com/v1`) | Base URL for the research LLM API (e.g., a LiteLLM proxy). |
 | `SOS_RESEARCH_LLM_TEMPERATURE` | No (default: `0.0`) | Temperature for research LLM calls. `0.0` for deterministic reasoning. |
 | `SOS_RESEARCH_LLM_MAX_TOKENS` | No (default: `2048`) | Max output tokens per research LLM call. |
 
 The model can also be overridden per-session via the Research Playground's model selector or `config_overrides.model` in API calls.
+
+## Model Configuration
+
+Model assignments are centralized in `src/shared/modelConfig.ts`. Each role can be overridden via its dedicated environment variable:
+
+| Variable | Default | Description |
+|---|---|---|
+| `SOS_LLM_MODEL` | `claude-sonnet-4-20250514` | Slack/chat message routing, intent classification, and tool-calling |
+| `SOS_TITLE_MODEL` | (inherits `SOS_LLM_MODEL`) | Job and chat conversation title generation |
+| `SOS_RESEARCH_LLM_MODEL` | `bedrock/amazon.nova-pro-v1:0` | Research pipeline reasoning calls |
+| `SOS_RAPTOR_MODEL` | (inherits `SOS_RESEARCH_LLM_MODEL`) | RAPTOR tree cluster summarization |
+| `SOS_EMBEDDING_MODEL` | `text-embedding-3-small` | Vector embeddings for KB indexing and search |
+
+You can also override model assignments via `model-config.yaml` in the project root (env vars take precedence):
+
+```yaml
+routing: claude-sonnet-4-20250514
+titleGeneration: claude-sonnet-4-20250514
+research: bedrock/amazon.nova-pro-v1:0
+raptorSummarization: bedrock/amazon.nova-pro-v1:0
+embedding: text-embedding-3-small
+```
+
+The active model registry is exposed via `GET /api/web/models` and logged at server startup.
 
 ## Routing Config: Research Strategy
 
@@ -86,7 +110,7 @@ The worker reads from the same `.env` file.
 | `SOS_REPO_REGISTRY` | **Yes** | Path to `repo-registry.yaml` |
 | `SOS_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix attempts |
 | `SOS_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
-| `SOS_REQUIRE_LOCAL_TESTS_BEFORE_PR` | No (true) | Require local tests pass before PR |
+| `SOS_REQUIRE_LOCAL_TESTS_BEFORE_PR` | No (false) | Require local tests pass before PR |
 | `SOS_TEST_LEVEL_DEFAULT` | No (`fast`) | Default test level: `fast`/`full`/`none` |
 
 ## MCP Servers

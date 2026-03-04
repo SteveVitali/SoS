@@ -1325,7 +1325,7 @@ The research pipeline needs a lightweight LLM client for its internal reasoning 
 // research/llmClient.ts
 
 export interface LLMClientConfig {
-  model: string;              // default: "gpt-4o-mini"
+  model: string;              // default: "bedrock/amazon.nova-pro-v1:0" (overridable via SOS_RESEARCH_LLM_MODEL)
   api_key: string;
   base_url: string;           // OpenAI-compatible endpoint
   temperature: number;        // default: 0.0 (deterministic for research)
@@ -1354,14 +1354,15 @@ export function createResearchLLMClient(config?: Partial<LLMClientConfig>): LLMC
 
 **Config via environment:**
 ```
-SOS_RESEARCH_LLM_MODEL=gpt-4o-mini
+SOS_RESEARCH_LLM_MODEL=bedrock/amazon.nova-pro-v1:0
 SOS_RESEARCH_LLM_API_KEY=...     # falls back to OPENAI_API_KEY
 SOS_RESEARCH_LLM_BASE_URL=...    # falls back to https://api.openai.com/v1
 SOS_RESEARCH_LLM_TEMPERATURE=0.0
 ```
 
-Using a fast, cheap model (gpt-4o-mini at ~$0.15/1M input tokens) keeps research
-pipeline costs minimal even with 10+ LLM calls.
+Using a fast, cheap model keeps research pipeline costs minimal even with 10+
+LLM calls. The default is `bedrock/amazon.nova-pro-v1:0` but any OpenAI-compatible
+model works (e.g., `gpt-4o-mini` at ~$0.15/1M input tokens).
 
 ---
 

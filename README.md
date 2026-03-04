@@ -219,6 +219,8 @@ The worker resolves which repo to use based on:
 |---|---|
 | `create` (default) | Full pipeline: resolve repo → worktree → Claude → lint/test → self-review → commit → PR → CI → fix CI |
 | `respond_to_pr_comments` | Read unresolved PR review threads → Claude fixes each → commit → push → reply to threads |
+| `self_review_pr` | Check out an existing PR branch → Claude self-review pass → fix issues → push |
+| `add_pr_review_comments` | Review a PR → post inline review comments on GitHub as the bot |
 | `github_summary` | Fetch GitHub activity data (merged PRs, reviews, stats) → Claude generates a narrative recap → post to Slack |
 
 ## Job Lifecycle
@@ -228,6 +230,9 @@ QUEUED → RUNNING → WAITING_FOR_APPROVAL → DONE
                  → (FIXING_CI →)*          ↗
                                    ↘ FAILED
                                    ↘ CANCELED
+
+Planning flow (complex tasks):
+QUEUED → PLANNING → PENDING_CONFIRMATION → QUEUED → (normal flow)
 ```
 
 Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15 seconds. If a worker crashes, the lease expires and another worker reclaims the job on the next poll cycle.

@@ -73,6 +73,8 @@ The worker runs a **configurable pool of independent loops** (default 4). Each l
 
 The worker also supports additional job types:
 - **`respond_to_pr_comments`** — fetches unresolved PR review threads, runs Claude to address each thread, commits, pushes, and replies to the threads.
+- **`self_review_pr`** — checks out an existing PR branch, runs a self-review pass (Claude as Staff Engineer code reviewer), fixes issues found, and pushes.
+- **`add_pr_review_comments`** — reviews a PR and posts inline review comments on GitHub as the bot.
 - **`github_summary`** — fetches GitHub activity data (merged PRs, reviews, stats) via `gh` CLI, builds an LLM prompt, runs Claude to generate a narrative recap, and posts the formatted summary.
 
 On startup, the worker **registers** with the server (hostname, PID, concurrency) and opens a **WebSocket** connection for real-time log streaming and receiving commands (e.g., shutdown). Each loop reports its status (idle/busy, current task) on every poll cycle. Claude's raw stream-json output is teed to the server via WebSocket so it can be viewed live in the web UI.
@@ -469,6 +471,8 @@ son-of-steve/
 │   │       ├── runPlanJob.ts          # Pre-flight planning workflow (read-only Claude)
 │   │       ├── runGithubSummaryJob.ts # GitHub recap summary (data fetch → Claude → format)
 │   │       ├── runRespondToComments.ts # PR comment review workflow
+│   │       ├── runSelfReviewPr.ts      # Self-review existing PR (Claude as reviewer → fix → push)
+│   │       ├── runAddReviewComments.ts # Review PR and post inline comments on GitHub
 │   │       ├── errors.ts              # Sentinel errors (RequeueError, LeaseAbortedError)
 │   │       ├── repoRegistry.ts        # YAML registry loader
 │   │       ├── repoResolver.ts        # Hint/keyword-based repo resolution

@@ -15,11 +15,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - **Unified upload dropdown** — single "Upload ▾" button with dropdown menu for selecting files or entire folders; folder upload uses `webkitdirectory` and preserves the relative path hierarchy
 - **KB shared utilities** — new `src/shared/kbUtils.ts` with `pathToBreadcrumb()` and `formatPathBreadcrumb()` helpers (with tests)
 - **KBPlayground component** — dedicated playground UI for testing KB search queries interactively
-- **LangGraph corrective RAG** — new `langgraph` execution type that runs LangGraph state machines as action handlers; ships with a `corrective_rag` graph that iteratively retrieves from knowledge bases, grades relevance via LLM, reformulates queries, and synthesizes answers with source citations
+- **Research execution type** — new `research` execution type that bridges the YAML-driven routing system to the advanced research pipeline; the `kb_search` action lets the LLM select a strategy (`simple`/`deep`/`agent`) per query
   - New `kb_search` action in `routing-config.yaml` for KB-powered question answering
-  - Configurable per-graph: `max_retrievals`, `max_chunks`, `min_score`, `show_trace`, `timeout_ms`
-  - Observability: full reasoning trace logged + optional Slack footer summarizing retrieval rounds
-  - Dependencies: `@langchain/langgraph`, `@langchain/core`
+  - Strategy resolution: LLM-selected strategy > YAML `default_strategy` > `"simple"`
+  - Configurable per-action: `scopes`, `default_strategy`, `show_trace`, `timeout_ms`
+  - Separate `kb_research_strategy` field in routing config controls background KB context injection for every chat/Slack message
 - **YAML-driven routing config** — `routing-config.yaml` controls LLM action routing: system prompt, model, per-action parameters, execution types, and reply templates; auto-generated with sensible defaults if missing
 - **Routing config visual editor** — new Routing tab in the web UI with structured editors for all 13 execution types (ParameterListEditor, ExecutionEditor with type-aware fields, ReplyTemplatesEditor), plus raw YAML fallback view
 - **Routing config API** — `GET/PUT /api/web/routing-config` and `POST /api/web/routing-config/reload` for reading, saving, and hot-reloading the routing config
