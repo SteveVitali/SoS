@@ -5,35 +5,164 @@ import { createElement, Fragment } from "react";
 const TOKEN_PATTERN =
   /\[([^\]]+)\]\((https?:\/\/[^)]+)\)|\*\*([^*]+)\*\*|(?<![/\w])_([^_\n]+)_(?![/\w])|`([^`]+)`/g;
 
+// Block-level patterns
+const HEADING_RE = /^(#{1,6})\s+(.+)$/;
+const ORDERED_LIST_RE = /^\d+[.)]\s+(.+)$/;
+const UNORDERED_LIST_RE = /^[-*•]\s+(.+)$/;
+const HR_RE = /^-{3,}$/;
+
+type BlockType = "paragraph" | "heading" | "ol" | "ul" | "hr";
+
+interface Block {
+  type: BlockType;
+  lines: string[];
+  level?: number; // heading level (1-6)
+}
+
 /**
  * Convert a subset of standard markdown to React elements.
- * Handles: bold, italic, inline code, links, horizontal rules, and line breaks.
+ * Handles: headings, ordered/unordered lists, paragraphs, bold, italic,
+ * inline code, links, horizontal rules, and line breaks.
  */
 export function renderMarkdown(md: string): ReactNode {
-  const lines = md.split("\n");
+  const blocks = parseBlocks(md);
   const elements: ReactNode[] = [];
-  let prevWasContent = false;
 
-  for (let i = 0; i < lines.length; i++) {
-    const trimmed = lines[i].trim();
+  for (let i = 0; i < blocks.length; i++) {
+    const block = blocks[i];
+    const key = `blk-${i}`;
 
-    if (/^-{3,}$/.test(trimmed)) {
-      elements.push(createElement("hr", { key: `hr-${i}` }));
-      prevWasContent = false;
-      continue;
+    switch (block.type) {
+      case "hr":
+        elements.push(createElement("hr", { key }));
+        break;
+
+      case "heading": {
+        const tag = `h${block.level || 1}` as keyof HTMLElementTagNameMap;
+        elements.push(createElement(tag, { key }, ...parseInline(block.lines[0])));
+        break;
+      }
+
+      case "ol":
+        elements.push(
+          createElement(
+            "ol",
+            { key, style: { margin: "0.5em 0", paddingLeft: "1.5em" } },
+            ...block.lines.map((line, j) =>
+              createElement("li", { key: `${key}-li-${j}` }, ...parseInline(line)),
+            ),
+          ),
+        );
+        break;
+
+      case "ul":
+        elements.push(
+          createElement(
+            "ul",
+            { key, style: { margin: "0.5em 0", paddingLeft: "1.5em" } },
+            ...block.lines.map((line, j) =>
+              createElement("li", { key: `${key}-li-${j}` }, ...parseInline(line)),
+            ),
+          ),
+        );
+        break;
+
+      case "paragraph": {
+        const inner: ReactNode[] = [];
+        for (let j = 0; j < block.lines.length; j++) {
+          if (j > 0) inner.push(createElement("br", { key: `${key}-br-${j}` }));
+          inner.push(
+            createElement(Fragment, { key: `${key}-l-${j}` }, ...parseInline(block.lines[j])),
+          );
+        }
+        elements.push(createElement("p", { key, style: { margin: "0.5em 0" } }, ...inner));
+        break;
+      }
     }
-
-    if (trimmed === "") {
-      prevWasContent = false;
-      continue;
-    }
-
-    if (prevWasContent) elements.push(createElement("br", { key: `br-${i}` }));
-    elements.push(createElement(Fragment, { key: `line-${i}` }, ...parseInline(trimmed)));
-    prevWasContent = true;
   }
 
   return createElement(Fragment, null, ...elements);
+}
+
+/**
+ * Group source lines into typed blocks separated by blank lines.
+ * Consecutive list items of the same type are merged into one block.
+ */
+function parseBlocks(md: string): Block[] {
+  const rawLines = md.split("\n");
+  const blocks: Block[] = [];
+  let current: Block | null = null;
+
+  const flush = () => {
+    if (current) {
+      blocks.push(current);
+      current = null;
+    }
+  };
+
+  for (const raw of rawLines) {
+    const trimmed = raw.trim();
+
+    // Blank line → flush current block
+    if (trimmed === "") {
+      flush();
+      continue;
+    }
+
+    // Horizontal rule
+    if (HR_RE.test(trimmed)) {
+      flush();
+      blocks.push({ type: "hr", lines: [] });
+      continue;
+    }
+
+    // Heading
+    const headingMatch = trimmed.match(HEADING_RE);
+    if (headingMatch) {
+      flush();
+      blocks.push({
+        type: "heading",
+        lines: [headingMatch[2]],
+        level: headingMatch[1].length,
+      });
+      continue;
+    }
+
+    // Ordered list item
+    const olMatch = trimmed.match(ORDERED_LIST_RE);
+    if (olMatch) {
+      if (current?.type === "ol") {
+        current.lines.push(olMatch[1]);
+      } else {
+        flush();
+        current = { type: "ol", lines: [olMatch[1]] };
+      }
+      continue;
+    }
+
+    // Unordered list item
+    const ulMatch = trimmed.match(UNORDERED_LIST_RE);
+    if (ulMatch) {
+      if (current?.type === "ul") {
+        current.lines.push(ulMatch[1]);
+      } else {
+        flush();
+        current = { type: "ul", lines: [ulMatch[1]] };
+      }
+      continue;
+    }
+
+    // Regular text → paragraph (merge consecutive non-blank lines)
+    if (current?.type === "paragraph") {
+      current.lines.push(trimmed);
+    } else {
+      flush();
+      current = { type: "paragraph", lines: [trimmed] };
+    }
+  }
+
+  flush();
+  return blocks;
 }
 
 function parseInline(text: string): ReactNode[] {
