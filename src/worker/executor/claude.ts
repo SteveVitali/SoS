@@ -440,6 +440,81 @@ export async function runClaudeReview(
   );
 }
 
+export async function runClaudeGenerateReviewComments(
+  worktreePath: string,
+  repo: RepoEntry,
+  diff: string,
+  abortSignal?: AbortSignal,
+): Promise<ClaudeResult> {
+  const sosDir = path.join(worktreePath, ".sonofsteve");
+  if (!existsSync(sosDir)) mkdirSync(sosDir, { recursive: true });
+  ensureSosGitignore(sosDir);
+
+  const promptPath = path.join(sosDir, "review-comments-prompt.md");
+  const logPath = path.join(sosDir, "claude-review-comments.log");
+
+  const prompt = [
+    "# Code Review — Generate Inline Comments",
+    "",
+    "You are a Staff Engineer performing a thorough code review of a pull request.",
+    "Analyze the diff below and produce inline review comments for any issues you find.",
+    "",
+    "## Review Criteria",
+    "- **Correctness**: Bugs, off-by-one errors, race conditions, edge cases",
+    "- **Design**: Unnecessary complexity, poor abstractions, coupling issues",
+    "- **Dead code**: Unused imports, variables, or functions",
+    "- **Naming**: Unclear or inconsistent naming",
+    "- **Error handling**: Missing null checks, swallowed errors",
+    "- **Security**: Hardcoded secrets, injection risks, unsafe patterns",
+    "- **Performance**: N+1 queries, unnecessary allocations, hot-path issues",
+    "- **Style**: Inconsistencies with the surrounding codebase",
+    "",
+    "## Diff",
+    "```diff",
+    diff.slice(0, 40000),
+    "```",
+    "",
+    "## Output Format",
+    "Do NOT make any file changes. Only output your review.",
+    "Output a JSON array of review comments, one per issue found.",
+    "Each comment must have exactly these fields:",
+    "- `path`: the file path (relative to repo root)",
+    "- `line`: the line number in the NEW version of the file where the comment applies",
+    "- `body`: the review comment text (markdown OK)",
+    "",
+    "Wrap the JSON array in a fenced code block tagged `json`.",
+    "If you find no issues, output an empty array: `[]`",
+    "",
+    "After the JSON block, add a brief plain-text summary of the review.",
+  ].join("\n");
+
+  writeFileSync(promptPath, prompt, "utf-8");
+
+  log.info("Running Claude Code CLI for review comment generation", { worktree: worktreePath });
+
+  const mcp = buildMcpArgs(sosDir, repo.mcp_servers);
+  const mcpToolArgs =
+    mcp.allowedTools.length > 0 ? ["--allowedTools", mcp.allowedTools.join(",")] : [];
+
+  return runClaudeProcess(
+    [
+      "claude",
+      "-p",
+      promptPath,
+      "--output-format",
+      "stream-json",
+      "--verbose",
+      "--dangerously-skip-permissions",
+      ...mcp.configArgs,
+      ...mcpToolArgs,
+    ],
+    worktreePath,
+    logPath,
+    15 * 60 * 1000,
+    abortSignal,
+  );
+}
+
 export interface RespondToCommentOptions {
   worktreePath: string;
   repo: RepoEntry;

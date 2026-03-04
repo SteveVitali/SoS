@@ -79,7 +79,12 @@ export const JobEvent = z.object({
 export type JobEvent = z.infer<typeof JobEvent>;
 
 // --- Metrics ---
-export type JobType = "create" | "respond_to_pr_comments" | "github_summary";
+export type JobType =
+  | "create"
+  | "respond_to_pr_comments"
+  | "self_review_pr"
+  | "add_pr_review_comments"
+  | "github_summary";
 
 export type GithubQueryType =
   | "my_review_requests"
@@ -121,9 +126,11 @@ export interface JobMetrics {
     resolve_repo_ms?: number;
     prepare_workspace_ms?: number;
     claude_code_ms?: number;
+    claude_review_ms?: number;
     local_checks_ms?: number;
     self_review_ms?: number;
     commit_push_ms?: number;
+    post_review_ms?: number;
     plan_ms?: number;
     ci_wait_ms?: number;
     ci_fix_ms?: number;
@@ -247,6 +254,9 @@ export type WorkerEventType =
   | "COMMENTS_FETCHED"
   | "COMMENT_ADDRESSED"
   | "COMMENTS_PUSHED"
+  | "REVIEW_GENERATED"
+  | "COMMENTS_PARSED"
+  | "REVIEW_POSTED"
   | "DONE"
   | "FAILED"
   | "CANCELED";

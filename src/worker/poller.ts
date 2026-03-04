@@ -3,10 +3,12 @@ import type { JobDoc } from "../shared/types.js";
 import type { WorkerApiClient } from "./apiClient.js";
 import type { WorkerConfig } from "./config.js";
 import { setClaudeLogContext } from "./executor/claude.js";
+import { runAddReviewComments } from "./executor/runAddReviewComments.js";
 import { runGithubSummaryJob } from "./executor/runGithubSummaryJob.js";
 import { runJob } from "./executor/runJob.js";
 import { runPlanJob } from "./executor/runPlanJob.js";
 import { runRespondToComments } from "./executor/runRespondToComments.js";
+import { runSelfReviewPr } from "./executor/runSelfReviewPr.js";
 import { HeartbeatManager } from "./heartbeat.js";
 
 const log = createLogger("worker:poller");
@@ -149,6 +151,12 @@ function dispatchJob(
   }
   if (job.job_type === "respond_to_pr_comments") {
     return runRespondToComments(job, workerId, config, api, leaseSignal);
+  }
+  if (job.job_type === "self_review_pr") {
+    return runSelfReviewPr(job, workerId, config, api, leaseSignal);
+  }
+  if (job.job_type === "add_pr_review_comments") {
+    return runAddReviewComments(job, workerId, config, api, leaseSignal);
   }
   if (job.job_type === "github_summary") {
     return runGithubSummaryJob(job, workerId, config, api, leaseSignal);

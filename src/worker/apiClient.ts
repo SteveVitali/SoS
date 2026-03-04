@@ -3,6 +3,53 @@ import type { CIInfo, JobDoc, JobError, JobMetrics, WorkerEventType } from "../s
 
 const log = createLogger("worker:apiClient");
 
+interface ResearchChunk {
+  content: string;
+  source_file: string;
+  kb_name: string;
+  kb_id: string;
+  score: number;
+  metadata: { section?: string; page?: number };
+}
+
+interface ResearchMetrics {
+  total_duration_ms: number;
+  iterations: number;
+  llm_calls: number;
+  retrieval_calls: number;
+  chunks_retrieved: number;
+  chunks_used: number;
+  prompt_tokens: number;
+  completion_tokens: number;
+  estimated_cost_usd: number;
+}
+
+interface ResearchResponse {
+  context: string;
+  chunks: ResearchChunk[];
+  metrics: ResearchMetrics;
+  session_id: string;
+}
+
+function emptyResearchResponse(): ResearchResponse {
+  return {
+    context: "",
+    chunks: [],
+    metrics: {
+      total_duration_ms: 0,
+      iterations: 0,
+      llm_calls: 0,
+      retrieval_calls: 0,
+      chunks_retrieved: 0,
+      chunks_used: 0,
+      prompt_tokens: 0,
+      completion_tokens: 0,
+      estimated_cost_usd: 0,
+    },
+    session_id: "",
+  };
+}
+
 export class WorkerApiClient {
   constructor(
     private baseUrl: string,
@@ -283,6 +330,85 @@ export class WorkerApiClient {
       log.warn("KB search failed (non-fatal)", { error: (err as Error).message });
       return [];
     }
+  }
+
+  async researchKnowledgeBases(params: {
+    query: string;
+    scopes: string[];
+    strategy?: string;
+    consumer?: { type: string; id?: string };
+  }): Promise<ResearchResponse> {
+    try {
+      return await this.request("POST", "/api/worker/kb/research", {
+        query: params.query,
+        scopes: params.scopes,
+        strategy: params.strategy || "deep",
+        consumer: params.consumer,
+      });
+    } catch (err: unknown) {
+      log.warn("KB research failed (non-fatal)", { error: (err as Error).message });
+      return emptyResearchResponse();
+    }
+  }
+
+  async researchKnowledgeBasesStreaming(
+    params: {
+      query: string;
+      scopes: string[];
+      strategy?: string;
+      consumer?: { type: string; id?: string };
+    },
+    onEvent: (event: Record<string, unknown>) => void,
+  ): Promise<ResearchResponse> {
+    const url = `${this.baseUrl}/api/worker/kb/research`;
+    const res = await fetch(url, {
+      method: "POST",
+      headers: {
+        "Content-Type": "application/json",
+        Authorization: `Bearer ${this.token}`,
+        Accept: "text/x-ndjson",
+      },
+      body: JSON.stringify({
+        query: params.query,
+        scopes: params.scopes,
+        strategy: params.strategy || "deep",
+        consumer: params.consumer,
+      }),
+    });
+
+    if (!res.ok) {
+      throw new Error(`Research streaming failed: ${res.status} ${res.statusText}`);
+    }
+
+    const text = await res.text();
+    const lines = text.split("\n").filter((l) => l.trim());
+
+    // biome-ignore lint/suspicious/noExplicitAny: dynamic NDJSON events
+    let finalResult: any = null;
+
+    for (const line of lines) {
+      try {
+        const event = JSON.parse(line);
+        if (event.type === "result") {
+          finalResult = event;
+        } else {
+          onEvent(event);
+        }
+      } catch {
+        log.warn("Failed to parse NDJSON line", { line: line.slice(0, 100) });
+      }
+    }
+
+    if (finalResult) {
+      return {
+        context: finalResult.context || "",
+        chunks: finalResult.chunks || [],
+        metrics: finalResult.metrics || emptyResearchResponse().metrics,
+        session_id: finalResult.session_id || "",
+      };
+    }
+
+    return emptyResearchResponse();
   }
 
   // biome-ignore lint/suspicious/noExplicitAny: Slack API type

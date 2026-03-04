@@ -154,6 +154,20 @@ export async function createRespondToCommentsJob(data: {
   return request("POST", "/jobs/respond-to-comments", data);
 }
 
+export async function createSelfReviewPrJob(data: {
+  requested_by: string;
+  pr_url: string;
+}): Promise<{ job: Job }> {
+  return request("POST", "/jobs/self-review-pr", data);
+}
+
+export async function createAddReviewCommentsJob(data: {
+  requested_by: string;
+  pr_url: string;
+}): Promise<{ job: Job }> {
+  return request("POST", "/jobs/add-review-comments", data);
+}
+
 export async function getIdentity(): Promise<{ jobOwner: string }> {
   return request("GET", "/identity");
 }
