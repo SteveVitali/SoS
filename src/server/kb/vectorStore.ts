@@ -53,6 +53,8 @@ export interface VectorRecord {
   file_path: string;
   parent_dir: string;
   created_at: string;
+  level: number; // 0 = raw chunk, 1+ = RAPTOR summary level
+  children_ids: string; // JSON-encoded string[] of child node IDs (empty for level 0)
 }
 
 export interface VectorSearchResult {
@@ -65,6 +67,8 @@ export interface VectorSearchResult {
   file_path: string;
   parent_dir: string;
   created_at: string;
+  level: number;
+  children_ids: string;
   _distance: number;
 }
 
@@ -140,6 +144,8 @@ export async function searchKBTable(
       "file_path",
       "parent_dir",
       "created_at",
+      "level",
+      "children_ids",
     ])
     .limit(limit)
     .toArray();
@@ -154,6 +160,8 @@ export async function searchKBTable(
     file_path: r.file_path || "",
     parent_dir: r.parent_dir || "",
     created_at: r.created_at || "",
+    level: r.level ?? 0,
+    children_ids: r.children_ids || "[]",
     _distance: r._distance ?? 1,
   }));
 }
@@ -264,6 +272,116 @@ export async function listDocumentChunks(
   }));
 
   return { chunks, total };
+}
+
+/**
+ * List RAPTOR tree nodes from a KB table.
+ * Returns all summary nodes (level > 0) plus the L0 chunks that are direct
+ * children of L1 nodes, so the tree is fully expandable in the UI.
+ */
+export async function listRaptorNodes(kbId: string): Promise<
+  Array<{
+    id: string;
+    level: number;
+    children_ids: string[];
+    content: string;
+    source_file: string;
+    section: string;
+  }>
+> {
+  const conn = getDb();
+  const name = tableName(kbId);
+
+  const existing = await conn.tableNames();
+  if (!existing.includes(name)) return [];
+
+  const table = await conn.openTable(name);
+
+  // Fetch all RAPTOR summary nodes (level > 0).
+  // Wrapped in try-catch because older KB tables may not have the `level` column.
+  let summaryResults: Array<{
+    id: string;
+    source_file: string;
+    content: string;
+    section: string;
+    level: number;
+    children_ids: string;
+  }>;
+  try {
+    summaryResults = await table
+      .query()
+      .select(["id", "source_file", "content", "section", "level", "children_ids"])
+      .where("level > 0")
+      .limit(10000)
+      .toArray();
+  } catch {
+    // Table predates RAPTOR — no level column
+    return [];
+  }
+
+  const parsed = summaryResults.map((r) => {
+    let childIds: string[] = [];
+    try {
+      childIds = JSON.parse(r.children_ids || "[]");
+    } catch {
+      childIds = [];
+    }
+    return {
+      id: r.id,
+      level: r.level,
+      children_ids: childIds,
+      content: r.content || "",
+      source_file: r.source_file || "",
+      section: r.section || "",
+    };
+  });
+
+  // Collect L0 child IDs referenced by L1 nodes
+  const summaryIdSet = new Set(parsed.map((n) => n.id));
+  const missingChildIds = new Set<string>();
+  for (const node of parsed) {
+    if (node.level === 1) {
+      for (const cid of node.children_ids) {
+        if (!summaryIdSet.has(cid)) missingChildIds.add(cid);
+      }
+    }
+  }
+
+  // Fetch L0 chunks by ID if any are needed
+  if (missingChildIds.size > 0) {
+    try {
+      const l0Results: Array<{
+        id: string;
+        source_file: string;
+        content: string;
+        section: string;
+        level: number;
+        children_ids: string;
+      }> = await table
+        .query()
+        .select(["id", "source_file", "content", "section", "level", "children_ids"])
+        .where("level = 0")
+        .limit(10000)
+        .toArray();
+
+      for (const r of l0Results) {
+        if (missingChildIds.has(r.id)) {
+          parsed.push({
+            id: r.id,
+            level: 0,
+            children_ids: [],
+            content: r.content || "",
+            source_file: r.source_file || "",
+            section: r.section || "",
+          });
+        }
+      }
+    } catch {
+      // L0 fetch failed — tree will just not show L0 leaf nodes
+    }
+  }
+
+  return parsed;
 }
 
 /**

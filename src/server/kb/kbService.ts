@@ -184,6 +184,8 @@ async function embedAndStoreFile(
     file_path: chunk.filePath,
     parent_dir: chunk.parentDir,
     created_at: new Date().toISOString(),
+    level: 0,
+    children_ids: "[]",
   }));
 
   await addToKBTable(kbId, records);

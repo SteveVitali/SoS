@@ -499,7 +499,10 @@ export async function searchAllKBs(params: {
   });
 }
 
-export async function listKBs(): Promise<{ kbs: KnowledgeBase[] }> {
+export async function listKBs(): Promise<{
+  kbs: KnowledgeBase[];
+  raptor_status: Record<string, RaptorStatus>;
+}> {
   return request("GET", "/kb");
 }
 
@@ -656,4 +659,43 @@ export async function listDocumentChunks(
 
 export async function deleteKBDocument(kbId: string, docName: string): Promise<{ ok: boolean }> {
   return request("DELETE", `/kb/${kbId}/documents/${encodeURIComponent(docName)}`);
+}
+
+// --- RAPTOR ---
+
+export interface RaptorStatus {
+  kb_id: string;
+  built: boolean;
+  building: boolean;
+  levels: number;
+  nodes_per_level: Record<number, number>;
+  total_nodes: number;
+  build_duration_ms?: number;
+  last_built?: string;
+  build_started_at?: string;
+  error?: string;
+}
+
+export async function getRaptorStatus(kbId: string): Promise<{ status: RaptorStatus }> {
+  return request("GET", `/kb/${kbId}/raptor/status`);
+}
+
+export interface RaptorNode {
+  id: string;
+  level: number;
+  children_ids: string[];
+  content: string;
+  source_file: string;
+  section: string;
+}
+
+export async function getRaptorTree(kbId: string): Promise<{ nodes: RaptorNode[] }> {
+  return request("GET", `/kb/${kbId}/raptor/tree`);
+}
+
+export async function buildRaptorTree(
+  kbId: string,
+  config?: Record<string, unknown>,
+): Promise<{ ok: boolean; message: string }> {
+  return request("POST", `/kb/${kbId}/raptor/build`, { config });
 }

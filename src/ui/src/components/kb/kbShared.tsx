@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useCallback, useState } from "react";
 import type { KBScope, KBSearchResult } from "../../api.js";
 import { css } from "../../styles/theme.js";
 
@@ -12,12 +12,57 @@ export const SCOPE_COLORS: Record<string, string> = {
 
 export const ALL_SCOPES: KBScope[] = ["chat", "create_job", "plan_job", "agent_task", "all"];
 
+export function useToggleScopes(initial: KBScope[] = [...ALL_SCOPES]) {
+  const [scopes, setScopes] = useState<KBScope[]>(initial);
+  const toggle = useCallback(
+    (scope: KBScope) =>
+      setScopes((prev) =>
+        prev.includes(scope) ? prev.filter((s) => s !== scope) : [...prev, scope],
+      ),
+    [],
+  );
+  return { scopes, toggle } as const;
+}
+
 export function formatBytes(bytes: number): string {
   if (bytes === 0) return "0 B";
   const k = 1024;
   const sizes = ["B", "KB", "MB", "GB"];
   const i = Math.floor(Math.log(bytes) / Math.log(k));
   return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
+}
+
+export function sessionStatusColor(status: string): string {
+  switch (status) {
+    case "completed":
+      return "#22c55e";
+    case "failed":
+      return "#ef4444";
+    case "budget_exhausted":
+      return "#eab308";
+    case "running":
+      return "#3b82f6";
+    default:
+      return "var(--fg2)";
+  }
+}
+
+export function formatDuration(ms: number): string {
+  if (ms < 1000) return `${ms}ms`;
+  return `${(ms / 1000).toFixed(1)}s`;
+}
+
+export function strategyColor(strategy: string): string {
+  switch (strategy) {
+    case "agent":
+      return "#8b5cf6";
+    case "deep":
+      return "#3b82f6";
+    case "simple":
+      return "#22c55e";
+    default:
+      return "var(--fg2)";
+  }
 }
 
 export function ScopeBadge({ scope }: { scope: string }) {

@@ -15,6 +15,8 @@ import {
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { formatBytes, ScopeBadge, ScopeToggleButtons, SearchResultCard } from "./kbShared.js";
+import { RaptorStatus } from "./RaptorStatus.js";
+import { RaptorTree } from "./RaptorTree.js";
 
 // ---------------------------------------------------------------------------
 // Types & small sub-components used by KBDetail
@@ -621,6 +623,10 @@ export function KBDetail() {
           </div>
         )}
       </div>
+
+      {/* RAPTOR Index Status */}
+      {kb && <RaptorStatus kbId={kb.kb_id} />}
+      {kb && <RaptorTree kbId={kb.kb_id} />}
 
       {/* Documents list */}
       <div style={css.card}>
