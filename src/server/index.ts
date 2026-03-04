@@ -3,7 +3,7 @@ import path from "node:path";
 import { fileURLToPath } from "node:url";
 import express from "express";
 import { createLogger } from "../shared/logger.js";
-import { getModelRegistry } from "../shared/modelConfig.js";
+import { getModelRegistry, initModelConfig } from "../shared/modelConfig.js";
 import { createRouter } from "./api/router.js";
 import { initChatTitleGenerator } from "./chat/titleGen.js";
 import { loadServerConfig } from "./config.js";
@@ -88,6 +88,32 @@ async function main() {
     } catch (_err: unknown) {
       log.warn("No routing config found, using hardcoded defaults", { path: fallbackPath });
     }
+  }
+
+  // Initialize model config (YAML-driven model overrides)
+  {
+    const modelConfigFilePath =
+      config.modelConfigPath ||
+      (config.repoRegistryPath
+        ? path.join(path.dirname(config.repoRegistryPath), "model-config.yaml")
+        : path.join(process.cwd(), "model-config.yaml"));
+    try {
+      initModelConfig(modelConfigFilePath);
+    } catch (err: unknown) {
+      log.warn("Failed to initialize model config (non-fatal)", {
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  // Re-log model registry now that file overrides are loaded
+  {
+    const registry = getModelRegistry();
+    log.info("Model registry (with file overrides)", {
+      models: Object.fromEntries(
+        Object.entries(registry).map(([role, r]) => [role, `${r.model} (${r.source})`]),
+      ),
+    });
   }
 
   // Initialize LLM provider for Slack message routing
