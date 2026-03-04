@@ -7,6 +7,7 @@ import type {
   JobError,
   JobMetrics,
   JobStatus,
+  JobType,
   WebJobsQuery,
 } from "../../shared/types.js";
 import { getJobsCollection } from "../mongo.js";
@@ -436,6 +437,47 @@ export async function confirmJobPlan(
     { returnDocument: "after" },
   );
   return result as JobDoc | null;
+}
+
+// --- Per-PR Queue Helpers ---
+
+const PR_JOB_TYPES: JobType[] = [
+  "self_review_pr",
+  "add_pr_review_comments",
+  "respond_to_pr_comments",
+];
+
+/**
+ * Find all non-terminal PR-scoped jobs for a given PR URL.
+ * Returns them ordered by creation time (oldest first).
+ */
+export async function findNonTerminalPrJobs(prUrl: string): Promise<JobDoc[]> {
+  const col = getJobsCollection();
+  return col
+    .find({
+      pr_url: prUrl,
+      job_type: { $in: PR_JOB_TYPES },
+      status: { $nin: ["DONE", "FAILED", "CANCELED", "DELETED"] },
+    })
+    .sort({ created_at: 1 })
+    .toArray() as Promise<JobDoc[]>;
+}
+
+/**
+ * When a job reaches a terminal state, unblock any jobs that were waiting on it.
+ * Transitions BLOCKED → QUEUED and clears the blocked_by field.
+ */
+export async function unblockDependentJobs(completedTaskId: string): Promise<number> {
+  const col = getJobsCollection();
+  const now = nowDate();
+  const result = await col.updateMany(
+    { blocked_by: completedTaskId, status: "BLOCKED" },
+    {
+      $set: { status: "QUEUED" as JobStatus, updated_at: now },
+      $unset: { blocked_by: "" },
+    },
+  );
+  return result.modifiedCount;
 }
 
 export async function getDistinctRequestedBy(): Promise<string[]> {

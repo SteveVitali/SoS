@@ -3,6 +3,7 @@ import { z } from "zod";
 // --- Job Status ---
 export const JobStatus = z.enum([
   "QUEUED",
+  "BLOCKED",
   "PLANNING",
   "PENDING_CONFIRMATION",
   "RUNNING",
@@ -226,6 +227,9 @@ export interface JobDoc {
 
   // Linking
   parent_task_id?: string;
+
+  // Per-PR queue: this job is blocked until the referenced job finishes
+  blocked_by?: string;
 }
 
 // --- Event Types ---
