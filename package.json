@@ -28,7 +28,7 @@
     "prepare": "husky"
   },
   "dependencies": {
-    "@anthropic-ai/sdk": "^0.76.0",
+    "@anthropic-ai/sdk": "^0.78.0",
     "@lancedb/lancedb": "^0.26.2",
     "@langchain/core": "^1.1.29",
     "@langchain/langgraph": "^1.2.0",
