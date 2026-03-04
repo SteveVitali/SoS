@@ -19,6 +19,7 @@ import { JobTypeBadge, StatusBadge } from "../shared/Badge.js";
 import { LogTerminal } from "../workers/LogTerminal.js";
 import { EventsTimeline } from "./EventsTimeline.js";
 import { PerformanceCard } from "./PerformanceCard.js";
+import { ResearchAudit } from "./ResearchAudit.js";
 
 export function JobDetail() {
   const { taskId } = useParams<{ taskId: string }>();
@@ -138,6 +139,7 @@ export function JobDetail() {
             </button>
             {[
               "QUEUED",
+              "BLOCKED",
               "RUNNING",
               "FIXING_CI",
               "WAITING_FOR_APPROVAL",
@@ -414,6 +416,9 @@ export function JobDetail() {
           </div>
         )}
       </div>
+
+      {/* Research Audit */}
+      {taskId && <ResearchAudit taskId={taskId} />}
 
       {/* Live worker logs for in-progress jobs */}
       {job.claimed_by && ["RUNNING", "FIXING_CI"].includes(job.status) && (

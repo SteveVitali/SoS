@@ -62,7 +62,9 @@ export function JobRow({ job, prStats, onAction }: JobRowProps) {
             style={{ display: "flex", gap: 2, flexShrink: 0 }}
             onClick={(e) => e.stopPropagation()}
           >
-            {["QUEUED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(job.status) && (
+            {["QUEUED", "BLOCKED", "RUNNING", "FIXING_CI", "WAITING_FOR_APPROVAL"].includes(
+              job.status,
+            ) && (
               <button
                 type="button"
                 style={css.btnSmall}

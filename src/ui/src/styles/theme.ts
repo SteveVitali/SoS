@@ -2,6 +2,7 @@ import type React from "react";
 
 export const STATUS_COLORS: Record<string, string> = {
   QUEUED: "#3b82f6",
+  BLOCKED: "#6366f1",
   PLANNING: "#818cf8",
   PENDING_CONFIRMATION: "#a855f7",
   RUNNING: "#eab308",
@@ -20,6 +21,7 @@ export const EVENT_LABELS: Record<string, string> = {
   REVIEW_GENERATED: "Review Generated",
   COMMENTS_PARSED: "Comments Parsed",
   REVIEW_POSTED: "Review Posted",
+  BLOCKED: "Blocked",
   SELF_REVIEW_FINISHED: "Self-Review Finished",
   PLAN_STARTED: "Plan Started",
   PLAN_GENERATED: "Plan Generated",
@@ -44,8 +46,7 @@ export function eventColor(type: string): string {
     type === "DONE" ||
     type.includes("GREEN") ||
     type === "COMMENTS_PUSHED" ||
-    type === "COMMENT_ADDRESSED" ||
-    type === "REVIEW_POSTED"
+    type === "COMMENT_ADDRESSED"
   )
     return "var(--green)";
   return "var(--accent)";

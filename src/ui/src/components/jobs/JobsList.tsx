@@ -155,7 +155,7 @@ export function JobsList() {
           }}
         >
           <option value="">All statuses</option>
-          {["QUEUED", "RUNNING", "FIXING_CI", "DONE", "FAILED", "CANCELED"].map((s) => (
+          {["QUEUED", "BLOCKED", "RUNNING", "FIXING_CI", "DONE", "FAILED", "CANCELED"].map((s) => (
             <option key={s} value={s}>
               {s}
             </option>

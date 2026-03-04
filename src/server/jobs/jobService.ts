@@ -24,6 +24,7 @@ import type {
 import {
   appendEvent,
   findJobByTaskId,
+  findNonTerminalPrJobs,
   findPollableJobs,
   getDistinctRequestedBy,
   insertJob,
@@ -37,6 +38,7 @@ import {
   requeueJob as repoRequeueJob,
   softDeleteJob as repoSoftDeleteJob,
   submitPlanJob as repoSubmitPlanJob,
+  unblockDependentJobs,
   updateJobFields,
 } from "./jobRepo.js";
 import { claimJob, extendLease } from "./lease.js";
@@ -149,12 +151,51 @@ export async function createJobFromWeb(input: CreateJobFromWeb): Promise<JobDoc>
   return job;
 }
 
+// --- Per-PR Queue: dedup + chain helper ---
+
 function extractPrLabel(prUrl: string): { prNum: string; repoName: string } {
   const prMatch = prUrl.match(/\/pull\/(\d+)/);
   const prNum = prMatch ? `#${prMatch[1]}` : "";
   const repoMatch = prUrl.match(/github\.com\/[^/]+\/([^/]+)/);
   const repoName = repoMatch ? repoMatch[1] : "";
   return { prNum, repoName };
+}
+
+/**
+ * Insert a PR-scoped job with dedup and per-PR chaining.
+ * - Rejects if a non-terminal job with the same (pr_url, job_type) already exists.
+ * - If other non-terminal jobs exist for this PR, chains via blocked_by → BLOCKED status.
+ *
+ * NOTE: The check-then-insert is not atomic — two concurrent requests for the
+ * same PR could both pass dedup.  The consequence is at most a duplicate job,
+ * not data corruption.  A unique compound index would be the proper fix if this
+ * becomes a real problem.
+ */
+async function insertPrJob(doc: JobDoc): Promise<JobDoc> {
+  if (!doc.pr_url) throw new Error("insertPrJob requires doc.pr_url");
+  const existing = await findNonTerminalPrJobs(doc.pr_url);
+
+  // Dedup: reject if same job type is already queued/running for this PR
+  const duplicate = existing.find((j) => j.job_type === doc.job_type);
+  if (duplicate) {
+    throw new Error(
+      `A ${doc.job_type} job is already ${duplicate.status.toLowerCase()} for this PR (${duplicate.task_id.slice(0, 8)}…)`,
+    );
+  }
+
+  // Chain: if there are other non-terminal jobs for this PR, block behind the last one
+  if (existing.length > 0) {
+    const last = existing[existing.length - 1];
+    doc.status = "BLOCKED";
+    doc.blocked_by = last.task_id;
+    // Update the event to reflect BLOCKED, not QUEUED
+    if (doc.events?.length) {
+      doc.events[0].type = "BLOCKED";
+      doc.events[0].payload = { ...doc.events[0].payload, blocked_by: last.task_id };
+    }
+  }
+
+  return insertJob(doc);
 }
 
 // --- Create Respond-to-Comments Job ---
@@ -184,7 +225,7 @@ export async function createRespondToCommentsJob(
     events: [{ at: now, type: "QUEUED", payload: { source } }],
   };
 
-  const job = await insertJob(doc);
+  const job = await insertPrJob(doc);
   log.info("Respond-to-comments job created", {
     task_id: taskId,
     pr_url: input.pr_url,
@@ -219,7 +260,7 @@ export async function createSelfReviewPrJob(input: CreateSelfReviewPr): Promise<
     events: [{ at: now, type: "QUEUED", payload: { source: "web" } }],
   };
 
-  const job = await insertJob(doc);
+  const job = await insertPrJob(doc);
   log.info("Self-review PR job created", {
     task_id: taskId,
     pr_url: input.pr_url,
@@ -249,7 +290,7 @@ export async function createAddReviewCommentsJob(input: CreateAddReviewComments)
     events: [{ at: now, type: "QUEUED", payload: { source: "web" } }],
   };
 
-  const job = await insertJob(doc);
+  const job = await insertPrJob(doc);
   log.info("Add-review-comments job created", {
     task_id: taskId,
     pr_url: input.pr_url,
@@ -458,6 +499,9 @@ export async function complete(
       await slackPoster.postDone(job);
     }
     notifyConversations(job, "DONE").catch(() => {});
+    // Unblock any PR-queued jobs waiting on this one
+    const unblocked = await unblockDependentJobs(taskId);
+    if (unblocked > 0) log.info("Unblocked dependent jobs", { task_id: taskId, count: unblocked });
   }
   return job;
 }
@@ -480,6 +524,9 @@ export async function fail(
       await slackPoster.postFailed(job);
     }
     notifyConversations(job, "FAILED").catch(() => {});
+    // Unblock any PR-queued jobs waiting on this one
+    const unblocked = await unblockDependentJobs(taskId);
+    if (unblocked > 0) log.info("Unblocked dependent jobs", { task_id: taskId, count: unblocked });
   }
   return job;
 }
@@ -513,6 +560,9 @@ export async function cancel(taskId: string) {
       await slackPoster.postCanceled(job);
     }
     notifyConversations(job, "CANCELED").catch(() => {});
+    // Unblock any PR-queued jobs waiting on this one
+    const unblocked = await unblockDependentJobs(taskId);
+    if (unblocked > 0) log.info("Unblocked dependent jobs", { task_id: taskId, count: unblocked });
   }
   return job;
 }
