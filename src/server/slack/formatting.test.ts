@@ -114,12 +114,11 @@ describe("fmtDone", () => {
     expect(result).toContain("Fixed the bug");
   });
 
-  it("truncates long summaries at 500 chars", () => {
-    const job = makeJob({ result_summary: "x".repeat(600) });
+  it("preserves full summary without truncation (chunking handled by poster)", () => {
+    const longSummary = "x".repeat(600);
+    const job = makeJob({ result_summary: longSummary });
     const result = fmtDone(job);
-    expect(result).toContain("…");
-    // The summary portion should be truncated
-    expect(result.length).toBeLessThan(600);
+    expect(result).toContain(longSummary);
   });
 
   it("handles missing PR URLs and summary", () => {

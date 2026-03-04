@@ -1,5 +1,6 @@
 import { WebClient } from "@slack/web-api";
 import { createLogger } from "../../shared/logger.js";
+import { markdownToSlack } from "../../shared/slackMarkdown.js";
 import type { JobDoc } from "../../shared/types.js";
 import {
   fmtCanceled,
@@ -43,24 +44,74 @@ export interface SlackPoster {
   setPresenceAway(): Promise<void>;
 }
 
+const SLACK_MAX_CHARS = 3900;
+
+/**
+ * Split a message into chunks that fit within Slack's display limit.
+ * Splits at paragraph boundaries (double newlines) when possible,
+ * falling back to single newlines, then hard-cutting as a last resort.
+ */
+export function splitForSlack(text: string): string[] {
+  if (text.length <= SLACK_MAX_CHARS) return [text];
+
+  const chunks: string[] = [];
+  let remaining = text;
+
+  while (remaining.length > SLACK_MAX_CHARS) {
+    let splitIdx = -1;
+
+    // Prefer splitting at a paragraph boundary (double newline)
+    const paraBreak = remaining.lastIndexOf("\n\n", SLACK_MAX_CHARS);
+    if (paraBreak > SLACK_MAX_CHARS * 0.3) {
+      splitIdx = paraBreak;
+    } else {
+      // Fall back to single newline
+      const lineBreak = remaining.lastIndexOf("\n", SLACK_MAX_CHARS);
+      if (lineBreak > SLACK_MAX_CHARS * 0.3) {
+        splitIdx = lineBreak;
+      } else {
+        // Hard cut at limit
+        splitIdx = SLACK_MAX_CHARS;
+      }
+    }
+
+    chunks.push(remaining.slice(0, splitIdx).trimEnd());
+    remaining = remaining.slice(splitIdx).trimStart();
+  }
+
+  if (remaining) {
+    chunks.push(remaining);
+  }
+
+  return chunks;
+}
+
 export function createSlackPoster(botToken: string, notifyUserId?: string): SlackPoster {
   const client = new WebClient(botToken);
 
   async function postToThread(channelId: string, threadTs: string, text: string) {
-    if (notifyUserId) {
-      text += `\n<@${notifyUserId}>`;
-    }
-    try {
-      await client.chat.postMessage({
-        channel: channelId,
-        thread_ts: threadTs,
-        text,
-      });
-    } catch (err: unknown) {
-      log.error("Failed to post Slack message", {
-        error: (err as Error).message,
-        channel: channelId,
-      });
+    const converted = markdownToSlack(text);
+    const chunks = splitForSlack(converted);
+
+    for (let i = 0; i < chunks.length; i++) {
+      let chunk = chunks[i];
+      // Append notify mention to the last chunk only
+      if (notifyUserId && i === chunks.length - 1) {
+        chunk += `\n<@${notifyUserId}>`;
+      }
+      try {
+        await client.chat.postMessage({
+          channel: channelId,
+          thread_ts: threadTs,
+          text: chunk,
+        });
+      } catch (err: unknown) {
+        log.error("Failed to post Slack message", {
+          error: (err as Error).message,
+          channel: channelId,
+          chunk: `${i + 1}/${chunks.length}`,
+        });
+      }
     }
   }
 
