@@ -16,6 +16,164 @@ import {
 import { css } from "../../styles/theme.js";
 import { formatBytes, ScopeBadge, ScopeToggleButtons, SearchResultCard } from "./kbShared.js";
 
+// ---------------------------------------------------------------------------
+// Types & small sub-components used by KBDetail
+// ---------------------------------------------------------------------------
+
+type FileStatus =
+  | { state: "pending" }
+  | { state: "processing" }
+  | { state: "done"; chunks: number }
+  | { state: "skipped"; reason: string }
+  | { state: "error"; error: string };
+
+function FileStatusRow({ name, status }: { name: string; status: FileStatus }) {
+  let icon: string;
+  let color: string;
+  let badge = "";
+  switch (status.state) {
+    case "pending":
+      icon = "◦";
+      color = "var(--fg2)";
+      break;
+    case "processing":
+      icon = "⟳";
+      color = "var(--accent)";
+      break;
+    case "done":
+      icon = "✓";
+      color = "var(--green)";
+      badge = `${status.chunks} chunk${status.chunks !== 1 ? "s" : ""}`;
+      break;
+    case "skipped":
+      icon = "–";
+      color = "var(--fg2)";
+      badge = status.reason;
+      break;
+    case "error":
+      icon = "✗";
+      color = "var(--red)";
+      badge = status.error;
+      break;
+  }
+  return (
+    <div
+      style={{
+        display: "flex",
+        alignItems: "center",
+        gap: 6,
+        padding: "3px 10px",
+        borderBottom: "1px solid var(--border)",
+      }}
+    >
+      <span style={{ color, flexShrink: 0 }}>{icon}</span>
+      <span
+        style={{
+          flex: 1,
+          overflow: "hidden",
+          textOverflow: "ellipsis",
+          whiteSpace: "nowrap",
+          color: status.state === "pending" ? "var(--fg2)" : "var(--fg)",
+        }}
+        title={name}
+      >
+        {name}
+      </span>
+      {badge && (
+        <span
+          style={{
+            flexShrink: 0,
+            fontSize: 11,
+            color: status.state === "error" ? "var(--red)" : "var(--fg2)",
+            maxWidth: 180,
+            overflow: "hidden",
+            textOverflow: "ellipsis",
+            whiteSpace: "nowrap",
+          }}
+          title={badge}
+        >
+          {badge}
+        </span>
+      )}
+    </div>
+  );
+}
+
+function UploadDropdown({
+  menuRef,
+  open,
+  onToggle,
+  disabled,
+  onSelectFiles,
+  onSelectFolder,
+}: {
+  menuRef: React.RefObject<HTMLDivElement | null>;
+  open: boolean;
+  onToggle: () => void;
+  disabled: boolean;
+  onSelectFiles: () => void;
+  onSelectFolder: () => void;
+}) {
+  const items = [
+    { label: "Select Files", action: onSelectFiles },
+    { label: "Select Folder", action: onSelectFolder },
+  ];
+  return (
+    <div ref={menuRef} style={{ position: "relative", display: "inline-block" }}>
+      <button type="button" style={css.btn} disabled={disabled} onClick={onToggle}>
+        {disabled ? "Uploading…" : "Upload ▾"}
+      </button>
+      {open && (
+        <div
+          style={{
+            position: "absolute",
+            top: "calc(100% + 4px)",
+            left: 0,
+            background: "var(--bg2)",
+            border: "1px solid var(--border)",
+            borderRadius: "var(--radius)",
+            boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
+            zIndex: 10,
+            minWidth: 160,
+            overflow: "hidden",
+          }}
+        >
+          {items.map(({ label, action }) => (
+            <button
+              key={label}
+              type="button"
+              onClick={action}
+              style={{
+                display: "block",
+                width: "100%",
+                padding: "8px 14px",
+                background: "none",
+                border: "none",
+                color: "var(--fg)",
+                fontSize: 13,
+                textAlign: "left",
+                cursor: "pointer",
+              }}
+              onMouseEnter={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg)")
+              }
+              onMouseLeave={(e) =>
+                ((e.currentTarget as HTMLButtonElement).style.background = "none")
+              }
+            >
+              {label}
+            </button>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
+
+// ---------------------------------------------------------------------------
+// Main component
+// ---------------------------------------------------------------------------
+
 export function KBDetail() {
   const { id } = useParams<{ id: string }>();
   const [kb, setKb] = useState<KnowledgeBase | null>(null);
@@ -28,13 +186,6 @@ export function KBDetail() {
   const [uploadMenuOpen, setUploadMenuOpen] = useState(false);
   const uploadMenuRef = useRef<HTMLDivElement>(null);
 
-  // Per-file ingestion progress
-  type FileStatus =
-    | { state: "pending" }
-    | { state: "processing" }
-    | { state: "done"; chunks: number }
-    | { state: "skipped"; reason: string }
-    | { state: "error"; error: string };
   const [fileStatuses, setFileStatuses] = useState<Record<string, FileStatus>>({});
   const [ingestSummary, setIngestSummary] = useState<string>("");
 
@@ -436,64 +587,14 @@ export function KBDetail() {
           style={{ display: "none" }}
         />
 
-        {/* Unified upload dropdown button */}
-        <div ref={uploadMenuRef} style={{ position: "relative", display: "inline-block" }}>
-          <button
-            type="button"
-            style={css.btn}
-            disabled={ingesting}
-            onClick={() => setUploadMenuOpen((v) => !v)}
-          >
-            {ingesting ? "Uploading…" : "Upload ▾"}
-          </button>
-          {uploadMenuOpen && (
-            <div
-              style={{
-                position: "absolute",
-                top: "calc(100% + 4px)",
-                left: 0,
-                background: "var(--bg2)",
-                border: "1px solid var(--border)",
-                borderRadius: "var(--radius)",
-                boxShadow: "0 4px 12px rgba(0,0,0,0.25)",
-                zIndex: 10,
-                minWidth: 160,
-                overflow: "hidden",
-              }}
-            >
-              {(["Files", "Folder"] as const).map((label) => (
-                <button
-                  key={label}
-                  type="button"
-                  onClick={() =>
-                    label === "Files"
-                      ? fileInputRef.current?.click()
-                      : folderInputRef.current?.click()
-                  }
-                  style={{
-                    display: "block",
-                    width: "100%",
-                    padding: "8px 14px",
-                    background: "none",
-                    border: "none",
-                    color: "var(--fg)",
-                    fontSize: 13,
-                    textAlign: "left",
-                    cursor: "pointer",
-                  }}
-                  onMouseEnter={(e) =>
-                    ((e.currentTarget as HTMLButtonElement).style.background = "var(--bg)")
-                  }
-                  onMouseLeave={(e) =>
-                    ((e.currentTarget as HTMLButtonElement).style.background = "none")
-                  }
-                >
-                  {label === "Files" ? "Select Files" : "Select Folder"}
-                </button>
-              ))}
-            </div>
-          )}
-        </div>
+        <UploadDropdown
+          menuRef={uploadMenuRef}
+          open={uploadMenuOpen}
+          onToggle={() => setUploadMenuOpen((v) => !v)}
+          disabled={ingesting}
+          onSelectFiles={() => fileInputRef.current?.click()}
+          onSelectFolder={() => folderInputRef.current?.click()}
+        />
 
         {/* Real-time per-file progress */}
         {Object.keys(fileStatuses).length > 0 && (
@@ -509,86 +610,11 @@ export function KBDetail() {
               background: "var(--bg)",
             }}
           >
-            {Object.entries(fileStatuses).map(([name, status]) => {
-              let icon: string;
-              let color: string;
-              let badge = "";
-              switch (status.state) {
-                case "pending":
-                  icon = "◦";
-                  color = "var(--fg2)";
-                  break;
-                case "processing":
-                  icon = "⟳";
-                  color = "var(--accent)";
-                  break;
-                case "done":
-                  icon = "✓";
-                  color = "var(--green)";
-                  badge = `${status.chunks} chunk${status.chunks !== 1 ? "s" : ""}`;
-                  break;
-                case "skipped":
-                  icon = "–";
-                  color = "var(--fg2)";
-                  badge = status.reason;
-                  break;
-                case "error":
-                  icon = "✗";
-                  color = "var(--red)";
-                  badge = status.error;
-                  break;
-              }
-              return (
-                <div
-                  key={name}
-                  style={{
-                    display: "flex",
-                    alignItems: "center",
-                    gap: 6,
-                    padding: "3px 10px",
-                    borderBottom: "1px solid var(--border)",
-                  }}
-                >
-                  <span style={{ color, flexShrink: 0 }}>{icon}</span>
-                  <span
-                    style={{
-                      flex: 1,
-                      overflow: "hidden",
-                      textOverflow: "ellipsis",
-                      whiteSpace: "nowrap",
-                      color: status.state === "pending" ? "var(--fg2)" : "var(--fg)",
-                    }}
-                    title={name}
-                  >
-                    {name}
-                  </span>
-                  {badge && (
-                    <span
-                      style={{
-                        flexShrink: 0,
-                        fontSize: 11,
-                        color: status.state === "error" ? "var(--red)" : "var(--fg2)",
-                        maxWidth: 180,
-                        overflow: "hidden",
-                        textOverflow: "ellipsis",
-                        whiteSpace: "nowrap",
-                      }}
-                      title={badge}
-                    >
-                      {badge}
-                    </span>
-                  )}
-                </div>
-              );
-            })}
+            {Object.entries(fileStatuses).map(([name, status]) => (
+              <FileStatusRow key={name} name={name} status={status} />
+            ))}
             {ingestSummary && (
-              <div
-                style={{
-                  padding: "5px 10px",
-                  color: "var(--green)",
-                  fontWeight: 600,
-                }}
-              >
+              <div style={{ padding: "5px 10px", color: "var(--green)", fontWeight: 600 }}>
                 {ingestSummary}
               </div>
             )}

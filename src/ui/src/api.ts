@@ -542,6 +542,7 @@ export async function deleteKB(id: string): Promise<{ ok: boolean }> {
   return request("DELETE", `/kb/${id}`);
 }
 
+// Mirrors IngestProgressEvent in src/shared/kbTypes.ts (UI build is separate).
 export type IngestProgressEvent =
   | { type: "start"; total_uploads: number }
   | { type: "file_start"; file: string }
