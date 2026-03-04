@@ -1,3 +1,4 @@
+import { dirname } from "node:path";
 import { describe, expect, it } from "vitest";
 import { type Chunk, type ChunkOptions, chunkPdfPages, chunkText } from "./chunker.js";
 
@@ -131,5 +132,42 @@ describe("chunkPdfPages", () => {
     const pages = [{ pageNum: 1, text: "Some PDF content." }];
     const chunks = chunkPdfPages(pages, defaults);
     expect(chunks[0].metadata.section).toBeUndefined();
+  });
+});
+
+describe("Chunk.metadata — file_path and parent_dir", () => {
+  it("accepts file_path and parent_dir in chunk metadata", () => {
+    const chunk: Chunk = {
+      content: "some content",
+      metadata: {
+        section: "Intro",
+        file_path: "docs/api/auth.md",
+        parent_dir: "docs/api",
+      },
+    };
+    expect(chunk.metadata.file_path).toBe("docs/api/auth.md");
+    expect(chunk.metadata.parent_dir).toBe("docs/api");
+  });
+
+  it("file_path and parent_dir default to undefined when not set", () => {
+    const chunks = chunkText("Hello world.", defaults);
+    expect(chunks).toHaveLength(1);
+    expect(chunks[0].metadata.file_path).toBeUndefined();
+    expect(chunks[0].metadata.parent_dir).toBeUndefined();
+  });
+
+  it("file_path can be stamped after chunking", () => {
+    const chunks = chunkText("# Heading\n\nContent here.", defaults);
+    const filePath = "engineering/backend/auth.md";
+    const parentDir = dirname(filePath);
+
+    for (const chunk of chunks) {
+      chunk.metadata.file_path = filePath;
+      chunk.metadata.parent_dir = parentDir;
+    }
+
+    expect(chunks[0].metadata.file_path).toBe("engineering/backend/auth.md");
+    expect(chunks[0].metadata.parent_dir).toBe("engineering/backend");
+    expect(chunks[0].metadata.section).toBe("Heading");
   });
 });

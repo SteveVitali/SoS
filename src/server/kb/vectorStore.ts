@@ -50,6 +50,8 @@ export interface VectorRecord {
   vector: number[];
   section: string;
   page: number;
+  file_path: string;
+  parent_dir: string;
   created_at: string;
 }
 
@@ -60,6 +62,8 @@ export interface VectorSearchResult {
   content: string;
   section: string;
   page: number;
+  file_path: string;
+  parent_dir: string;
   created_at: string;
   _distance: number;
 }
@@ -126,7 +130,17 @@ export async function searchKBTable(
   const table = await conn.openTable(name);
   const results = await table
     .vectorSearch(queryVector)
-    .select(["id", "kb_id", "source_file", "content", "section", "page", "created_at"])
+    .select([
+      "id",
+      "kb_id",
+      "source_file",
+      "content",
+      "section",
+      "page",
+      "file_path",
+      "parent_dir",
+      "created_at",
+    ])
     .limit(limit)
     .toArray();
 
@@ -137,6 +151,8 @@ export async function searchKBTable(
     content: r.content,
     section: r.section || "",
     page: r.page || 0,
+    file_path: r.file_path || "",
+    parent_dir: r.parent_dir || "",
     created_at: r.created_at || "",
     _distance: r._distance ?? 1,
   }));
@@ -204,6 +220,8 @@ export interface ChunkRecord {
   content: string;
   section: string;
   page: number;
+  file_path: string;
+  parent_dir: string;
   created_at: string;
 }
 
@@ -229,7 +247,7 @@ export async function listDocumentChunks(
 
   const rows = await table
     .query()
-    .select(["id", "content", "section", "page", "created_at"])
+    .select(["id", "content", "section", "page", "file_path", "parent_dir", "created_at"])
     .where(filter)
     .limit(limit + offset)
     .toArray();
@@ -240,6 +258,8 @@ export async function listDocumentChunks(
     content: r.content,
     section: r.section || "",
     page: r.page || 0,
+    file_path: r.file_path || "",
+    parent_dir: r.parent_dir || "",
     created_at: r.created_at || "",
   }));
 

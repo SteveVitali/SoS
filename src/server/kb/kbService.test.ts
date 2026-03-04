@@ -76,6 +76,8 @@ function makeSearchResult(overrides: Partial<VectorSearchResult> = {}): VectorSe
     content: "Test content",
     section: "Introduction",
     page: 0,
+    file_path: "docs/test.md",
+    parent_dir: "docs",
     created_at: new Date().toISOString(),
     _distance: 0.5,
     ...overrides,
@@ -347,6 +349,62 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
     for (let i = 1; i < results.length; i++) {
       expect(results[i].score).toBeLessThanOrEqual(results[i - 1].score);
     }
+  });
+});
+
+describe("searchKnowledgeBases — file_path metadata", () => {
+  it("surfaces file_path and parent_dir in search result metadata", async () => {
+    const kb = makeKB({ kb_id: "kb-1" });
+    mockListEnabledKBsByScope.mockResolvedValue([kb]);
+    mockGetEmbeddingProvider.mockReturnValue(mockEmbedder);
+
+    mockSearchKBTable
+      .mockResolvedValueOnce([
+        makeSearchResult({
+          _distance: 0.2,
+          file_path: "engineering/backend/auth.md",
+          parent_dir: "engineering/backend",
+        }),
+      ]) // probe
+      .mockResolvedValueOnce([
+        makeSearchResult({
+          _distance: 0.2,
+          file_path: "engineering/backend/auth.md",
+          parent_dir: "engineering/backend",
+          section: "OAuth2",
+          content: "Token refresh details",
+        }),
+      ]); // full search
+
+    const results = await searchKnowledgeBases({
+      query: "how does auth work",
+      scopes: ["chat"],
+    });
+
+    expect(results).toHaveLength(1);
+    expect(results[0].metadata.file_path).toBe("engineering/backend/auth.md");
+    expect(results[0].metadata.parent_dir).toBe("engineering/backend");
+    expect(results[0].metadata.section).toBe("OAuth2");
+  });
+
+  it("returns undefined file_path/parent_dir when vector record has empty strings", async () => {
+    const kb = makeKB({ kb_id: "kb-1" });
+    mockListEnabledKBsByScope.mockResolvedValue([kb]);
+    mockGetEmbeddingProvider.mockReturnValue(mockEmbedder);
+
+    mockSearchKBTable
+      .mockResolvedValueOnce([makeSearchResult({ _distance: 0.2, file_path: "", parent_dir: "" })])
+      .mockResolvedValueOnce([makeSearchResult({ _distance: 0.2, file_path: "", parent_dir: "" })]);
+
+    const results = await searchKnowledgeBases({
+      query: "test",
+      scopes: ["chat"],
+    });
+
+    expect(results).toHaveLength(1);
+    // Empty strings are falsy → mapped to undefined
+    expect(results[0].metadata.file_path).toBeUndefined();
+    expect(results[0].metadata.parent_dir).toBeUndefined();
   });
 });
 

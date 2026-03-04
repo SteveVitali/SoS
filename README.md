@@ -16,7 +16,7 @@ Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your re
 - **Multi-repo** — a repo registry with per-repo commands, CI providers, and keyword-based detection
 - **Enterprise-ready** — worktree pooling with build cache preservation for large monorepos (Bazel, etc.)
 - **Worker management** — spawn, monitor, and shut down worker processes from the web UI with live log streaming
-- **Knowledge bases** — upload documents (text, PDF, archives), chunk and embed them locally, and inject relevant context into LLM calls via semantic search
+- **Knowledge bases** — upload documents (text, PDF, archives) or entire folders, chunk and embed them locally with hierarchical path metadata, and inject relevant context into LLM calls via semantic search; real-time per-file ingestion progress
 - **Observable** — web dashboard with job timeline, PR stats, worker health, live Claude output, and Slack thread updates
 - **Crash-safe** — lease-based job claims with automatic recovery when workers crash
 - **Cost tracking** — per-session token counts and estimated USD cost from Claude API pricing
@@ -176,7 +176,7 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack app creation, LLM routi
    - **PRs** — view open PRs across registered repos with comment/review thread stats
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
    - **Repos** — edit the repo registry (YAML) directly from the browser
-   - **Knowledge** — create knowledge bases, upload documents, test semantic search, configure scopes and chunking
+   - **Knowledge** — create knowledge bases, upload documents or folders (with real-time progress), test semantic search in the playground, configure scopes and chunking
    - **Routing** — visual editor for LLM action routing config (parameters, execution types, reply templates) with raw YAML fallback
 
 ---
@@ -238,6 +238,7 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **Worker cancellation checks** — honor cancel requests mid-execution before expensive steps
 - **Cost budgets** — per-user/team spending limits based on the existing per-job cost tracking
 - **Multi-model executors** — plug in Aider, OpenHands, or custom scripts alongside Claude Code
+- **Advanced RAG research pipeline** — query enhancement, iterative retrieval with correction, RAPTOR tree preprocessing, ReAct agent loop
 
 ---
 

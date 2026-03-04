@@ -26,6 +26,8 @@ export interface Chunk {
   metadata: {
     section?: string;
     page?: number;
+    file_path?: string;
+    parent_dir?: string;
   };
 }
 

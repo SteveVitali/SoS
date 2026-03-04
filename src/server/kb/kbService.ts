@@ -2,8 +2,10 @@
  * Knowledge base service — orchestrates CRUD, ingestion, and search.
  */
 
+import { dirname } from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import type {
+  IngestProgressEvent,
   KBProbeResult,
   KBScope,
   KBSearchRequest,
@@ -11,9 +13,10 @@ import type {
   KBSearchWithRoutingResult,
   KnowledgeBase,
 } from "../../shared/kbTypes.js";
+import { pathToBreadcrumb } from "../../shared/kbUtils.js";
 import { createLogger } from "../../shared/logger.js";
 import { getEmbeddingProvider } from "./embeddings.js";
-import { ingestFiles } from "./ingestion.js";
+import { type IngestedFile, ingestFiles } from "./ingestion.js";
 import {
   addDocumentRecord,
   createKB,
@@ -121,8 +124,92 @@ export async function updateKnowledgeBase(
   return updateKB(kbId, updates);
 }
 
+// ---------------------------------------------------------------------------
+// Shared per-file ingestion pipeline (used by both batch and streaming paths)
+// ---------------------------------------------------------------------------
+
+interface EmbeddingProvider {
+  embed(texts: string[]): Promise<number[][]>;
+}
+
 /**
- * Ingest files into a knowledge base.
+ * Enrich, embed, store, and record a single ingested file.
+ * Returns the number of vector records written.
+ */
+async function embedAndStoreFile(
+  kbId: string,
+  ingestedFile: IngestedFile,
+  embeddingProvider: EmbeddingProvider,
+): Promise<number> {
+  // Collect and resolve chunk metadata
+  const fileChunks = ingestedFile.chunks.map((chunk) => {
+    // || for filePath: empty string is not a meaningful path, so fall through
+    const filePath = chunk.metadata.file_path || ingestedFile.filePath || ingestedFile.name;
+    // ?? for parentDir: empty string is valid (means file is at root level)
+    const parentDir =
+      chunk.metadata.parent_dir ?? (dirname(filePath) === "." ? "" : dirname(filePath));
+    return {
+      content: chunk.content,
+      sourceFile: ingestedFile.name,
+      section: chunk.metadata.section,
+      page: chunk.metadata.page,
+      filePath,
+      parentDir,
+    };
+  });
+
+  // Build breadcrumb-enriched content for embedding.
+  // Prepending the hierarchy path and section improves vector similarity
+  // for queries that reference the document structure ("contextual chunking").
+  const enrichedTexts = fileChunks.map((c) => {
+    const pathBreadcrumb = pathToBreadcrumb(c.filePath);
+    const lines: string[] = [`Source: ${pathBreadcrumb}`];
+    if (c.section) lines.push(`Section: ${c.section}`);
+    lines.push("", c.content);
+    return lines.join("\n");
+  });
+
+  const embeddings = await embeddingProvider.embed(enrichedTexts);
+
+  // Store the enriched content (with breadcrumb) — it's useful context when
+  // injected into downstream LLM prompts as well.
+  const records: VectorRecord[] = fileChunks.map((chunk, i) => ({
+    id: uuidv4(),
+    kb_id: kbId,
+    source_file: chunk.sourceFile,
+    content: enrichedTexts[i],
+    vector: embeddings[i],
+    section: chunk.section || "",
+    page: chunk.page || 0,
+    file_path: chunk.filePath,
+    parent_dir: chunk.parentDir,
+    created_at: new Date().toISOString(),
+  }));
+
+  await addToKBTable(kbId, records);
+
+  await addDocumentRecord(kbId, {
+    name: ingestedFile.name,
+    size_bytes: ingestedFile.sizeBytes,
+    chunk_count: ingestedFile.chunks.length,
+    ingested_at: new Date(),
+  });
+
+  await incrementKBStats(kbId, {
+    chunk_count: records.length,
+    document_count: 1,
+    total_size_bytes: ingestedFile.sizeBytes,
+  });
+
+  return records.length;
+}
+
+// ---------------------------------------------------------------------------
+// Public ingestion functions
+// ---------------------------------------------------------------------------
+
+/**
+ * Ingest files into a knowledge base (batch).
  * Handles chunking, embedding, and storage.
  */
 export async function ingestIntoKB(
@@ -138,8 +225,6 @@ export async function ingestIntoKB(
   if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
 
   const embeddingProvider = getEmbeddingProvider();
-
-  // Step 1: Chunk all files
   const ingestionResult = await ingestFiles(files, {
     chunkSize: kb.chunk_size,
     chunkOverlap: kb.chunk_overlap,
@@ -154,81 +239,96 @@ export async function ingestIntoKB(
     };
   }
 
-  // Step 2: Collect all chunk texts for batch embedding
-  const allChunks: Array<{
-    content: string;
-    sourceFile: string;
-    section?: string;
-    page?: number;
-  }> = [];
+  log.info("Generating embeddings", { kbId, files: ingestionResult.files.length });
 
+  let totalChunks = 0;
   for (const file of ingestionResult.files) {
-    for (const chunk of file.chunks) {
-      allChunks.push({
-        content: chunk.content,
-        sourceFile: file.name,
-        section: chunk.metadata.section,
-        page: chunk.metadata.page,
-      });
-    }
+    totalChunks += await embedAndStoreFile(kbId, file, embeddingProvider);
   }
-
-  // Step 3: Generate embeddings in batches
-  const texts = allChunks.map((c) => c.content);
-  log.info("Generating embeddings", { kbId, chunks: texts.length });
-
-  let embeddings: number[][];
-  try {
-    embeddings = await embeddingProvider.embed(texts);
-  } catch (err: any) {
-    log.error("Embedding generation failed", { kbId, error: err.message });
-    throw new Error(`Embedding generation failed: ${err.message}`);
-  }
-
-  // Step 4: Build vector records
-  const records: VectorRecord[] = allChunks.map((chunk, i) => ({
-    id: uuidv4(),
-    kb_id: kbId,
-    source_file: chunk.sourceFile,
-    content: chunk.content,
-    vector: embeddings[i],
-    section: chunk.section || "",
-    page: chunk.page || 0,
-    created_at: new Date().toISOString(),
-  }));
-
-  // Step 5: Store in LanceDB
-  await addToKBTable(kbId, records);
-
-  // Step 6: Update MongoDB metadata
-  let totalSizeBytes = 0;
-  for (const file of ingestionResult.files) {
-    totalSizeBytes += file.sizeBytes;
-    await addDocumentRecord(kbId, {
-      name: file.name,
-      size_bytes: file.sizeBytes,
-      chunk_count: file.chunks.length,
-      ingested_at: new Date(),
-    });
-  }
-
-  await incrementKBStats(kbId, {
-    chunk_count: records.length,
-    document_count: ingestionResult.files.length,
-    total_size_bytes: totalSizeBytes,
-  });
 
   log.info("Ingestion complete", {
     kbId,
     documents: ingestionResult.files.length,
-    chunks: records.length,
+    chunks: totalChunks,
   });
 
   return {
     documents_added: ingestionResult.files.length,
-    chunks_added: records.length,
+    chunks_added: totalChunks,
     skipped: ingestionResult.skipped,
     errors: ingestionResult.errors,
+  };
+}
+
+/**
+ * Streaming variant of ingestIntoKB — processes files one at a time and
+ * yields NDJSON-friendly progress events so the client can show real-time
+ * per-file progress.
+ */
+export async function* ingestIntoKBStreaming(
+  kbId: string,
+  files: Array<{ filename: string; buffer: Buffer }>,
+): AsyncGenerator<IngestProgressEvent> {
+  const kb = await findKB(kbId);
+  if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
+
+  const embeddingProvider = getEmbeddingProvider();
+  const options = { chunkSize: kb.chunk_size, chunkOverlap: kb.chunk_overlap };
+
+  let totalDocsAdded = 0;
+  let totalChunksAdded = 0;
+  const allSkipped: string[] = [];
+  const allErrors: Array<{ file: string; error: string }> = [];
+
+  yield { type: "start", total_uploads: files.length };
+
+  for (const file of files) {
+    yield { type: "file_start", file: file.filename };
+
+    try {
+      const ingestionResult = await ingestFiles([file], options);
+
+      allSkipped.push(...ingestionResult.skipped);
+      allErrors.push(...ingestionResult.errors);
+
+      for (const err of ingestionResult.errors) {
+        yield { type: "file_error", file: err.file, error: err.error };
+      }
+      for (const skipped of ingestionResult.skipped) {
+        yield { type: "file_skip", file: skipped, reason: "unsupported or empty" };
+      }
+
+      if (ingestionResult.files.length === 0) {
+        if (ingestionResult.errors.length === 0) {
+          yield { type: "file_skip", file: file.filename, reason: "no extractable content" };
+        }
+        continue;
+      }
+
+      for (const ingestedFile of ingestionResult.files) {
+        const chunkCount = await embedAndStoreFile(kbId, ingestedFile, embeddingProvider);
+        totalDocsAdded++;
+        totalChunksAdded += chunkCount;
+        yield { type: "file_done", file: ingestedFile.name, chunks: chunkCount };
+      }
+    } catch (err: any) {
+      allErrors.push({ file: file.filename, error: err.message });
+      yield { type: "file_error", file: file.filename, error: err.message };
+    }
+  }
+
+  log.info("Streaming ingestion complete", {
+    kbId,
+    documents: totalDocsAdded,
+    chunks: totalChunksAdded,
+  });
+
+  yield {
+    type: "complete",
+    documents_added: totalDocsAdded,
+    chunks_added: totalChunksAdded,
+    skipped: allSkipped,
+    errors: allErrors,
   };
 }
 
@@ -362,6 +462,8 @@ async function twoStageSearch(
             metadata: {
               section: r.section || undefined,
               page: r.page || undefined,
+              file_path: r.file_path || undefined,
+              parent_dir: r.parent_dir || undefined,
             },
           });
         }
@@ -444,6 +546,8 @@ export async function searchSingleKB(
     metadata: {
       section: r.section || undefined,
       page: r.page || undefined,
+      file_path: r.file_path || undefined,
+      parent_dir: r.parent_dir || undefined,
     },
   }));
 }

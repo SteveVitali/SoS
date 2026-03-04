@@ -17,6 +17,7 @@
 
 import { Annotation, END, START, StateGraph } from "@langchain/langgraph";
 import type { KBScope, KBSearchResult } from "../../../shared/kbTypes.js";
+import { formatPathBreadcrumb } from "../../../shared/kbUtils.js";
 import { createLogger } from "../../../shared/logger.js";
 import { searchKnowledgeBases } from "../../kb/kbService.js";
 import type { LLMProvider } from "../../llm/llmProvider.js";
@@ -30,10 +31,11 @@ const log = createLogger("server:routing:graphs:corrective-rag");
 
 function formatChunksForLLM(chunks: KBSearchResult[]): string {
   return chunks
-    .map(
-      (c, i) =>
-        `[${i + 1}] (${c.kb_name} > ${c.source_file}, score: ${c.score.toFixed(2)})\n${c.content}`,
-    )
+    .map((c, i) => {
+      const breadcrumb = formatPathBreadcrumb(c);
+      const sectionSuffix = c.metadata.section ? ` > ${c.metadata.section}` : "";
+      return `[${i + 1}] (${c.kb_name} > ${breadcrumb}${sectionSuffix}, score: ${c.score.toFixed(2)})\n${c.content}`;
+    })
     .join("\n\n---\n\n");
 }
 
@@ -185,7 +187,7 @@ function makeReformulateNode(provider: LLMProvider, model: string) {
 // Node: synthesize (generate final answer from retrieved context)
 // ---------------------------------------------------------------------------
 
-const ANSWER_SYSTEM_PROMPT = `You are a helpful assistant answering questions using the provided knowledge base context. 
+const ANSWER_SYSTEM_PROMPT = `You are a helpful assistant answering questions using the provided knowledge base context.
 
 Rules:
 - Answer based on the retrieved context. If the context is insufficient, say so honestly.

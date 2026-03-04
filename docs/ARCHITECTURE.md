@@ -53,7 +53,7 @@ The server is the **single source of truth** for job state. It:
 6. **Manages an in-memory worker registry** (register, deregister, status, stale detection)
 7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
 8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
-9. **Manages knowledge bases** with vector-indexed document storage, semantic search, and context injection into LLM calls
+9. **Manages knowledge bases** with vector-indexed document storage (hierarchical path metadata, breadcrumb-enriched embeddings), semantic search, streaming ingestion progress, and context injection into LLM calls
 10. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
 11. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
 12. **Serves the React SPA** as static files (production build)
@@ -105,8 +105,8 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 - **PRs** — open PRs across registered repos with review thread / unresolved comment stats
 - **Workers** — live worker health dashboard with per-loop status, spawn new workers, shutdown, live log terminal with Claude output streaming via SSE
 - **Repos** — in-browser YAML editor for the repo registry
-- **Knowledge** — create/manage knowledge bases, upload documents (text, PDF, archives), test semantic search, configure scopes and chunking parameters
-- **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 11 execution types, reply template management, with a raw YAML fallback view
+- **Knowledge** — create/manage knowledge bases, upload documents or folders (with real-time per-file progress), test semantic search in the KBPlayground, configure scopes and chunking parameters
+- **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 13 execution types, reply template management, with a raw YAML fallback view
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
 
@@ -357,7 +357,8 @@ son-of-steve/
 ├── src/
 │   ├── shared/                # Shared between server and worker
 │   │   ├── types.ts           # Zod schemas, JobDoc, event types, worker registry types
-│   │   ├── kbTypes.ts         # Knowledge base shared types (KnowledgeBase, KBDocument, KBSearchResult)
+│   │   ├── kbTypes.ts         # Knowledge base shared types (KnowledgeBase, KBDocument, KBSearchResult, IngestProgressEvent)
+│   │   ├── kbUtils.ts         # KB utilities (pathToBreadcrumb, formatPathBreadcrumb)
 │   │   ├── modelPricing.ts    # Claude model pricing for cost estimation
 │   │   ├── cache.ts           # Generic TTL cache with getOrSet
 │   │   ├── time.ts            # Date helpers (nowDate, addSeconds, isExpired)
@@ -425,8 +426,8 @@ son-of-steve/
 │   │   │   ├── embeddings.ts      # OpenAI/LiteLLM embedding provider with batching
 │   │   │   ├── ingestion.ts       # File ingestion pipeline (text, PDF, archives)
 │   │   │   ├── kbRepo.ts          # MongoDB CRUD for KB + document metadata
-│   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion, embedding, search
-│   │   │   ├── kbRoutes.ts        # Express routes: web (/api/web/kb) + worker (/api/worker/kb)
+│   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion (batch + streaming), embedding, search
+│   │   │   ├── kbRoutes.ts        # Express routes: web (/api/web/kb) + worker (/api/worker/kb); NDJSON streaming ingest
 │   │   │   └── index.ts           # Barrel export
 │   │   └── api/
 │   │       ├── router.ts        # Mount worker + web + chat + KB routes with auth
@@ -474,7 +475,7 @@ son-of-steve/
 │           └── components/
 │               ├── chat/          # ChatsList, ChatDetail
 │               ├── jobs/          # JobsList, JobDetail, JobRow, etc.
-│               ├── kb/            # KBList, KBDetail (upload, search, settings)
+│               ├── kb/            # KBList, KBDetail, KBPlayground, kbShared (upload, search, settings, playground)
 │               ├── prs/           # PrsList, PrRow
 │               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal
 │               ├── registry/      # RepoRegistryEditor

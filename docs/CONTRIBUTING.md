@@ -119,6 +119,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
    - Worker endpoint → `src/server/api/workerRoutes.ts`
    - Web endpoint → `src/server/api/webRoutes.ts`
    - Chat endpoint → `src/server/chat/chatRoutes.ts`
+   - Knowledge base endpoint → `src/server/kb/kbRoutes.ts`
 2. Add Zod validation schema if needed (`src/server/jobs/jobModel.ts`)
 3. Add business logic in `jobService.ts`
 4. Add the corresponding client method:

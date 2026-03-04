@@ -47,6 +47,8 @@ export interface KBChunk {
   metadata: {
     section?: string;
     page?: number;
+    file_path?: string;
+    parent_dir?: string;
     created_at: string;
   };
 }
@@ -60,6 +62,8 @@ export interface KBSearchResult {
   metadata: {
     section?: string;
     page?: number;
+    file_path?: string;
+    parent_dir?: string;
   };
 }
 
@@ -85,3 +89,21 @@ export interface KBSearchWithRoutingResult {
     probes: KBProbeResult[];
   };
 }
+
+// ---------------------------------------------------------------------------
+// Ingestion progress events (streamed as NDJSON from the ingest endpoint)
+// ---------------------------------------------------------------------------
+
+export type IngestProgressEvent =
+  | { type: "start"; total_uploads: number }
+  | { type: "file_start"; file: string }
+  | { type: "file_done"; file: string; chunks: number }
+  | { type: "file_skip"; file: string; reason: string }
+  | { type: "file_error"; file: string; error: string }
+  | {
+      type: "complete";
+      documents_added: number;
+      chunks_added: number;
+      skipped: string[];
+      errors: Array<{ file: string; error: string }>;
+    };
