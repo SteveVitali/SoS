@@ -15,7 +15,7 @@ import { createLogger } from "../../shared/logger.js";
 const log = createLogger("worker:repoLock");
 
 interface LockEntry {
-  /** Resolves when the current holder releases the lock. */
+  /** Pending waiters — each callback is resolved when the lock becomes available. */
   queue: Array<() => void>;
   held: boolean;
 }
