@@ -8,19 +8,20 @@ All configuration is via environment variables in a single `.env` file (see `.en
 |---|---|---|
 | `SOS_SERVER_PORT` | No (default: 3000) | HTTP port |
 | `SOS_INTERNAL_API_TOKEN` | **Yes** | Shared secret for worker ↔ server auth |
-| `MONGO_URI` | **Yes** | MongoDB connection string |
+| `MONGO_URI` | No | MongoDB connection string. If not set, built from `MONGO_USERNAME`, `MONGO_PASSWORD`, and `MONGO_HOST` (Atlas defaults). |
 | `MONGO_DB` | No (default: `son_of_steve`) | Database name |
 | `SLACK_APP_TOKEN` | No | Socket Mode app token (`xapp-...`). Slack is optional — leave blank to disable. |
 | `SLACK_BOT_TOKEN` | No | Bot OAuth token (`xoxb-...`). Required if Slack is enabled. |
 | `SLACK_BOT_USER_ID` | No | Bot's Slack user ID (`U...`). Required if Slack is enabled. |
-| `SOS_LLM_PROVIDER` | No (default: `anthropic`) | LLM provider: `anthropic` or `openai_compatible` ([setup](SLACK_SETUP.md#llm-powered-message-routing-optional)) |
-| `SOS_LLM_MODEL` | No (default: `claude-sonnet-4-20250514`) | Model name/string for the LLM provider |
+| `SOS_LLM_PROVIDER` | No (default: `openai_compatible`) | LLM provider: `anthropic` or `openai_compatible` ([setup](SLACK_SETUP.md#llm-powered-message-routing-optional)) |
+| `SOS_LLM_MODEL` | No (default: `claude-opus-4.5`) | Model name/string for the LLM provider |
 | `SOS_LLM_API_KEY` | No | API key for the LLM provider. Falls back to `ANTHROPIC_API_KEY` if not set. |
 | `SOS_LLM_BASE_URL` | Only for `openai_compatible` | Base URL for OpenAI-compatible endpoint (e.g., LiteLLM proxy) |
 | `SOS_SLACK_JOB_OWNER` | No | The `requested_by` value to assign to Slack-created jobs (defaults to `SOS_REQUESTED_BY_SLACK_USER`). Must match the worker's `SOS_REQUESTED_BY_SLACK_USER` so workers claim Slack jobs. The original Slack user is stored separately for attribution. |
 | `SOS_MAX_THREAD_MESSAGES` | No (default: 20) | Max Slack thread messages to fetch for context when @-mentioned in a thread |
 | `SOS_MAX_ATTACHMENT_SIZE_MB` | No (default: 10) | Max total file attachment size (MB) per job. Files collected newest-first; oldest dropped when limit reached. |
 | `JOB_DEFAULT_LEASE_SECONDS` | No (120) | Default lease duration |
+| `JOB_HEARTBEAT_SECONDS` | No (15) | Heartbeat interval for lease extension |
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |
 | `SOS_SLACK_NOTIFY_USER` | No | Always @-mention this Slack user ID in bot messages (for personal notifications) |
@@ -29,10 +30,28 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `SOS_GITHUB_TEAM_SLUG` | No | Default GitHub team slug for team queries (e.g., `platform-eng`) |
 | `SOS_GITHUB_USERNAME` | No | GitHub username for personal queries. Auto-detected via `gh api user` if not set. |
 | `SOS_ROUTING_CONFIG` | No | Path to `routing-config.yaml`. Auto-generated with defaults if missing. Falls back to same directory as `SOS_REPO_REGISTRY`. |
+| `SOS_MODEL_CONFIG` | No | Path to `model-config.yaml`. Auto-generated with defaults if missing. |
 | `SOS_WORKSPACE_ROOT` | No | Directory for clones/worktrees (also used by server for worktree status endpoint) |
 | `SOS_REPO_REGISTRY` | No | Path to `repo-registry.yaml` (also used by server for PR listing and registry editor) |
 | `WEB_BASIC_AUTH_USER` | No | Optional basic auth for web UI |
 | `WEB_BASIC_AUTH_PASS` | No | Optional basic auth for web UI |
+
+## GitHub Hub (Sync Engine)
+
+The GitHub Hub feature provides a MongoDB-cached view of your org's GitHub activity with background sync. Configuration uses a three-tier precedence: MongoDB settings (from the UI Settings tab) > environment variables > hardcoded defaults.
+
+| Variable | Required | Description |
+|---|---|---|
+| `SOS_GITHUB_TOKEN` | Only if GitHub Hub sync is used | GitHub Personal Access Token (classic PAT with `repo` + `read:org` scopes, SSO-authorized). Required for the sync engine. |
+| `SOS_GITHUB_ORG` | No (default: `Foursquare`) | GitHub organization slug |
+| `SOS_GITHUB_TEAM_SLUG` | No (default: `places-engineering`) | GitHub team slug within the org |
+| `SOS_GITHUB_USERNAME` | No | GitHub username for personal queries |
+| `SOS_GITHUB_HISTORY_DAYS` | No (default: `365`) | How many days of history to backfill |
+| `SOS_GITHUB_CHUNK_DAYS` | No (default: `28`) | Size of each backfill chunk in days |
+| `SOS_GITHUB_CHUNK_EPOCH` | No (default: `2024-01-01`) | Epoch anchor date for deterministic chunk boundaries |
+| `SOS_GITHUB_SYNC_ENABLED` | No (default: `true`) | Set to `false` to disable background sync |
+| `SOS_GITHUB_SYNC_HOT_INTERVAL` | No (default: `600`) | Seconds between hot syncs (open PRs) |
+| `SOS_GITHUB_SYNC_WARM_INTERVAL` | No (default: `3600`) | Seconds between warm syncs (org/team membership) |
 
 ## Knowledge Base (Embeddings)
 
@@ -50,7 +69,7 @@ The research pipeline uses a separate, typically cheaper LLM for its internal re
 
 | Variable | Required | Description |
 |---|---|---|
-| `SOS_RESEARCH_LLM_MODEL` | No (default: `bedrock/amazon.nova-pro-v1:0`) | Model for research reasoning calls. Supports any OpenAI-compatible model. |
+| `SOS_RESEARCH_LLM_MODEL` | No (default: `claude-opus-4.5`) | Model for research reasoning calls. Supports any OpenAI-compatible model. |
 | `SOS_RESEARCH_LLM_API_KEY` | Only if research pipeline is used | API key for the research LLM. Falls back to `OPENAI_API_KEY` if not set. |
 | `SOS_RESEARCH_LLM_BASE_URL` | No (default: `https://api.openai.com/v1`) | Base URL for the research LLM API (e.g., a LiteLLM proxy). |
 | `SOS_RESEARCH_LLM_TEMPERATURE` | No (default: `0.0`) | Temperature for research LLM calls. `0.0` for deterministic reasoning. |
@@ -64,19 +83,19 @@ Model assignments are centralized in `src/shared/modelConfig.ts`. Each role can 
 
 | Variable | Default | Description |
 |---|---|---|
-| `SOS_LLM_MODEL` | `claude-sonnet-4-20250514` | Slack/chat message routing, intent classification, and tool-calling |
+| `SOS_LLM_MODEL` | `claude-opus-4.5` | Slack/chat message routing, intent classification, and tool-calling |
 | `SOS_TITLE_MODEL` | (inherits `SOS_LLM_MODEL`) | Job and chat conversation title generation |
-| `SOS_RESEARCH_LLM_MODEL` | `bedrock/amazon.nova-pro-v1:0` | Research pipeline reasoning calls |
+| `SOS_RESEARCH_LLM_MODEL` | `claude-opus-4.5` | Research pipeline reasoning calls |
 | `SOS_RAPTOR_MODEL` | (inherits `SOS_RESEARCH_LLM_MODEL`) | RAPTOR tree cluster summarization |
 | `SOS_EMBEDDING_MODEL` | `text-embedding-3-small` | Vector embeddings for KB indexing and search |
 
-You can also override model assignments via `model-config.yaml` in the project root (env vars take precedence):
+You can also override model assignments via `model-config.yaml` in the project root. **File overrides take highest precedence** (YAML file > env var > hardcoded default):
 
 ```yaml
-routing: claude-sonnet-4-20250514
-titleGeneration: claude-sonnet-4-20250514
-research: bedrock/amazon.nova-pro-v1:0
-raptorSummarization: bedrock/amazon.nova-pro-v1:0
+routing: claude-opus-4.5
+titleGeneration: claude-opus-4.5
+research: claude-opus-4.5
+raptorSummarization: claude-opus-4.5
 embedding: text-embedding-3-small
 ```
 
@@ -103,7 +122,6 @@ The worker reads from the same `.env` file.
 | `SOS_INTERNAL_API_TOKEN` | **Yes** | Same token as server |
 | `SOS_REQUESTED_BY_SLACK_USER` | **Yes** | Your Slack user ID |
 | `SOS_NODE_ID` | No (default: `local`) | Identifier for this machine |
-| `SOS_WORKERS` | No (default: 4) | Number of concurrent worker loops |
 | `SOS_POLL_INTERVAL_SECONDS` | No (10) | Poll interval |
 | `SOS_LEASE_SECONDS` | No (120) | Lease duration per claim |
 | `SOS_WORKSPACE_ROOT` | **Yes** | Directory for clones/worktrees |
