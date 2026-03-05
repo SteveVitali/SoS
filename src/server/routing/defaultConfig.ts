@@ -294,9 +294,7 @@ actions:
       summary_types:
         - my_recap
         - team_recap
-      reply_summary_queued: "📊 Recap queued: \`{{task_id:0:8}}…\` — I'll crunch the numbers and post the summary shortly."
       reply_error: "⚠️ GitHub query failed: {{error}}"
-      reply_rate_limited: "⏳ GitHub API rate limit reached — try again in a minute or two."
       reply_unknown_type: "⚠️ Unknown GitHub query type: {{query_type}}"
 
   list_jobs:

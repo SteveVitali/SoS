@@ -1050,10 +1050,10 @@ const octokit = new ThrottledOctokit({
 
 - [x] Build Settings sub-tab (§8.5) with token validation
 - [x] Settings persistence to `github_settings` collection
-- [ ] Migrate existing `github_summary` jobs to read from MongoDB (§10.1)
-- [ ] Migrate `executeInstantQuery()` to read from MongoDB (§10.2)
+- [x] Migrate existing `github_summary` jobs to read from MongoDB (§10.1) — replaced with inline recaps
+- [x] Migrate `executeInstantQuery()` to read from MongoDB (§10.2)
 - [x] Performance tuning (MongoDB indexes, query optimization)
-- [ ] Deprecate old `ghPrs.ts` + `queries.ts` + `teamCache.ts` code paths
+- [x] Deprecate old `ghPrs.ts` + `queries.ts` + `teamCache.ts` code paths — deleted
 
 ---
 

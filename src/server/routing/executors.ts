@@ -10,15 +10,12 @@ import { execFile } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
 import type { GithubQueryType } from "../../shared/types.js";
 import { GITHUB_INSTANT_QUERIES, GITHUB_SUMMARY_QUERIES } from "../../shared/types.js";
-import {
-  executeInstantQuery,
-  formatInstantQueryResult,
-  GithubRateLimitError,
-} from "../github/index.js";
+import { formatInstantQueryFromMongo } from "../github/mongoFormatting.js";
+import { executeInstantQueryFromMongo } from "../github/mongoQueries.js";
+import { executeRecapInline } from "../github/recapService.js";
 import {
   cancel,
   confirmJob,
-  createGithubSummaryJob,
   createJobFromSlack,
   createJobFromWeb,
   createRespondToCommentsJob,
@@ -27,6 +24,7 @@ import {
   queryJobs,
   retry,
 } from "../jobs/jobService.js";
+import type { LLMProvider } from "../llm/llmProvider.js";
 import type { CommandContext, CommandResult } from "../slack/commandExecutor.js";
 import type { RoutedAction } from "../slack/messageRouter.js";
 import { executeResearch } from "./researchExecutor.js";
@@ -42,13 +40,21 @@ import type {
   JobQueryExecution,
   LeaveChannelExecution,
   ReplyExecution,
-  ResearchExecution,
   ShellExecution,
   WebhookExecution,
 } from "./routingTypes.js";
 import { renderTemplate, type TemplateContext } from "./template.js";
 
 const log = createLogger("server:routing:executors");
+
+// --- LLM provider for inline recaps ---
+
+let recapLlmProvider: LLMProvider | null = null;
+
+export function initExecutorLLM(provider: LLMProvider): void {
+  recapLlmProvider = provider;
+  log.info("Executor LLM provider initialized (inline recaps enabled)");
+}
 
 // --- Shared helpers ---
 
@@ -472,70 +478,62 @@ async function executeGithubQuery(
   const instantTypes = execDef.instant_types || [...GITHUB_INSTANT_QUERIES];
   const summaryTypes = execDef.summary_types || [...GITHUB_SUMMARY_QUERIES];
 
-  // Instant queries
+  // Instant queries — read from MongoDB
   if (instantTypes.includes(queryType)) {
     try {
-      const result = executeInstantQuery(queryType, {
+      const result = await executeInstantQueryFromMongo(queryType, {
         githubUsername: ctx.githubUsername,
         org: action.args.org || ctx.githubOrg,
         team_slug: action.args.team_slug || ctx.githubTeamSlug,
         time_range: action.args.time_range,
       });
-      const formatted = formatInstantQueryResult(result);
+      const formatted = formatInstantQueryFromMongo(result);
       return {
         reply: action.reply ? appendReply(action.reply, formatted) : formatted,
-        actionTaken: `github: ${queryType} (${result.prs?.length ?? 0} results)`,
+        actionTaken: `github: ${queryType} (${result.prs.length} results)`,
       };
     } catch (err: unknown) {
       log.error("GitHub instant query failed", { queryType, error: (err as Error).message });
-      const isRateLimit = err instanceof GithubRateLimitError;
-      const template = isRateLimit
-        ? execDef.reply_rate_limited ||
-          "⏳ GitHub API rate limit reached — try again in a minute or two."
-        : execDef.reply_error || "⚠️ GitHub query failed: {{error}}";
       const reply = renderTemplate(
-        template,
+        execDef.reply_error || "⚠️ GitHub query failed: {{error}}",
         tplCtx(action, ctx, { error: (err as Error).message }),
       );
       return {
         reply: appendReply(action.reply, reply),
-        actionTaken: `github: ${queryType} ${isRateLimit ? "rate_limited" : "failed"}`,
+        actionTaken: `github: ${queryType} failed`,
       };
     }
   }
 
-  // Summary queries
+  // Summary queries — execute inline via MongoDB + LLM provider
   if (summaryTypes.includes(queryType)) {
+    if (!recapLlmProvider) {
+      log.warn("Recap requested but LLM provider not initialized");
+      return {
+        reply: appendReply(action.reply, "⚠️ Recap unavailable — LLM provider not configured."),
+        actionTaken: `github: ${queryType} no_llm`,
+      };
+    }
+
     try {
-      const slackThread =
-        ctx.source === "slack" && ctx.slack
-          ? { channel_id: ctx.slack.channelId, thread_ts: ctx.slack.threadTs }
-          : undefined;
-      const job = await createGithubSummaryJob(
+      const formatted = await executeRecapInline(
+        queryType as "my_recap" | "team_recap",
         {
-          requested_by: ctx.ownerId,
-          query_type: queryType as "my_recap" | "team_recap",
-          time_range: action.args.time_range,
           org: action.args.org || ctx.githubOrg,
           team_slug: action.args.team_slug || ctx.githubTeamSlug,
           github_username: ctx.githubUsername,
+          time_range: action.args.time_range,
         },
-        ctx.source,
-        slackThread,
-      );
-      const reply = renderTemplate(
-        execDef.reply_summary_queued || "📊 Recap queued: `{{task_id:0:8}}…`",
-        tplCtx(action, ctx, { task_id: job.task_id, query_type: queryType }),
+        recapLlmProvider,
       );
       return {
-        reply: appendReply(action.reply, reply),
-        actionTaken: `github: ${queryType} job ${job.task_id}`,
-        taskId: job.task_id,
+        reply: action.reply ? appendReply(action.reply, formatted) : formatted,
+        actionTaken: `github: ${queryType} (inline)`,
       };
     } catch (err: unknown) {
-      log.error("GitHub summary job creation failed", { queryType, error: (err as Error).message });
+      log.error("GitHub inline recap failed", { queryType, error: (err as Error).message });
       const reply = renderTemplate(
-        execDef.reply_error || "⚠️ Failed to queue recap: {{error}}",
+        execDef.reply_error || "⚠️ Recap generation failed: {{error}}",
         tplCtx(action, ctx, { error: (err as Error).message }),
       );
       return {

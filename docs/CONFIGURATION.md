@@ -33,6 +33,7 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `SOS_MODEL_CONFIG` | No | Path to `model-config.yaml`. Auto-generated with defaults if missing. |
 | `SOS_WORKSPACE_ROOT` | No | Directory for clones/worktrees (also used by server for worktree status endpoint) |
 | `SOS_REPO_REGISTRY` | No | Path to `repo-registry.yaml` (also used by server for PR listing and registry editor) |
+| `SOS_WORKER_PROCESSES` | No (default: 4) | Number of worker processes to auto-spawn on server startup |
 | `WEB_BASIC_AUTH_USER` | No | Optional basic auth for web UI |
 | `WEB_BASIC_AUTH_PASS` | No | Optional basic auth for web UI |
 

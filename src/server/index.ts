@@ -19,6 +19,7 @@ import {
 import { resetStaleBuildingStatuses } from "./kb/raptor/raptorRepo.js";
 import { createLLMProvider } from "./llm/index.js";
 import { closeMongo, connectMongo } from "./mongo.js";
+import { initExecutorLLM } from "./routing/executors.js";
 import { initRoutingConfig } from "./routing/index.js";
 import { initMessageRouter } from "./slack/messageRouter.js";
 import { createSlackPoster } from "./slack/slackClient.js";
@@ -128,6 +129,7 @@ async function main() {
       initMessageRouter(llmProvider, config.llmModel);
       initTitleGenerator(llmProvider, config.llmModel);
       initChatTitleGenerator(llmProvider, config.llmModel);
+      initExecutorLLM(llmProvider);
     } catch (err: unknown) {
       log.warn(
         "Failed to initialize LLM provider — message routing will treat all mentions as jobs",

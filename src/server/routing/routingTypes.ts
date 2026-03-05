@@ -76,14 +76,12 @@ export interface CreateRespondJobExecution {
   reply_error?: string;
 }
 
-/** Dispatch to GitHub instant queries or summary jobs. */
+/** Dispatch to GitHub instant queries or inline recap execution. */
 export interface GithubQueryExecution {
   type: "github_query";
   instant_types?: string[];
   summary_types?: string[];
-  reply_summary_queued?: string;
   reply_error?: string;
-  reply_rate_limited?: string;
   reply_unknown_type?: string;
 }
 
