@@ -10,6 +10,7 @@ import {
 } from "node:fs";
 import path from "node:path";
 import { createLogger } from "../../shared/logger.js";
+import { withRepoLock } from "./repoLock.js";
 import type { RepoEntry } from "./repoRegistry.js";
 
 const LOCKFILE_NAME = ".sos-lock";
@@ -102,7 +103,12 @@ class WorktreePoolImpl {
    * Try to acquire a worktree slot for the given repo.
    * Returns the slot info or null if all slots are occupied and max is reached.
    */
-  acquire(repo: RepoEntry, clonePath: string, taskId: string, branch: string): WorktreeSlot | null {
+  async acquire(
+    repo: RepoEntry,
+    clonePath: string,
+    taskId: string,
+    branch: string,
+  ): Promise<WorktreeSlot | null> {
     const states = this.getOrCreateStates(repo, clonePath);
 
     // Reconcile in-memory state with on-disk lockfiles (handles restarts / multi-process)
@@ -117,7 +123,7 @@ class WorktreePoolImpl {
           slot: state.slot.slotName,
           taskId,
         });
-        this.resetWorktree(state.slot, repo, clonePath, branch);
+        await this.resetWorktree(state.slot, repo, clonePath, branch);
         state.repo = repo;
         state.clonePath = clonePath;
         state.currentBranch = branch;
@@ -163,12 +169,12 @@ class WorktreePoolImpl {
    * Acquire a slot and check out an existing remote branch (e.g. for respond_to_pr_comments).
    * Unlike acquire(), this does NOT create a new branch — it checks out an existing one.
    */
-  acquireExistingBranch(
+  async acquireExistingBranch(
     repo: RepoEntry,
     clonePath: string,
     taskId: string,
     remoteBranch: string,
-  ): WorktreeSlot | null {
+  ): Promise<WorktreeSlot | null> {
     const states = this.getOrCreateStates(repo, clonePath);
     this.reconcileLocks(states);
 
@@ -182,7 +188,7 @@ class WorktreePoolImpl {
           taskId,
           branch: remoteBranch,
         });
-        this.resetWorktreeToRemoteBranch(state.slot, repo, clonePath, remoteBranch);
+        await this.resetWorktreeToRemoteBranch(state.slot, repo, clonePath, remoteBranch);
         state.repo = repo;
         state.clonePath = clonePath;
         state.currentBranch = remoteBranch;
@@ -194,7 +200,7 @@ class WorktreePoolImpl {
     // Create new slot if room
     if (states.length < repo.max_worktrees) {
       const slotIndex = states.length + 1;
-      const slot = this.createSlotForExistingBranch(repo, clonePath, slotIndex, remoteBranch);
+      const slot = await this.createSlotForExistingBranch(repo, clonePath, slotIndex, remoteBranch);
       writeLockfile(slot.worktreePath, taskId);
       const state: SlotState = {
         slot,
@@ -227,7 +233,7 @@ class WorktreePoolImpl {
    * Parks the worktree on its base branch with latest main so the feature
    * branch is freed for checkout from other repos.
    */
-  release(repoId: string, slotName: string): void {
+  async release(repoId: string, slotName: string): Promise<void> {
     const states = this.slots.get(repoId);
     if (!states) return;
     const state = states.find((s) => s.slot.slotName === slotName);
@@ -242,7 +248,7 @@ class WorktreePoolImpl {
     // Best-effort: park the worktree on its base branch with latest main
     if (state.repo && state.clonePath) {
       try {
-        this.parkOnBaseBranch(state.slot, state.repo, state.clonePath, state.currentBranch);
+        await this.parkOnBaseBranch(state.slot, state.repo, state.clonePath, state.currentBranch);
       } catch (err: unknown) {
         log.warn("Failed to park worktree on base branch during release", {
           slot: slotName,
@@ -373,12 +379,12 @@ class WorktreePoolImpl {
     return { slotName, slotIndex, worktreePath, repoId: repo.id };
   }
 
-  private createSlotForExistingBranch(
+  private async createSlotForExistingBranch(
     repo: RepoEntry,
     clonePath: string,
     slotIndex: number,
     remoteBranch: string,
-  ): WorktreeSlot {
+  ): Promise<WorktreeSlot> {
     const slotName = `${repo.id}-n-${slotIndex}`;
     const worktreePath = path.join(this.workspaceRoot, "worktrees", slotName);
     const base = baseBranchName(slotName);
@@ -390,8 +396,8 @@ class WorktreePoolImpl {
     }
     this.gitExec("git worktree prune", clonePath);
 
-    // Fetch the remote branch
-    this.gitExec(`git fetch origin ${remoteBranch}`, clonePath);
+    // Fetch the remote branch (serialized per-repo)
+    await this.fetchUnderLock(repo.id, `git fetch origin ${remoteBranch}`, clonePath);
     log.info("Creating worktree slot for existing branch", {
       slotName,
       worktreePath,
@@ -409,17 +415,21 @@ class WorktreePoolImpl {
     return { slotName, slotIndex, worktreePath, repoId: repo.id };
   }
 
-  private resetWorktreeToRemoteBranch(
+  private async resetWorktreeToRemoteBranch(
     slot: WorktreeSlot,
     repo: RepoEntry,
     clonePath: string,
     remoteBranch: string,
-  ): void {
+  ): Promise<void> {
     const { worktreePath } = slot;
     const base = baseBranchName(slot.slotName);
 
-    // Fetch the remote branch and default branch
-    this.gitExec(`git fetch origin ${remoteBranch} ${repo.default_branch}`, clonePath);
+    // Fetch the remote branch and default branch (serialized per-repo)
+    await this.fetchUnderLock(
+      repo.id,
+      `git fetch origin ${remoteBranch} ${repo.default_branch}`,
+      clonePath,
+    );
 
     if (!existsSync(worktreePath)) {
       log.info("Worktree dir missing, recreating for existing branch", { slot: slot.slotName });
@@ -458,17 +468,17 @@ class WorktreePoolImpl {
     this.gitExec(`git checkout -b ${remoteBranch} origin/${remoteBranch}`, worktreePath);
   }
 
-  private resetWorktree(
+  private async resetWorktree(
     slot: WorktreeSlot,
     repo: RepoEntry,
     clonePath: string,
     branch: string,
-  ): void {
+  ): Promise<void> {
     const { worktreePath } = slot;
     const base = baseBranchName(slot.slotName);
 
-    // Fetch latest default branch
-    this.gitExec(`git fetch origin ${repo.default_branch}`, clonePath);
+    // Fetch latest default branch (serialized per-repo)
+    await this.fetchUnderLock(repo.id, `git fetch origin ${repo.default_branch}`, clonePath);
 
     if (!existsSync(worktreePath)) {
       log.info("Worktree dir missing, recreating", { slot: slot.slotName });
@@ -511,19 +521,19 @@ class WorktreePoolImpl {
    * Park the worktree on its base branch with latest main.
    * Deletes the feature branch so it can be checked out from other repos.
    */
-  private parkOnBaseBranch(
+  private async parkOnBaseBranch(
     slot: WorktreeSlot,
     repo: RepoEntry,
     clonePath: string,
     featureBranch?: string,
-  ): void {
+  ): Promise<void> {
     const { worktreePath } = slot;
     if (!existsSync(worktreePath)) return;
 
     const base = baseBranchName(slot.slotName);
 
-    // Fetch latest default branch
-    this.gitExec(`git fetch origin ${repo.default_branch}`, clonePath);
+    // Fetch latest default branch (serialized per-repo)
+    await this.fetchUnderLock(repo.id, `git fetch origin ${repo.default_branch}`, clonePath);
 
     // Clean working tree
     this.gitExec("git reset --hard HEAD", worktreePath);
@@ -555,6 +565,11 @@ class WorktreePoolImpl {
   private gitExec(cmd: string, cwd: string): string {
     log.info("exec", { cmd, cwd });
     return execSync(cmd, { cwd, encoding: "utf-8", timeout: 120_000 }).trim();
+  }
+
+  /** Run a git fetch command while holding the per-repo lock. */
+  private async fetchUnderLock(repoId: string, cmd: string, cwd: string): Promise<string> {
+    return withRepoLock(repoId, () => this.gitExec(cmd, cwd));
   }
 }
 

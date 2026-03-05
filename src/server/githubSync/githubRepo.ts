@@ -190,7 +190,7 @@ export async function getIncompleteChunks(
       data_type: dataType as any,
       status: { $in: ["pending", "failed"] } as any,
     })
-    .sort({ chunk_start: 1 })
+    .sort({ chunk_start: -1 })
     .toArray();
 }
 

@@ -224,6 +224,7 @@ The worker resolves which repo to use based on:
 | `respond_to_pr_comments` | Read unresolved PR review threads → Claude fixes each → commit → push → reply to threads |
 | `self_review_pr` | Check out an existing PR branch → Claude self-review pass → fix issues → push |
 | `add_pr_review_comments` | Review a PR → post inline review comments on GitHub as the bot |
+| `github_summary` | Fetch GitHub activity data (merged PRs, reviews, stats) → Claude generates a narrative recap → post to Slack |
 
 ## Job Lifecycle
 

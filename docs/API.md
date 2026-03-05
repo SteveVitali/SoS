@@ -1462,7 +1462,7 @@ Saves GitHub Hub settings to MongoDB. Invalidates the config cache so changes ta
 interface JobDoc {
   _id?: ObjectId;
   task_id: string;                    // UUID, unique
-  job_type?: "create" | "respond_to_pr_comments" | "self_review_pr" | "add_pr_review_comments";  // default: "create"
+  job_type?: "create" | "respond_to_pr_comments" | "self_review_pr" | "add_pr_review_comments" | "github_summary";  // default: "create"
   source: {
     type: "slack_app_mention" | "web_create";
     event_id?: string;                // Slack event ID (unique when present)
@@ -1499,6 +1499,15 @@ interface JobDoc {
     cost_usd?: number;
   };
   custom_instructions?: string;       // Custom instructions injected into Claude prompt
+
+  // GitHub query params (for github_summary jobs)
+  github_query?: {
+    query_type: GithubQueryType;      // "my_recap" | "team_recap" | ...
+    time_range?: string;
+    org?: string;
+    team_slug?: string;
+    github_username?: string;
+  };
 
   // Lease
   claimed_by?: string;                // worker node ID

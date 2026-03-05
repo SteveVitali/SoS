@@ -171,9 +171,9 @@ export class ExecutorContext {
 
   // --- Worktree cleanup (shared finally block) ---
 
-  releaseWorktree(): void {
+  async releaseWorktree(): Promise<void> {
     if (this.acquiredSlot && this.resolvedRepoId) {
-      worktreePool.release(this.resolvedRepoId, this.acquiredSlot.slotName);
+      await worktreePool.release(this.resolvedRepoId, this.acquiredSlot.slotName);
     }
   }
 }

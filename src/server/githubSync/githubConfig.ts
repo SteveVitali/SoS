@@ -25,7 +25,7 @@ function buildConfig(dbSettings: GitHubSettings | null): ResolvedGitHubConfig {
     chunkDays: parseInt(process.env.SOS_GITHUB_CHUNK_DAYS || "28", 10),
     chunkEpoch: process.env.SOS_GITHUB_CHUNK_EPOCH || "2024-01-01",
     syncEnabled: dbSettings?.sync_enabled ?? process.env.SOS_GITHUB_SYNC_ENABLED !== "false",
-    hotIntervalSeconds: parseInt(process.env.SOS_GITHUB_SYNC_HOT_INTERVAL || "600", 10),
+    hotIntervalSeconds: parseInt(process.env.SOS_GITHUB_SYNC_HOT_INTERVAL || "900", 10),
     warmIntervalSeconds: parseInt(process.env.SOS_GITHUB_SYNC_WARM_INTERVAL || "3600", 10),
     defaultScope: dbSettings?.default_scope || "me",
     pinnedRepos: dbSettings?.pinned_repos || [],
