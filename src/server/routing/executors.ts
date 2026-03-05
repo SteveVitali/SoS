@@ -26,6 +26,10 @@ import {
   queryJobs,
   retry,
 } from "../jobs/jobService.js";
+import { searchKnowledgeBases } from "../kb/kbService.js";
+import { StepRecorder } from "../kb/research/auditLog.js";
+import { getResearchLLMClient } from "../kb/research/llmClient.js";
+import { runEvaluator } from "../kb/research/stages/evaluator.js";
 import type { LLMProvider } from "../llm/llmProvider.js";
 import type { CommandContext, CommandResult } from "../slack/commandExecutor.js";
 import type { RoutedAction } from "../slack/messageRouter.js";
@@ -761,6 +765,138 @@ async function executeLeaveChannel(
   }
 }
 
+// --- KB-enriched image prompt ---
+
+const DEFAULT_KB_MIN_SCORE = 0.5;
+
+/**
+ * Search KBs with the image prompt, filter by score threshold, run the
+ * research evaluator to keep only "correct" chunks, then use an LLM call
+ * to rewrite the prompt with KB context baked in.
+ *
+ * Returns the original prompt unchanged when:
+ * - No KB results found
+ * - All results below the score threshold
+ * - Evaluator finds no "correct" chunks
+ * - Any step fails (graceful fallback)
+ */
+async function enrichImagePromptWithKB(
+  prompt: string,
+  scopes: string[],
+  minScore: number,
+): Promise<string> {
+  try {
+    // 1. Vector search using the image prompt as query
+    // biome-ignore lint/suspicious/noExplicitAny: KBScope is a string union
+    const results = await searchKnowledgeBases({ query: prompt, scopes: scopes as any[] });
+    if (!results.length) {
+      log.info("No KB results for image prompt enrichment, using original prompt");
+      return prompt;
+    }
+
+    // 2. Filter by minimum similarity score
+    const aboveThreshold = results.filter((r) => r.score >= minScore);
+    if (!aboveThreshold.length) {
+      log.info("All KB results below score threshold, skipping enrichment", {
+        threshold: minScore,
+        top_score: results[0].score,
+      });
+      return prompt;
+    }
+
+    // 3. Run the research evaluator to classify chunks as correct/incorrect/ambiguous
+    let relevantChunks = aboveThreshold;
+    try {
+      const researchLLM = getResearchLLMClient();
+      // Create a no-op StepRecorder (throwaway session for audit purposes)
+      const noopSession = {
+        session_id: "image-enrich",
+        original_query: prompt,
+        scopes: [],
+        config: {} as import("../../shared/researchTypes.js").ResearchConfig,
+        steps: [],
+        status: "running" as const,
+        created_at: new Date(),
+      };
+      const recorder = new StepRecorder("evaluation", 0, noopSession);
+      const evaluation = await runEvaluator(
+        prompt,
+        aboveThreshold.slice(0, 10),
+        { enable_crag: false } as import("../../shared/researchTypes.js").ResearchConfig,
+        researchLLM,
+        recorder,
+      );
+
+      // Keep only "correct" chunks (stricter than research pipeline's "not incorrect")
+      const correctChunks = evaluation.evaluations
+        .filter((e) => e.relevance === "correct")
+        .map((e) => e.chunk);
+
+      if (!correctChunks.length) {
+        log.info("Evaluator found no correct chunks for image enrichment", {
+          total: aboveThreshold.length,
+          incorrect: evaluation.incorrect_count,
+          ambiguous: evaluation.ambiguous_count,
+        });
+        return prompt;
+      }
+
+      relevantChunks = correctChunks;
+      log.info("Evaluator filtered KB chunks for image enrichment", {
+        input: aboveThreshold.length,
+        correct: correctChunks.length,
+        incorrect: evaluation.incorrect_count,
+        ambiguous: evaluation.ambiguous_count,
+      });
+    } catch (evalErr: unknown) {
+      log.warn("Evaluator failed, using score-filtered chunks for enrichment", {
+        error: (evalErr as Error).message,
+        chunks: aboveThreshold.length,
+      });
+      // Fall back to score-filtered chunks without evaluation
+      relevantChunks = aboveThreshold.slice(0, 5);
+    }
+
+    // 4. Enrichment LLM call — rewrite the prompt with KB context
+    const kbContext = relevantChunks
+      .slice(0, 5)
+      .map((r) => r.content)
+      .join("\n---\n");
+
+    const enrichmentModel = getModelForRole("routing");
+    const response = await recapLlmProvider!.chat({
+      model: enrichmentModel,
+      maxTokens: 1024,
+      system:
+        "You are an image prompt writer. You will receive an image generation prompt and relevant context " +
+        "from a knowledge base. Rewrite the prompt to incorporate any useful visual details from the context. " +
+        "Output ONLY the rewritten prompt — no commentary, no preamble.",
+      messages: [
+        {
+          role: "user",
+          content: `Image prompt:\n${prompt}\n\nKnowledge base context:\n${kbContext}`,
+        },
+      ],
+    });
+
+    const enriched = response.text?.trim();
+    if (enriched) {
+      log.info("Image prompt enriched with KB context", {
+        original_length: prompt.length,
+        enriched_length: enriched.length,
+        kb_chunks_used: relevantChunks.length,
+      });
+      return enriched;
+    }
+    return prompt;
+  } catch (err: unknown) {
+    log.warn("KB prompt enrichment failed, using original prompt", {
+      error: (err as Error).message,
+    });
+    return prompt;
+  }
+}
+
 // --- Executor: generate_image ---
 
 async function executeGenerateImage(
@@ -779,12 +915,18 @@ async function executeGenerateImage(
 
   try {
     const model = getModelForRole("imageGeneration");
-    const prompt = action.args.prompt || "";
+    let prompt = action.args.prompt || "";
     if (!prompt.trim()) {
       return {
         reply: appendReply(action.reply, "⚠️ I need a description of what to generate."),
         actionTaken: "generate_image: missing prompt",
       };
+    }
+
+    // Enrich prompt with KB context when kb_scopes is configured
+    if (execDef.kb_scopes?.length && recapLlmProvider) {
+      const minScore = execDef.kb_min_score ?? DEFAULT_KB_MIN_SCORE;
+      prompt = await enrichImagePromptWithKB(prompt, execDef.kb_scopes, minScore);
     }
 
     const size = action.args.size || execDef.default_size || undefined;

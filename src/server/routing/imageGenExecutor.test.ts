@@ -13,6 +13,31 @@ vi.mock("../chat/imageStore.js", () => ({
   storeGeneratedImage: (...args: unknown[]) => mockStoreGeneratedImage(...args),
 }));
 
+const mockSearchKnowledgeBases = vi.fn();
+vi.mock("../kb/kbService.js", () => ({
+  searchKnowledgeBases: (...args: unknown[]) => mockSearchKnowledgeBases(...args),
+}));
+
+const mockRunEvaluator = vi.fn();
+vi.mock("../kb/research/stages/evaluator.js", () => ({
+  runEvaluator: (...args: unknown[]) => mockRunEvaluator(...args),
+}));
+
+const mockGetResearchLLMClient = vi.fn();
+vi.mock("../kb/research/llmClient.js", () => ({
+  getResearchLLMClient: () => mockGetResearchLLMClient(),
+}));
+
+vi.mock("../kb/research/auditLog.js", () => ({
+  StepRecorder: class MockStepRecorder {
+    recordInput = vi.fn();
+    recordOutput = vi.fn();
+    recordLLMCall = vi.fn();
+    recordRetrieval = vi.fn();
+    finish = vi.fn();
+  },
+}));
+
 // Mock the LLM provider module-level variable via the initExecutorLLM function
 // We need to import and call initExecutorLLM to set the provider
 import { initExecutorLLM } from "./executors.js";
@@ -284,5 +309,268 @@ describe("executeGenerateImage", () => {
 
     expect(result.actionTaken).toBe("generate_image: empty");
     expect(result.reply).toContain("no results");
+  });
+});
+
+// --- KB enrichment tests ---
+
+describe("KB-enriched image prompt", () => {
+  const kbExecDef: GenerateImageExecution = {
+    ...baseExecDef,
+    kb_scopes: ["chat", "all"],
+    kb_min_score: 0.5,
+  };
+
+  function setupProvider(enrichedText = "enriched prompt") {
+    const mockProvider = {
+      chat: vi.fn().mockResolvedValue({ text: enrichedText, toolCalls: [] }),
+      generateImage: vi
+        .fn()
+        .mockResolvedValue([{ base64: "AAAA", mediaType: "image/png", revisedPrompt: "revised" }]),
+    };
+    // biome-ignore lint/suspicious/noExplicitAny: test mock
+    initExecutorLLM(mockProvider as any);
+    mockStoreGeneratedImage.mockResolvedValue({ url: "/api/web/images/img-kb", alt: "test" });
+    return mockProvider;
+  }
+
+  beforeEach(() => {
+    vi.clearAllMocks();
+  });
+
+  it("skips enrichment when no KB results found", async () => {
+    const mockProvider = setupProvider();
+    mockSearchKnowledgeBases.mockResolvedValue([]);
+
+    const result = await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
+
+    expect(result.actionTaken).toBe("generate_image");
+    // Should NOT call enrichment LLM — prompt passes through unchanged
+    expect(mockProvider.chat).not.toHaveBeenCalled();
+    expect(mockProvider.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "a cat" }),
+    );
+  });
+
+  it("skips enrichment when all KB results below score threshold", async () => {
+    const mockProvider = setupProvider();
+    mockSearchKnowledgeBases.mockResolvedValue([
+      { content: "low relevance", score: 0.3, kb_name: "kb1", source_file: "f.md", metadata: {} },
+      { content: "also low", score: 0.1, kb_name: "kb1", source_file: "g.md", metadata: {} },
+    ]);
+
+    const result = await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
+
+    expect(result.actionTaken).toBe("generate_image");
+    expect(mockProvider.chat).not.toHaveBeenCalled();
+    expect(mockRunEvaluator).not.toHaveBeenCalled();
+  });
+
+  it("runs evaluator and enriches prompt when correct chunks found", async () => {
+    const mockProvider = setupProvider("a cat with brand blue #2563EB background");
+    const kbChunk = {
+      content: "Brand color: #2563EB",
+      score: 0.8,
+      kb_name: "brand",
+      kb_id: "kb1",
+      source_file: "brand.md",
+      metadata: {},
+    };
+    mockSearchKnowledgeBases.mockResolvedValue([kbChunk]);
+    mockGetResearchLLMClient.mockReturnValue({ chat: vi.fn() });
+    mockRunEvaluator.mockResolvedValue({
+      evaluations: [{ chunk: kbChunk, relevance: "correct", score: 5, reasoning: "relevant" }],
+      correct_count: 1,
+      incorrect_count: 0,
+      ambiguous_count: 0,
+      needs_requery: false,
+      reformulated_queries: [],
+    });
+
+    const result = await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
+
+    expect(result.actionTaken).toBe("generate_image");
+    // Evaluator was called
+    expect(mockRunEvaluator).toHaveBeenCalled();
+    // Enrichment LLM was called
+    expect(mockProvider.chat).toHaveBeenCalledWith(
+      expect.objectContaining({
+        system: expect.stringContaining("image prompt writer"),
+      }),
+    );
+    // Image was generated with enriched prompt
+    expect(mockProvider.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "a cat with brand blue #2563EB background" }),
+    );
+  });
+
+  it("skips enrichment when evaluator classifies all chunks as incorrect", async () => {
+    const mockProvider = setupProvider();
+    const kbChunk = {
+      content: "Unrelated code docs",
+      score: 0.6,
+      kb_name: "docs",
+      kb_id: "kb1",
+      source_file: "api.md",
+      metadata: {},
+    };
+    mockSearchKnowledgeBases.mockResolvedValue([kbChunk]);
+    mockGetResearchLLMClient.mockReturnValue({ chat: vi.fn() });
+    mockRunEvaluator.mockResolvedValue({
+      evaluations: [
+        { chunk: kbChunk, relevance: "incorrect", score: 1, reasoning: "not relevant" },
+      ],
+      correct_count: 0,
+      incorrect_count: 1,
+      ambiguous_count: 0,
+      needs_requery: false,
+      reformulated_queries: [],
+    });
+
+    await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
+
+    expect(mockRunEvaluator).toHaveBeenCalled();
+    // Enrichment LLM should NOT be called — no correct chunks
+    expect(mockProvider.chat).not.toHaveBeenCalled();
+    // Image generated with original prompt
+    expect(mockProvider.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "a cat" }),
+    );
+  });
+
+  it("skips enrichment when evaluator classifies all as ambiguous", async () => {
+    const mockProvider = setupProvider();
+    const kbChunk = {
+      content: "Maybe relevant",
+      score: 0.6,
+      kb_name: "docs",
+      kb_id: "kb1",
+      source_file: "maybe.md",
+      metadata: {},
+    };
+    mockSearchKnowledgeBases.mockResolvedValue([kbChunk]);
+    mockGetResearchLLMClient.mockReturnValue({ chat: vi.fn() });
+    mockRunEvaluator.mockResolvedValue({
+      evaluations: [{ chunk: kbChunk, relevance: "ambiguous", score: 3, reasoning: "unclear" }],
+      correct_count: 0,
+      incorrect_count: 0,
+      ambiguous_count: 1,
+      needs_requery: false,
+      reformulated_queries: [],
+    });
+
+    await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
+
+    // Enrichment LLM should NOT be called — no correct chunks (stricter than research pipeline)
+    expect(mockProvider.chat).not.toHaveBeenCalled();
+  });
+
+  it("falls back to score-filtered chunks when evaluator fails", async () => {
+    const mockProvider = setupProvider("enriched from fallback");
+    mockSearchKnowledgeBases.mockResolvedValue([
+      {
+        content: "Brand color: blue",
+        score: 0.7,
+        kb_name: "brand",
+        kb_id: "kb1",
+        source_file: "b.md",
+        metadata: {},
+      },
+    ]);
+    mockGetResearchLLMClient.mockImplementation(() => {
+      throw new Error("Research LLM not configured");
+    });
+
+    const result = await executeAction(makeAction({ prompt: "a logo" }), makeCtx(), kbExecDef);
+
+    expect(result.actionTaken).toBe("generate_image");
+    // Should still enrich with score-filtered chunks as fallback
+    expect(mockProvider.chat).toHaveBeenCalled();
+    expect(mockProvider.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "enriched from fallback" }),
+    );
+  });
+
+  it("falls back to original prompt when entire enrichment fails", async () => {
+    const mockProvider = setupProvider();
+    mockSearchKnowledgeBases.mockRejectedValue(new Error("DB connection lost"));
+
+    const result = await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
+
+    expect(result.actionTaken).toBe("generate_image");
+    expect(mockProvider.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "a cat" }),
+    );
+  });
+
+  it("does not enrich when kb_scopes is not configured", async () => {
+    const mockProvider = setupProvider();
+
+    await executeAction(
+      makeAction({ prompt: "a cat" }),
+      makeCtx(),
+      baseExecDef, // no kb_scopes
+    );
+
+    expect(mockSearchKnowledgeBases).not.toHaveBeenCalled();
+    expect(mockProvider.chat).not.toHaveBeenCalled();
+  });
+
+  it("uses custom kb_min_score from config", async () => {
+    const mockProvider = setupProvider();
+    mockSearchKnowledgeBases.mockResolvedValue([
+      {
+        content: "Passes custom",
+        score: 0.85,
+        kb_name: "kb1",
+        kb_id: "kb1",
+        source_file: "f.md",
+        metadata: {},
+      },
+      {
+        content: "Below custom",
+        score: 0.75,
+        kb_name: "kb1",
+        kb_id: "kb1",
+        source_file: "g.md",
+        metadata: {},
+      },
+    ]);
+    mockGetResearchLLMClient.mockReturnValue({ chat: vi.fn() });
+    mockRunEvaluator.mockResolvedValue({
+      evaluations: [
+        {
+          chunk: { content: "Passes custom", score: 0.85 },
+          relevance: "correct",
+          score: 5,
+          reasoning: "yes",
+        },
+      ],
+      correct_count: 1,
+      incorrect_count: 0,
+      ambiguous_count: 0,
+      needs_requery: false,
+      reformulated_queries: [],
+    });
+
+    const strictExecDef: GenerateImageExecution = {
+      ...baseExecDef,
+      kb_scopes: ["chat"],
+      kb_min_score: 0.8,
+    };
+
+    await executeAction(makeAction({ prompt: "a logo" }), makeCtx(), strictExecDef);
+
+    // Evaluator should only receive the chunk above 0.8
+    expect(mockRunEvaluator).toHaveBeenCalledWith(
+      expect.anything(),
+      expect.arrayContaining([expect.objectContaining({ content: "Passes custom" })]),
+      expect.anything(),
+      expect.anything(),
+      expect.anything(),
+    );
+    // The below-threshold chunk should NOT be in the evaluator input
+    const evalChunks = mockRunEvaluator.mock.calls[0][1];
+    expect(evalChunks).toHaveLength(1);
   });
 });
