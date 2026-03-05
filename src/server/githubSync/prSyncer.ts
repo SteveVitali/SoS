@@ -42,48 +42,42 @@ interface SearchIssueItem {
 
 // --- Hot Sync: Open PRs ---
 
-const FULL_SWEEP_THRESHOLD_MS = 24 * 60 * 60 * 1000; // 24 hours
-
 /**
  * Incrementally sync PRs for the org.
  *
- * - **Incremental** (lastRunAt within 24 h): fetches only PRs updated
+ * - **Incremental** (has lastRunAt cursor): fetches only PRs updated
  *   since `lastRunAt` (`type:pr updated:>=<since>`, no state filter).
  *   Catches new PRs, state transitions (open→merged/closed), and updates.
- *   Typically returns single-digit to low-hundreds of results.
+ *   If the result exceeds the 1000-result cap, falls back to full sweep.
  *
- * - **Full sweep** (first run or lastRunAt > 24 h ago): fetches all
- *   currently-open PRs, with adaptive bisection to work around the
- *   1000-result cap.  Used to establish baseline or recover from
- *   extended downtime.
+ * - **Full sweep** (first-ever run, no cursor): fetches all currently-open
+ *   PRs with adaptive bisection to work around the 1000-result cap.
  */
 export async function syncOpenPrs(token: string, org: string, lastRunAt?: Date): Promise<number> {
   const startTime = Date.now();
   const budget = getRateLimitBudget();
 
-  const sinceMs = lastRunAt ? Date.now() - lastRunAt.getTime() : Infinity;
-  const incremental = sinceMs < FULL_SWEEP_THRESHOLD_MS;
+  const incremental = !!lastRunAt;
 
   try {
     let prs: GitHubPrDoc[];
 
     if (incremental) {
       // Incremental: only PRs updated since last run (no state filter)
-      const sinceStr = lastRunAt!.toISOString().replace(/\.\d{3}Z$/, "Z");
+      const sinceStr = lastRunAt.toISOString().replace(/\.\d{3}Z$/, "Z");
       const query = `org:${org} type:pr updated:>=${sinceStr}`;
       const result = await searchPrs(token, query, budget, "hot_sync");
 
       if (result.hitCap) {
-        // Extremely active org — fall back to full sweep this cycle
+        // Large gap or very active org — fall back to full sweep this cycle
         log.warn("Incremental hot sync hit 1000-result cap, falling back to full sweep");
         prs = await fullOpenPrSweep(token, org, budget);
       } else {
         prs = result.prs;
       }
     } else {
-      // Full sweep: first run or stale
-      const reason = lastRunAt ? "stale (>24h)" : "first run";
-      await writeSyncLog("info", "hot_sync", `Full open-PR sweep (${reason})`);
+      // Full sweep: first-ever run (no cursor)
+      await writeSyncLog("info", "hot_sync", "Full open-PR sweep (first run)");
       prs = await fullOpenPrSweep(token, org, budget);
     }
 
