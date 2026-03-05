@@ -250,18 +250,6 @@ export function RoutingConfigEditor() {
             />
           </div>
 
-          {/* Model */}
-          <div style={{ ...css.card, marginBottom: 20 }}>
-            <div style={css.sectionTitle}>Model</div>
-            <input
-              style={{ ...css.input, maxWidth: 400 }}
-              value={config?.model || ""}
-              // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
-              onChange={(e) => updateConfig((prev: any) => ({ ...prev, model: e.target.value }))}
-              placeholder="claude-sonnet-4-20250514"
-            />
-          </div>
-
           {/* Actions */}
           <div style={{ ...css.card, marginBottom: 20 }}>
             <div style={{ ...css.sectionTitle, marginBottom: 12 }}>

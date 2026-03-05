@@ -39,6 +39,7 @@ export async function syncOrgTeams(token: string, org: string): Promise<number> 
         slug: team.slug,
         name: team.name,
         description: team.description || undefined,
+        parent_slug: (team as any).parent?.slug || undefined,
         member_count: (team as any).members_count ?? 0,
         synced_at: new Date(),
       };
@@ -65,16 +66,22 @@ export async function syncOrgTeams(token: string, org: string): Promise<number> 
 /**
  * Sync members for a specific team.
  * Uses GET /orgs/{org}/teams/{team_slug}/members with pagination.
+ * If ancestorSlugs is provided, those slugs are also added to each member's
+ * teams array so that querying a parent team returns child-team members too.
  */
 export async function syncTeamMembers(
   token: string,
   org: string,
   teamSlug: string,
+  ancestorSlugs: string[] = [],
 ): Promise<string[]> {
   org = org.toLowerCase();
   const octokit = getOctokit(token);
   const budget = getRateLimitBudget();
   const memberLogins: string[] = [];
+
+  // All slugs this member should be tagged with (own + ancestors)
+  const allSlugs = [teamSlug, ...ancestorSlugs];
 
   try {
     const members = await octokit.paginate(
@@ -90,7 +97,7 @@ export async function syncTeamMembers(
       const login = member.login.toLowerCase();
       memberLogins.push(login);
 
-      // Atomic upsert: always update base fields, $addToSet the team slug
+      // Atomic upsert: always update base fields, $addToSet all relevant team slugs
       await getOrgMembersCollection().updateOne(
         { _id: login as any },
         {
@@ -101,11 +108,15 @@ export async function syncTeamMembers(
             synced_at: new Date(),
             ...((member as any).name ? { name: (member as any).name } : {}),
           },
-          $addToSet: { teams: teamSlug },
+          $addToSet: { teams: { $each: allSlugs } },
           $setOnInsert: { _id: login },
         } as any,
         { upsert: true },
       );
+    }
+
+    if (members.length > 0) {
+      log.info("Synced team members", { org, teamSlug, count: members.length });
     }
 
     return memberLogins;
@@ -173,6 +184,30 @@ export async function syncOrgMembers(token: string, org: string): Promise<number
 }
 
 /**
+ * Build a map from team slug → list of ancestor slugs (parent, grandparent, …).
+ */
+function buildAncestorMap(teams: GitHubTeam[]): Map<string, string[]> {
+  const parentOf = new Map<string, string>();
+  for (const t of teams) {
+    if (t.parent_slug) parentOf.set(t.slug, t.parent_slug);
+  }
+  const cache = new Map<string, string[]>();
+  function ancestors(slug: string): string[] {
+    if (cache.has(slug)) return cache.get(slug)!;
+    const parent = parentOf.get(slug);
+    if (!parent) {
+      cache.set(slug, []);
+      return [];
+    }
+    const result = [parent, ...ancestors(parent)];
+    cache.set(slug, result);
+    return result;
+  }
+  for (const t of teams) ancestors(t.slug);
+  return cache;
+}
+
+/**
  * Full org sync: teams, then members per team, then all org members.
  */
 export async function syncOrg(token: string, org: string): Promise<void> {
@@ -183,13 +218,23 @@ export async function syncOrg(token: string, org: string): Promise<void> {
   // 1. Sync teams
   const teamCount = await syncOrgTeams(token, org);
 
-  // 2. Sync members for each team
+  // 2. Reset all team membership arrays so removed members and stale slugs are cleaned up
+  await getOrgMembersCollection().updateMany({ org } as any, { $set: { teams: [] } });
+
+  // 3. Sync members for each team, propagating parent team slugs
   const teams = await getTeamsCollection().find({ org }).toArray();
+  const ancestorMap = buildAncestorMap(teams);
   for (const team of teams) {
-    await syncTeamMembers(token, org, team.slug);
+    const ancestorSlugs = ancestorMap.get(team.slug) || [];
+    const memberLogins = await syncTeamMembers(token, org, team.slug, ancestorSlugs);
+    // Update team's member_count with actual synced count
+    await getTeamsCollection().updateOne(
+      { _id: team._id },
+      { $set: { member_count: memberLogins.length } },
+    );
   }
 
-  // 3. Sync all org members (catches people not in any team)
+  // 4. Sync all org members (catches people not in any team)
   const orgMemberCount = await syncOrgMembers(token, org);
 
   await writeSyncLog(

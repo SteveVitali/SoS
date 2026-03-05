@@ -69,6 +69,27 @@ export function GitHubSettingsView() {
       .finally(() => setTeamsLoading(false));
   }, []);
 
+  // Auto-save team selection on change
+  const handleTeamChange = async (slug: string) => {
+    setTeamSlug(slug);
+    setSaveMsg("");
+    try {
+      await saveGitHubSettings({
+        org,
+        team_slug: slug,
+        username,
+        history_days: historyDays,
+        default_scope: defaultScope,
+        sync_enabled: syncEnabled,
+      });
+      setSaveMsg("Team saved!");
+      setTimeout(() => setSaveMsg(""), 3000);
+      refresh();
+    } catch (err: unknown) {
+      setError(toErrorMessage(err));
+    }
+  };
+
   const handleSave = async () => {
     setSaving(true);
     setSaveMsg("");
@@ -143,7 +164,7 @@ export function GitHubSettingsView() {
           display: "grid",
           gridTemplateColumns: "1fr 1fr",
           gap: 16,
-          alignItems: "start",
+          alignItems: "stretch",
         }}
       >
         {/* Left: Settings Form */}
@@ -158,19 +179,6 @@ export function GitHubSettingsView() {
               onChange={(e) => setOrg(e.target.value)}
               placeholder="e.g. Foursquare"
             />
-          </div>
-
-          <div style={css.field}>
-            <label style={css.label}>Team</label>
-            <TeamCombobox
-              value={teamSlug}
-              onChange={setTeamSlug}
-              teams={teams}
-              loading={teamsLoading}
-            />
-            <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
-              Defines the "My Team" filter across PRs and Contributions
-            </div>
           </div>
 
           <div style={css.field}>
@@ -232,33 +240,29 @@ export function GitHubSettingsView() {
         </div>
 
         {/* Right: Team Member Roster */}
-        <div style={css.card}>
+        <div style={{ ...css.card, display: "flex", flexDirection: "column", overflow: "hidden" }}>
           <div
             style={{
               ...css.sectionTitle,
               marginBottom: 12,
-              display: "flex",
-              alignItems: "center",
-              justifyContent: "space-between",
             }}
           >
-            <span>Team Members</span>
-            {teamSlug && (
-              <span
-                style={{
-                  fontSize: 11,
-                  fontWeight: 400,
-                  color: "var(--fg3)",
-                  background: "var(--bg3)",
-                  padding: "2px 8px",
-                  borderRadius: 8,
-                }}
-              >
-                {teamSlug}
-              </span>
-            )}
+            Team
           </div>
-          <TeamMemberRoster teamSlug={teamSlug} />
+          <div style={{ marginBottom: 12 }}>
+            <TeamCombobox
+              value={teamSlug}
+              onChange={handleTeamChange}
+              teams={teams}
+              loading={teamsLoading}
+            />
+            <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
+              Defines the "My Team" filter across PRs and Contributions
+            </div>
+          </div>
+          <div style={{ flex: 1, overflowY: "auto", minHeight: 0 }}>
+            <TeamMemberRoster teamSlug={teamSlug} />
+          </div>
         </div>
       </div>
 

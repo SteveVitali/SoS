@@ -21,6 +21,7 @@ export interface GitHubTeam {
   slug: string;
   name: string;
   description?: string;
+  parent_slug?: string; // slug of parent team (for hierarchy propagation)
   member_count: number;
   synced_at: Date;
 }
