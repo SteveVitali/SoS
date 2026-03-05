@@ -263,7 +263,7 @@ routing-config.yaml
 
 ```yaml
 system_prompt: "You are Steve, a senior staff engineer..."  # LLM system prompt
-model: "claude-sonnet-4-20250514"                          # optional model override
+model: "claude-opus-4.5"                                   # optional model override
 
 actions:
   create_job:
@@ -456,6 +456,7 @@ son-of-steve/
 │   │   │   ├── kbRepo.ts          # MongoDB CRUD for KB + document metadata
 │   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion, embedding, search, researchKnowledgeBases() entry point
 │   │   │   ├── kbRoutes.ts        # Express routes: web + worker KB, research, and RAPTOR endpoints; NDJSON streaming
+│   │   │   ├── uploadRepo.ts      # MongoDB CRUD for durable upload job tracking (per-file status, progress)
 │   │   │   ├── index.ts           # Barrel export
 │   │   │   ├── research/          # Advanced RAG research pipeline
 │   │   │   │   ├── pipeline.ts        # Pipeline runner/orchestrator (simple + deep strategies, budget enforcement)
