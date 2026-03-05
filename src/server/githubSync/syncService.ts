@@ -300,6 +300,15 @@ export class GitHubSyncService {
     const now = new Date();
     const allChunks = getAllChunks(since, now, chunkConfig.epochDate, chunkConfig.chunkDays);
 
+    // Clean up any stale wrong-cased chunk docs (from org casing bug)
+    const staleResult = await getSyncChunksCollection().deleteMany({
+      org: { $ne: org, $regex: new RegExp(`^${org}$`, "i") },
+      data_type: "prs",
+    } as any);
+    if (staleResult.deletedCount > 0) {
+      log.info("Cleaned up stale wrong-cased chunk docs", { deleted: staleResult.deletedCount });
+    }
+
     // Detect chunk-size drift: if existing chunks have a different span than
     // the configured chunkDays, drop them all and re-initialize.
     const existingSample = await getSyncChunksCollection().findOne({
