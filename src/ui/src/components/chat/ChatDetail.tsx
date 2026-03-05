@@ -117,6 +117,35 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
           }}
         >
           {isUser ? msg.text : <div className="chat-markdown">{renderMarkdown(msg.text)}</div>}
+          {msg.images?.map((img, i) => (
+            <a
+              key={`img-${i}`}
+              href={img.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: "block", marginTop: 8 }}
+            >
+              <img
+                src={img.url}
+                alt={img.alt || "Generated image"}
+                style={{
+                  maxWidth: "100%",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  display: "block",
+                }}
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  el.style.display = "none";
+                  const placeholder = document.createElement("div");
+                  placeholder.textContent = "⚠️ Image expired or unavailable";
+                  placeholder.style.cssText =
+                    "padding:12px;border-radius:8px;background:var(--bg3);color:var(--fg-muted);font-size:13px;text-align:center;border:1px dashed var(--border)";
+                  el.parentElement?.appendChild(placeholder);
+                }}
+              />
+            </a>
+          ))}
           {msg.action?.task_id && (
             <div style={{ marginTop: 8 }}>
               <Link

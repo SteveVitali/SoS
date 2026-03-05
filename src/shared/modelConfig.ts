@@ -50,7 +50,8 @@ export type ModelRoleName =
   | "titleGeneration"
   | "research"
   | "raptorSummarization"
-  | "embedding";
+  | "embedding"
+  | "imageGeneration";
 
 export type LLMProviderType = "anthropic" | "openai_compatible";
 
@@ -74,6 +75,7 @@ export interface ResolvedProviderSettings {
 const DEFAULT_ROUTING_MODEL = "claude-opus-4.5";
 const DEFAULT_RESEARCH_MODEL = "claude-opus-4.5";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
+const DEFAULT_IMAGE_MODEL = "gpt-image-1";
 
 const VALID_ROLES: ModelRoleName[] = [
   "routing",
@@ -81,6 +83,7 @@ const VALID_ROLES: ModelRoleName[] = [
   "research",
   "raptorSummarization",
   "embedding",
+  "imageGeneration",
 ];
 
 // ─── File-based override layer ──────────────────────────────────
@@ -105,6 +108,7 @@ export function generateDefaultModelConfig(): string {
     `# research: ${DEFAULT_RESEARCH_MODEL}  # Env: SOS_RESEARCH_LLM_MODEL`,
     "# raptorSummarization: (inherits research)    # Env: SOS_RAPTOR_MODEL",
     `# embedding: ${DEFAULT_EMBEDDING_MODEL}       # Env: SOS_EMBEDDING_MODEL`,
+    `# imageGeneration: ${DEFAULT_IMAGE_MODEL}            # Env: SOS_IMAGE_MODEL`,
     "",
   ].join("\n");
 }
@@ -402,7 +406,15 @@ export function getModelRegistry(): Record<ModelRoleName, ModelRole> {
     DEFAULT_EMBEDDING_MODEL,
   );
 
-  return { routing, titleGeneration, research, raptorSummarization, embedding };
+  const imageGeneration = resolveRole(
+    "SOS_IMAGE_MODEL",
+    "imageGeneration",
+    DEFAULT_IMAGE_MODEL,
+    "Image generation from text prompts",
+    DEFAULT_IMAGE_MODEL,
+  );
+
+  return { routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration };
 }
 
 /**

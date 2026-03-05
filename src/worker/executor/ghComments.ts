@@ -180,13 +180,14 @@ export function createPullRequestReview(
     throw new Error(`Could not resolve PR node ID for ${prUrl}`);
   }
 
-  // 2) Build the threads array for the mutation
+  // 2) Build the threads array for the mutation (cap body sizes to stay within API limits)
   const threads = comments.map((c) => ({
     path: c.path,
     line: c.line,
     side: c.side || "RIGHT",
-    body: c.body,
+    body: c.body.slice(0, 65_000),
   }));
+  const safeReviewBody = reviewBody.slice(0, 65_000);
 
   // 3) Post the review via addPullRequestReview mutation
   const mutation = `
@@ -221,7 +222,7 @@ export function createPullRequestReview(
         "-f",
         `event=${event}`,
         "-f",
-        `body=${reviewBody}`,
+        `body=${safeReviewBody}`,
         "-F",
         `threads=${JSON.stringify(threads)}`,
       ],

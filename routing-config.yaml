@@ -371,6 +371,42 @@ actions:
       default_strategy: simple
       show_trace: true
       reply_error: "⚠️ Knowledge base search failed: {{error}}"
+  generate_image:
+    enabled: true
+    description: >
+      Generate an image from a text description. Use when the user asks you to create, draw, generate, design, or make
+      an image, picture, illustration, diagram, logo, icon, avatar, meme, or any other visual content.
+    routing_hint: >
+      The user wants you to generate an image. Extract the image description as the prompt. Be detailed — expand terse
+      requests into rich, descriptive prompts that will produce better results. If they specify a size or quality
+      preference, extract those too.
+    parameters:
+      prompt:
+        type: string
+        description: Detailed description of the image to generate
+        required: true
+      size:
+        type: string
+        enum:
+          - 1024x1024
+          - 1024x1536
+          - 1536x1024
+          - auto
+        description: "Image dimensions (default: auto)"
+      quality:
+        type: string
+        enum:
+          - low
+          - medium
+          - high
+          - auto
+        description: "Image quality (default: auto)"
+    execution:
+      type: generate_image
+      default_size: auto
+      default_quality: auto
+      reply_error: "⚠️ Image generation failed: {{error}}"
+      reply_unsupported: "⚠️ The current model provider doesn't support image generation."
   chat:
     enabled: true
     description: |

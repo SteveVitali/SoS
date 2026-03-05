@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { internalAuth, optionalBasicAuth } from "../auth/internalAuth.js";
 import { createChatRoutes } from "../chat/chatRoutes.js";
+import { createImageRoutes } from "../chat/imageStore.js";
 import type { ServerConfig } from "../config.js";
 import { createKBWebRoutes, createKBWorkerRoutes } from "../kb/index.js";
 import type { SlackPoster } from "../slack/slackClient.js";
@@ -14,6 +15,9 @@ export function createRouter(config: ServerConfig, slackPoster?: SlackPoster): R
   // Worker routes — require Bearer token
   router.use("/api/worker", internalAuth(config.internalApiToken), createWorkerRoutes(slackPoster));
   router.use("/api/worker/kb", internalAuth(config.internalApiToken), createKBWorkerRoutes());
+
+  // Image serving — no auth required (UUIDs are unguessable, images are immutable)
+  router.use("/api/web/images", createImageRoutes());
 
   // Web routes — optional basic auth or Bearer token
   const webAuth = config.webBasicAuthUser

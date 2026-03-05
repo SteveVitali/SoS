@@ -133,6 +133,15 @@ export interface DispatchExecution {
   reply_unknown?: string;
 }
 
+/** Generate an image from a text prompt. */
+export interface GenerateImageExecution {
+  type: "generate_image";
+  default_size?: string;
+  default_quality?: string;
+  reply_error?: string;
+  reply_unsupported?: string;
+}
+
 /** Run the advanced research pipeline against knowledge bases. */
 export interface ResearchExecution {
   type: "research";
@@ -157,6 +166,7 @@ export type ExecutionDef =
   | AgentTaskExecution
   | LeaveChannelExecution
   | DispatchExecution
+  | GenerateImageExecution
   | ResearchExecution;
 
 // --- Knowledge Base Config (per-action) ---

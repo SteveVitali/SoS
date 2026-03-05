@@ -7,6 +7,11 @@ import type { ThreadMessage } from "./messageRouter.js";
 import { routeMessage } from "./messageRouter.js";
 import type { SlackFileInfo, SlackPoster, SlackThreadMessage } from "./slackClient.js";
 
+export interface MentionHandlerResult {
+  reply: string;
+  images?: Array<{ url: string; alt?: string }>;
+}
+
 const log = createLogger("server:slack:events");
 
 interface SlackMentionEvent {
@@ -139,7 +144,7 @@ async function downloadThreadAttachments(
 }
 
 export function createAppMentionHandler(config: ServerConfig, slackPoster?: SlackPoster) {
-  return async (event: SlackMentionEvent, eventId: string): Promise<string> => {
+  return async (event: SlackMentionEvent, eventId: string): Promise<MentionHandlerResult> => {
     log.info("app_mention received", {
       user: event.user,
       channel: event.channel,
@@ -151,7 +156,7 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
     const cleanText = event.text.replace(botMentionRegex, "").trim();
 
     if (!cleanText) {
-      return "You rang? Try telling me what you need — or ask what I can do.";
+      return { reply: "You rang? Try telling me what you need — or ask what I can do." };
     }
 
     const threadTs = event.thread_ts ?? event.ts;
@@ -220,7 +225,7 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
 
       if (action.command === "no_op") {
         log.info("LLM chose no_op", { reason: action.args.reason, event_id: eventId });
-        return "";
+        return { reply: "" };
       }
 
       // Execute the command (pass attachments + github config for job creation)
@@ -233,7 +238,7 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
       });
       log.info("Command executed", { action: result.actionTaken, event_id: eventId });
 
-      return result.reply;
+      return { reply: result.reply, images: result.images };
     } catch (err: unknown) {
       log.error("Message routing failed, falling back to direct job creation", {
         error: (err as Error).message,
@@ -263,11 +268,13 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
           message_ts: event.ts,
           ...modifiers,
         });
-        return `Got it — queued as \`${job.task_id.slice(0, 8)}…\`. _(LLM routing was unavailable)_`;
+        return {
+          reply: `Got it — queued as \`${job.task_id.slice(0, 8)}…\`. _(LLM routing was unavailable)_`,
+        };
         // biome-ignore lint/suspicious/noExplicitAny: Slack API type
       } catch (fallbackErr: any) {
         log.error("Fallback job creation also failed", { error: fallbackErr.message });
-        return "Something went wrong — I couldn't process that. Try again?";
+        return { reply: "Something went wrong — I couldn't process that. Try again?" };
       }
     }
   };

@@ -5,6 +5,7 @@ import express from "express";
 import { createLogger } from "../shared/logger.js";
 import { getModelRegistry, initModelConfig } from "../shared/modelConfig.js";
 import { createRouter } from "./api/router.js";
+import { ensureImageIndexes } from "./chat/imageStore.js";
 import { initChatTitleGenerator } from "./chat/titleGen.js";
 import { loadServerConfig } from "./config.js";
 import { setSlackPoster } from "./jobs/jobService.js";
@@ -42,6 +43,13 @@ async function main() {
 
   // Connect to MongoDB
   await connectMongo(config.mongoUri, config.mongoDb);
+
+  // Ensure generated images indexes (TTL)
+  try {
+    await ensureImageIndexes();
+  } catch (err: unknown) {
+    log.warn("Failed to ensure image indexes (non-fatal)", { error: (err as Error).message });
+  }
 
   // Initialize knowledge base subsystem
   try {
