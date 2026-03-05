@@ -70,9 +70,10 @@ export function GitHubSyncDashboard() {
     return () => clearInterval(interval);
   }, [refresh]);
 
-  // SSE subscription for live log
+  // SSE subscription for live log (filter out debug noise)
   useEffect(() => {
     const unsub = subscribeGitHubSyncLog((entry) => {
+      if (entry.level === "debug") return;
       setLogEntries((prev) => [...prev.slice(-99), entry]);
     });
     return unsub;

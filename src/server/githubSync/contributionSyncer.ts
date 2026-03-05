@@ -77,6 +77,33 @@ export async function rebuildContributions(org: string): Promise<number> {
     ])
     .toArray();
 
+  // Aggregate PRs closed (unmerged) per author per day
+  const closedAgg = await prsCol
+    .aggregate<{
+      _id: { login: string; date: string };
+      count: number;
+    }>([
+      {
+        $match: {
+          org: org.toLowerCase(),
+          state: "closed",
+          closed_at: { $ne: null },
+        },
+      },
+      {
+        $group: {
+          _id: {
+            login: "$author",
+            date: {
+              $dateToString: { format: "%Y-%m-%d", date: "$closed_at" },
+            },
+          },
+          count: { $sum: 1 },
+        },
+      },
+    ])
+    .toArray();
+
   // Aggregate reviews submitted per reviewer per day
   const reviewAgg = await prsCol
     .aggregate<{
@@ -143,6 +170,11 @@ export async function rebuildContributions(org: string): Promise<number> {
   for (const row of mergedAgg) {
     const c = getOrCreate(row._id.login, row._id.date);
     c.prs_merged += row.count;
+  }
+
+  for (const row of closedAgg) {
+    const c = getOrCreate(row._id.login, row._id.date);
+    c.prs_closed += row.count;
   }
 
   for (const row of reviewAgg) {

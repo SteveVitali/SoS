@@ -227,39 +227,45 @@ export async function getChunkStats(
   pending: number;
   total_items: number;
 }> {
-  const chunks = await getSyncChunksCollection()
-    .find({ org, data_type: dataType as any })
+  const pipeline = [
+    { $match: { org, data_type: dataType } },
+    {
+      $group: {
+        _id: "$status",
+        count: { $sum: 1 },
+        items: { $sum: "$total_items" },
+      },
+    },
+  ];
+
+  const buckets = await getSyncChunksCollection()
+    .aggregate<{ _id: string; count: number; items: number }>(pipeline)
     .toArray();
 
+  let total = 0;
   let completed = 0;
   let in_progress = 0;
   let failed = 0;
   let pending = 0;
   let total_items = 0;
 
-  for (const c of chunks) {
-    switch (c.status) {
+  for (const b of buckets) {
+    total += b.count;
+    total_items += b.items;
+    switch (b._id) {
       case "complete":
-        completed++;
+        completed = b.count;
         break;
       case "in_progress":
-        in_progress++;
+        in_progress = b.count;
         break;
       case "failed":
-        failed++;
+        failed = b.count;
         break;
       default:
-        pending++;
+        pending += b.count;
     }
-    total_items += c.total_items;
   }
 
-  return {
-    total: chunks.length,
-    completed,
-    in_progress,
-    failed,
-    pending,
-    total_items,
-  };
+  return { total, completed, in_progress, failed, pending, total_items };
 }

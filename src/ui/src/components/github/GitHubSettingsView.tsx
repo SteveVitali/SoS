@@ -50,7 +50,7 @@ export function GitHubSettingsView() {
       setDefaultScope(res.resolved.default_scope);
       setSyncEnabled(res.resolved.sync_enabled);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -106,7 +106,7 @@ export function GitHubSettingsView() {
       setTimeout(() => setSaveMsg(""), 3000);
       refresh();
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toErrorMessage(err));
     } finally {
       setSaving(false);
     }

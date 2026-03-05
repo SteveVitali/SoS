@@ -37,13 +37,16 @@ export async function writeSyncLog(
   // Emit for SSE subscribers (fire-and-forget)
   emitter.emit(SYNC_LOG_EVENT, entry);
 
-  // Persist to MongoDB (fire-and-forget, don't block sync)
-  try {
-    await getSyncLogCollection().insertOne(entry as any);
-  } catch (err: unknown) {
-    log.warn("Failed to persist sync log entry", {
-      error: (err as Error).message,
-    });
+  // Persist to MongoDB (fire-and-forget, don't block sync).
+  // Skip debug-level entries to avoid excessive DB churn.
+  if (level !== "debug") {
+    try {
+      await getSyncLogCollection().insertOne(entry as any);
+    } catch (err: unknown) {
+      log.warn("Failed to persist sync log entry", {
+        error: (err as Error).message,
+      });
+    }
   }
 }
 
