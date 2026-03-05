@@ -84,8 +84,7 @@ export type JobType =
   | "create"
   | "respond_to_pr_comments"
   | "self_review_pr"
-  | "add_pr_review_comments"
-  | "github_summary";
+  | "add_pr_review_comments";
 
 export type GithubQueryType =
   | "my_review_requests"
@@ -201,15 +200,6 @@ export interface JobDoc {
 
   // Metrics
   metrics?: JobMetrics;
-
-  // GitHub query params (for github_summary jobs)
-  github_query?: {
-    query_type: GithubQueryType;
-    time_range?: string;
-    org?: string;
-    team_slug?: string;
-    github_username?: string;
-  };
 
   // Pre-flight planning
   needs_plan?: boolean;

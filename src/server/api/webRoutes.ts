@@ -14,6 +14,7 @@ import {
   saveModelConfig,
 } from "../../shared/modelConfig.js";
 import type { ServerConfig } from "../config.js";
+import { getPrsCollection } from "../githubSync/githubRepo.js";
 import {
   CreateAddReviewCommentsSchema,
   CreateJobFromWebSchema,
@@ -37,7 +38,6 @@ import {
   sendWorkerCommand,
   subscribeToLogs,
 } from "../workers/workerRegistry.js";
-import { fetchBatchPrStats } from "./ghPrs.js";
 
 const log = createLogger("server:api:web");
 
@@ -314,7 +314,31 @@ export function createWebRoutes(config: ServerConfig): Router {
       }
       // Cap at 20 to avoid abuse
       const capped = urls.slice(0, 20);
-      const stats = await fetchBatchPrStats(capped);
+      // Look up comment_stats from MongoDB (populated by sync engine)
+      const parsed = capped
+        .map((url: string) => {
+          const m = url.match(/github\.com\/([^/]+\/[^/]+)\/pull\/(\d+)/);
+          return m ? { url, id: `${m[1]}#${m[2]}` } : null;
+        })
+        .filter(Boolean) as Array<{ url: string; id: string }>;
+      const docs =
+        parsed.length > 0
+          ? await getPrsCollection()
+              .find({ _id: { $in: parsed.map((p) => p.id) } as any })
+              .project({ _id: 1, comment_stats: 1 })
+              .toArray()
+          : [];
+      const docMap = new Map(docs.map((d) => [d._id, d.comment_stats]));
+      const stats: Record<string, unknown> = {};
+      for (const p of parsed) {
+        const cs = docMap.get(p.id);
+        stats[p.url] = cs || {
+          total_comments: 0,
+          total_threads: 0,
+          unresolved_threads: 0,
+          unaddressed_threads: 0,
+        };
+      }
       res.json({ stats });
     } catch (err: unknown) {
       log.error("Batch PR stats error", { error: (err as Error).message });

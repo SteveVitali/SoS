@@ -59,6 +59,8 @@ export interface GitHubPrDoc {
   updated_at: Date;
   merged_at?: Date;
   closed_at?: Date;
+  body?: string; // PR description text (from detail enrichment)
+  body_truncated?: boolean; // true if body was truncated (>10KB)
   comment_stats?: GitHubPrCommentStats;
   requested_reviewers: string[];
   reviews: GitHubPrReview[];

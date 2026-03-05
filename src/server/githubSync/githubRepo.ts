@@ -117,6 +117,8 @@ const DETAIL_ONLY_FIELDS = new Set([
   "reviews",
   "requested_reviewers",
   "review_decision",
+  "body",
+  "body_truncated",
   "comment_stats",
   "detail_synced_at",
 ]);

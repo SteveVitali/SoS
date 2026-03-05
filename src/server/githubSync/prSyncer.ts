@@ -607,6 +607,13 @@ async function enrichPrDetails(
       pr.requested_reviewers = (detail.data.requested_reviewers || [])
         .map((r: any) => r.login?.toLowerCase())
         .filter(Boolean);
+
+      // Store PR description (body) with 10KB cap
+      const MAX_BODY_BYTES = 10_000;
+      const rawBody = detail.data.body || "";
+      pr.body = rawBody.length > MAX_BODY_BYTES ? rawBody.slice(0, MAX_BODY_BYTES) : rawBody;
+      pr.body_truncated = rawBody.length > MAX_BODY_BYTES;
+
       pr.detail_synced_at = new Date();
 
       // Fetch reviews

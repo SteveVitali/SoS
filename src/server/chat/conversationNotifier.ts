@@ -15,7 +15,7 @@ function formatStatusMessage(job: JobDoc, eventType: string): string {
       return `Job \`${tid}…\` picked up by worker \`${job.claimed_by}\``;
     case "DONE": {
       const prs = job.pr_urls?.length ? `\nPRs: ${job.pr_urls.join(", ")}` : "";
-      const summaryLimit = job.job_type === "github_summary" ? 5000 : 300;
+      const summaryLimit = 300;
       const summary = job.result_summary ? `\n${job.result_summary.slice(0, summaryLimit)}` : "";
       return `Job \`${tid}…\` completed successfully${prs}${summary}`;
     }
