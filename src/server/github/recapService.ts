@@ -85,12 +85,19 @@ export async function fetchTeamRecapData(
     .project<{ _id: string }>({ _id: 1 })
     .toArray();
 
-  const allRecaps = await Promise.all(
-    members.map(async (member) => {
-      const recap = await fetchMyRecapData(org, member._id, since);
-      return { username: member._id, recap };
-    }),
-  );
+  // Fetch in batches of 10 to limit concurrent MongoDB connections
+  const BATCH_SIZE = 10;
+  const allRecaps: Array<{ username: string; recap: RecapData }> = [];
+  for (let i = 0; i < members.length; i += BATCH_SIZE) {
+    const batch = members.slice(i, i + BATCH_SIZE);
+    const results = await Promise.all(
+      batch.map(async (member) => {
+        const recap = await fetchMyRecapData(org, member._id, since);
+        return { username: member._id, recap };
+      }),
+    );
+    allRecaps.push(...results);
+  }
   const memberRecaps = allRecaps.filter(
     (m) => m.recap.mergedPrs.length > 0 || m.recap.reviewedPrs.length > 0,
   );
@@ -201,20 +208,26 @@ export async function executeRecapInline(
 
   const model = getModelForRole("routing");
   const RECAP_TIMEOUT_MS = 30_000;
+  let timeoutId: ReturnType<typeof setTimeout>;
   const result = await Promise.race([
-    llmProvider.chat({
-      system:
-        "You generate concise developer activity recap summaries for Slack. " +
-        "Use markdown formatting suitable for Slack (bold with *, bullets with •). " +
-        "Be direct and informative — no filler.",
-      messages: [{ role: "user", content: prompt }],
-      tools: [],
-      maxTokens: 2048,
-      model,
+    llmProvider
+      .chat({
+        system:
+          "You generate concise developer activity recap summaries for Slack. " +
+          "Use markdown formatting suitable for Slack (bold with *, bullets with •). " +
+          "Be direct and informative — no filler.",
+        messages: [{ role: "user", content: prompt }],
+        tools: [],
+        maxTokens: 2048,
+        model,
+      })
+      .then((r) => {
+        clearTimeout(timeoutId);
+        return r;
+      }),
+    new Promise<never>((_, reject) => {
+      timeoutId = setTimeout(() => reject(new Error("Recap LLM call timed out")), RECAP_TIMEOUT_MS);
     }),
-    new Promise<never>((_, reject) =>
-      setTimeout(() => reject(new Error("Recap LLM call timed out")), RECAP_TIMEOUT_MS),
-    ),
   ]);
 
   const label = queryType === "my_recap" ? "My" : "Team";

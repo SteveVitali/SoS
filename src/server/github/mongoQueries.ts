@@ -158,18 +158,12 @@ async function getTeamMemberLogins(org: string, teamSlug: string): Promise<strin
 }
 
 /**
- * Parse a time range string like "7d", "2w", "30d" into a Date.
+ * Parse a relative time range string like "7d", "2w", "1m" into a Date.
  * Returns the start date (now minus the range). Defaults to 7 days.
+ * Only relative ranges are supported (e.g. "7d", "2w", "3m").
  */
 export function parseTimeRange(timeRange?: string): Date {
   if (!timeRange) return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
-
-  // Handle date range format "YYYY-MM-DD..YYYY-MM-DD"
-  if (timeRange.includes("..")) {
-    const [start] = timeRange.split("..");
-    const parsed = new Date(start);
-    if (!Number.isNaN(parsed.getTime())) return parsed;
-  }
 
   const match = timeRange.match(/^(\d+)([dwm])$/);
   if (!match) return new Date(Date.now() - 7 * 24 * 60 * 60 * 1000);
@@ -179,18 +173,31 @@ export function parseTimeRange(timeRange?: string): Date {
   return new Date(Date.now() - days * 24 * 60 * 60 * 1000);
 }
 
+let readinessCache: { org: string; data: SyncReadiness; at: number } | null = null;
+const READINESS_TTL_MS = 30_000;
+
 async function getSyncReadiness(org: string): Promise<SyncReadiness> {
+  if (
+    readinessCache &&
+    readinessCache.org === org &&
+    Date.now() - readinessCache.at < READINESS_TTL_MS
+  ) {
+    return readinessCache.data;
+  }
+
   const [prCount, memberCount, chunkStats, cursor] = await Promise.all([
     getPrsCollection().countDocuments({ org }),
     getOrgMembersCollection().countDocuments({ org }),
     getChunkStats(org, "prs"),
     getSyncCursor(org),
   ]);
-  return {
+  const data: SyncReadiness = {
     hasPrData: prCount > 0,
     hasTeamData: memberCount > 0,
     backfillPercent:
       chunkStats.total > 0 ? Math.round((chunkStats.completed / chunkStats.total) * 100) : 0,
     lastHotSync: cursor.last_hot_sync_at,
   };
+  readinessCache = { org, data, at: Date.now() };
+  return data;
 }

@@ -32,9 +32,10 @@ describe("parseTimeRange", () => {
     expect(result.getTime()).toBeCloseTo(ninetyDaysAgo, -3);
   });
 
-  it("parses date range format (start..end)", () => {
+  it("falls back to 7d for unsupported formats", () => {
     const result = parseTimeRange("2025-06-01..2025-07-01");
-    expect(result.toISOString().slice(0, 10)).toBe("2025-06-01");
+    const sevenDaysAgo = Date.now() - 7 * 24 * 60 * 60 * 1000;
+    expect(result.getTime()).toBeCloseTo(sevenDaysAgo, -3);
   });
 
   it("handles single digit values", () => {
