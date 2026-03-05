@@ -54,15 +54,16 @@ The server is the **single source of truth** for job state. It:
 7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
 8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
 9. **Manages knowledge bases** with vector-indexed document storage (hierarchical path metadata, breadcrumb-enriched embeddings), semantic search, streaming ingestion progress, context injection into LLM calls, an **advanced research pipeline** (multi-stage RAG with simple/deep/agent strategies, LLM-driven query analysis, CRAG evaluation, IRCoT reasoning, and a ReAct agent), full **audit logging** of research sessions, and **RAPTOR tree** preprocessing (recursive clustering and summarization of KB chunks for hierarchical retrieval)
-10. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
-11. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
-12. **Serves the React SPA** as static files (production build)
+10. **Runs the GitHub Hub sync engine** — background priority-queue loop that hot-syncs open PRs, backfills historical chunks, warm-syncs org/team membership, and rebuilds contribution aggregations. Uses Octokit with dual rate limiters (REST 5,000/hr + Search 30/min token bucket) and deterministic epoch-anchored 28-day chunks stored in MongoDB. See [docs/GITHUB_HUB_DESIGN.md](GITHUB_HUB_DESIGN.md) for details.
+11. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
+12. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
+13. **Serves the React SPA** as static files (production build)
 
 The server **holds all Slack credentials**. Workers never touch Slack directly.
 
 ### sos-worker (`src/worker/`)
 
-The worker runs a **configurable pool of independent loops** (default 4). Each loop:
+The worker runs a **single execution loop**. The loop:
 
 1. **Polls** the server for eligible jobs matching its configured `requested_by` user
 2. **Claims** a job atomically with a lease
@@ -83,13 +84,21 @@ Workers are **stateless** — all persistent state lives in MongoDB via the serv
 
 ### MongoDB
 
-Five collections:
+Twelve collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
 - **`knowledge_bases`** — Knowledge base metadata (name, scopes, embedding config, stats).
 - **`kb_documents`** — Per-document metadata for ingested files (name, size, chunk count).
+- **`kb_upload_jobs`** — Upload job tracking for async ingestion.
 - **`research_sessions`** — Research pipeline audit logs (query, strategy, config, steps with LLM/retrieval call records, metrics, consumer link).
+- **`github_org_members`** — Cached GitHub org member profiles.
+- **`github_teams`** — Cached GitHub team metadata.
+- **`github_prs`** — Cached pull request documents with review and comment stats.
+- **`github_contributions`** — Pre-aggregated contribution metrics per user.
+- **`github_sync_chunks`** — Backfill chunk state tracking (status, pages fetched, resumability).
+- **`github_sync_log`** — Timestamped sync activity log (displayed in UI via SSE stream).
+- **`github_settings`** — UI-editable GitHub Hub configuration (org, team, sync toggles, etc.).
 
 **Key indexes:**
 - `source.event_id` — unique partial (idempotency for Slack events)
@@ -98,6 +107,7 @@ Five collections:
 - `{ status, lease_expires_at }` — compound (reclaim expired leases)
 - `kb_id` — unique (knowledge base lookup)
 - `{ kb_id, name }` — compound unique (document dedup within a KB)
+- `{ org, data_type, chunk_start }` — compound (GitHub sync chunk lookup)
 
 ### Web UI (`src/ui/`)
 
@@ -107,10 +117,12 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 - **Jobs** — list with filters (status, user, search), detail view with full event timeline and cost metrics, create/cancel/retry/delete, respond-to-PR-comments
 - **PRs** — open PRs across registered repos with review thread / unresolved comment stats
 - **Workers** — live worker health dashboard with per-loop status, spawn new workers, shutdown, live log terminal with Claude output streaming via SSE
+- **GitHub** — GitHub Hub dashboard: PRs with filtering (scope, repo, author, status), contribution charts and leaderboards, team/member browser, sync dashboard (backfill progress, chunk timeline, rate limit gauges, live SSE activity feed, manual triggers), and settings editor (org, team, history depth, sync intervals, token validation)
 - **Repos** — in-browser YAML editor for the repo registry
 - **Knowledge** — create/manage knowledge bases, upload documents or folders (with real-time per-file progress), test semantic search in the KBPlayground, configure scopes and chunking parameters, **RAPTOR tree** visualization (build/rebuild indices, interactive cluster hierarchy explorer)
 - **Research** — global research config controls (chat/Slack strategy, max context tokens persisted to routing-config.yaml), **Research Playground** (run queries with simple/deep/agent strategies, real-time NDJSON-streamed pipeline timeline, model selector), **Strategy Comparison** (side-by-side all-strategies benchmark), **Research History** (paginated session browser with timeline drill-down), and per-job **Research Audit** sections on the Jobs detail page
 - **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 13 execution types, reply template management, with a raw YAML fallback view
+- **Models** — view and override model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding) with autocomplete from available models
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
 
@@ -122,8 +134,8 @@ The UI uses a component-based architecture under `src/ui/src/components/` with s
   Slack mention ──► QUEUED ──► RUNNING ──► DONE                   │
   Web create ──►      │          │  ▲                             │
                       │          │  │                              │
-                      │          ▼  │                              │
-                      │      FIXING_CI ────► (back to RUNNING)     │
+                      ▼          ▼  │                              │
+                   BLOCKED   FIXING_CI ────► (back to RUNNING)     │
                       │          │                                 │
                       │          ▼                                 │
                       │        FAILED                              │
@@ -147,6 +159,7 @@ The UI uses a component-based architecture under `src/ui/src/components/` with s
 | Status | Meaning |
 |---|---|
 | `QUEUED` | Waiting for a worker to claim |
+| `BLOCKED` | Waiting for a blocking job (same PR) to finish before becoming claimable |
 | `PLANNING` | Worker is running a read-only Claude session to generate a technical plan |
 | `PENDING_CONFIRMATION` | Plan generated and presented to user; awaiting explicit confirmation |
 | `RUNNING` | Claimed and being executed by a worker |
@@ -250,7 +263,7 @@ routing-config.yaml
 
 ```yaml
 system_prompt: "You are Steve, a senior staff engineer..."  # LLM system prompt
-model: "claude-sonnet-4-20250514"                          # optional model override
+model: "claude-opus-4.5"                                   # optional model override
 
 actions:
   create_job:
@@ -352,7 +365,7 @@ Workers emit structured events to the server via `POST /api/worker/jobs/:task_id
 Terminal states (`DONE`, `FAILED`, `CANCELED`) are posted to Slack by the service functions directly (not via the event system) to avoid duplicate notifications.
 
 See `src/shared/types.ts` for the full `WorkerEventType` union, which includes:
-`PHASE_STARTED`, `REPO_RESOLVED`, `WORKTREE_READY`, `CLAUDE_STARTED`, `CLAUDE_FINISHED`, `LOCAL_CHECKS_STARTED`, `LOCAL_CHECKS_FINISHED`, `SELF_REVIEW_STARTED`, `SELF_REVIEW_FINISHED`, `COMMIT_CREATED`, `BRANCH_PUSHED`, `PR_CREATED`, `CI_STATUS`, `CI_FAILED`, `CI_FIX_STARTED`, `CI_FIX_FINISHED`, `PLAN_STARTED`, `PLAN_GENERATED`, `PLAN_CONFIRMED`, `PR_READY_FOR_APPROVAL`, `PR_PROMOTED`, `COMMENTS_FETCHED`, `COMMENT_ADDRESSED`, `COMMENTS_PUSHED`, `DONE`, `FAILED`, `CANCELED`
+`PHASE_STARTED`, `REPO_RESOLVED`, `WORKTREE_READY`, `CLAUDE_STARTED`, `CLAUDE_FINISHED`, `LOCAL_CHECKS_STARTED`, `LOCAL_CHECKS_FINISHED`, `SELF_REVIEW_STARTED`, `SELF_REVIEW_FINISHED`, `COMMIT_CREATED`, `BRANCH_PUSHED`, `PR_CREATED`, `CI_STATUS`, `CI_FAILED`, `CI_FIX_STARTED`, `CI_FIX_FINISHED`, `PLAN_STARTED`, `PLAN_GENERATED`, `PLAN_CONFIRMED`, `PR_READY_FOR_APPROVAL`, `PR_PROMOTED`, `COMMENTS_FETCHED`, `COMMENT_ADDRESSED`, `COMMENTS_PUSHED`, `REVIEW_GENERATED`, `COMMENTS_PARSED`, `REVIEW_POSTED`, `DONE`, `FAILED`, `CANCELED`
 
 ## Directory Structure
 
@@ -361,8 +374,10 @@ son-of-steve/
 ├── src/
 │   ├── shared/                # Shared between server and worker
 │   │   ├── types.ts           # Zod schemas, JobDoc, event types, worker registry types
+│   │   ├── githubTypes.ts     # GitHub Hub shared types (PR docs, contributions, sync chunks, settings, API responses)
 │   │   ├── kbTypes.ts         # Knowledge base shared types (KnowledgeBase, KBDocument, KBSearchResult, IngestProgressEvent)
 │   │   ├── researchTypes.ts   # Research pipeline types (strategies, sessions, steps, metrics, RAPTOR, agent, streaming events)
+│   │   ├── modelConfig.ts     # Centralized LLM model config registry (roles, defaults, YAML/env overrides)
 │   │   ├── kbUtils.ts         # KB utilities (pathToBreadcrumb, formatPathBreadcrumb)
 │   │   ├── modelPricing.ts    # Claude model pricing for cost estimation
 │   │   ├── cache.ts           # Generic TTL cache with getOrSet
@@ -408,10 +423,22 @@ son-of-steve/
 │   │   │   ├── anthropicProvider.ts   # Anthropic API implementation
 │   │   │   ├── openaiProvider.ts      # OpenAI-compatible implementation
 │   │   │   └── index.ts               # Provider factory
-│   │   ├── github/
+│   │   ├── github/                # Legacy gh CLI-based GitHub queries (instant queries, recap data)
 │   │   │   ├── teamCache.ts       # Cached GitHub team member resolution via Teams API
 │   │   │   ├── queries.ts         # gh CLI wrappers for PR search, recap data fetching
 │   │   │   ├── formatting.ts      # Slack formatting for query results + LLM prompt builders
+│   │   │   └── index.ts           # Barrel export
+│   │   ├── githubSync/            # GitHub Hub sync engine (REST API + MongoDB cache)
+│   │   │   ├── syncService.ts     # Main orchestrator: priority-queue loop (hot PRs, backfill, org sync, contributions)
+│   │   │   ├── githubConfig.ts    # Config resolution (DB settings > env vars > defaults)
+│   │   │   ├── chunks.ts          # Deterministic epoch-anchored chunk math
+│   │   │   ├── prSyncer.ts        # PR fetching via GitHub Search API + chunk-based backfill
+│   │   │   ├── orgSyncer.ts       # Org member + team sync via GitHub REST API
+│   │   │   ├── contributionSyncer.ts  # Contribution aggregation from cached PR data
+│   │   │   ├── octokitClient.ts   # Octokit client with throttling plugin + rate limit budget
+│   │   │   ├── rateLimitBudget.ts  # Dual rate limiter (REST 5K/hr + Search 30/min token bucket)
+│   │   │   ├── githubRepo.ts      # MongoDB CRUD for all GitHub Hub collections
+│   │   │   ├── syncEventLog.ts    # Sync activity log + SSE subscriber fan-out
 │   │   │   └── index.ts           # Barrel export
 │   │   ├── slack/
 │   │   │   ├── socketMode.ts      # Slack Bolt app with Socket Mode
@@ -429,6 +456,7 @@ son-of-steve/
 │   │   │   ├── kbRepo.ts          # MongoDB CRUD for KB + document metadata
 │   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion, embedding, search, researchKnowledgeBases() entry point
 │   │   │   ├── kbRoutes.ts        # Express routes: web + worker KB, research, and RAPTOR endpoints; NDJSON streaming
+│   │   │   ├── uploadRepo.ts      # MongoDB CRUD for durable upload job tracking (per-file status, progress)
 │   │   │   ├── index.ts           # Barrel export
 │   │   │   ├── research/          # Advanced RAG research pipeline
 │   │   │   │   ├── pipeline.ts        # Pipeline runner/orchestrator (simple + deep strategies, budget enforcement)
@@ -453,10 +481,11 @@ son-of-steve/
 │   │   │       ├── treeBuilder.ts     # Recursive tree construction orchestrator
 │   │   │       └── raptorRepo.ts      # MongoDB metadata for RAPTOR build status
 │   │   └── api/
-│   │       ├── router.ts        # Mount worker + web + chat + KB routes with auth
+│   │       ├── router.ts        # Mount worker + web + chat + KB + GitHub routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)
-│   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, routing, worktrees)
-│   │       └── ghPrs.ts         # GitHub PR listing + comment stats (with TTL cache)
+│   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, routing, models, worktrees)
+│   │       ├── githubRoutes.ts  # /api/web/github/* (PRs, contributions, teams, sync, settings)
+│   │       └── ghPrs.ts         # Legacy GitHub PR listing + comment stats (with TTL cache)
 │   │
 │   ├── worker/                # sos-worker process
 │   │   ├── index.ts           # Entry point: register, start loops, connect WS

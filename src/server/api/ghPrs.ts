@@ -1,7 +1,6 @@
 import { exec as execCb } from "node:child_process";
 import { promisify } from "node:util";
 import { createLogger } from "../../shared/logger.js";
-import { loadRegistry } from "../../worker/executor/repoRegistry.js";
 
 const exec = promisify(execCb);
 const log = createLogger("server:ghPrs");
@@ -31,59 +30,6 @@ export interface PrCommentStats {
   total_threads: number;
   unresolved_threads: number;
   unaddressed_threads: number;
-}
-
-export interface GitHubPr {
-  url: string;
-  number: number;
-  title: string;
-  state: string;
-  headRefName: string;
-  updatedAt: string;
-  createdAt: string;
-  author: string;
-  repo: string;
-  repoFullName: string;
-  isDraft: boolean;
-  additions: number;
-  deletions: number;
-  comments: PrCommentStats | null;
-  linkedJobTaskId?: string;
-}
-
-// --- Helpers ---
-
-/** Extract owner/repo from a clone URL. */
-function parseCloneUrl(cloneUrl: string): { owner: string; repo: string } | null {
-  const normalized = cloneUrl.replace(/\.git$/, "");
-  // SSH: git@github.com:SteveVitali/son-of-steve
-  const sshMatch = normalized.match(/github\.com[:/]([^/]+)\/(.+)$/);
-  if (sshMatch) return { owner: sshMatch[1], repo: sshMatch[2] };
-  // HTTPS: https://github.com/SteveVitali/son-of-steve
-  const httpsMatch = normalized.match(/github\.com\/([^/]+)\/(.+)$/);
-  if (httpsMatch) return { owner: httpsMatch[1], repo: httpsMatch[2] };
-  return null;
-}
-
-/** List PRs for a single repo via `gh pr list`. */
-async function listPrsForRepo(
-  owner: string,
-  repo: string,
-  state: "open" | "closed" | "merged" | "all",
-  limit: number,
-  authorFilter?: string,
-  // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
-): Promise<any[]> {
-  const stateFlag = state === "all" ? "--state=all" : `--state=${state}`;
-  const authorFlag = authorFilter ? ` --author "${authorFilter}"` : "";
-  const cmd = `gh pr list --repo "${owner}/${repo}" ${stateFlag}${authorFlag} --limit ${limit} --json number,title,state,headRefName,updatedAt,createdAt,author,isDraft,additions,deletions,url`;
-  try {
-    const { stdout } = await exec(cmd, { timeout: 30_000 });
-    return JSON.parse(stdout);
-  } catch (err: unknown) {
-    log.warn("Failed to list PRs for repo", { owner, repo, error: (err as Error).message });
-    return [];
-  }
 }
 
 // --- PR Comment Stats Cache (TTL-based) ---
@@ -225,92 +171,4 @@ export async function fetchBatchPrStats(prUrls: string[]): Promise<Record<string
   }
 
   return results;
-}
-
-// --- Public API ---
-
-export interface ListPrsOptions {
-  registryPath: string;
-  state?: "open" | "closed" | "merged" | "all";
-  limit?: number;
-  includeComments?: boolean;
-  repoFilter?: string;
-}
-
-/**
- * List PRs across all registered repos.
- * Returns PRs sorted by updatedAt descending (most recent first).
- */
-export async function listPrs(opts: ListPrsOptions): Promise<GitHubPr[]> {
-  const { registryPath, state = "open", limit = 20, includeComments = true, repoFilter } = opts;
-
-  const registry = loadRegistry(registryPath);
-  const currentUser = await getCurrentGitHubUser();
-  const allPrs: GitHubPr[] = [];
-
-  // List PRs for all repos in parallel
-  const repoEntries: Array<{
-    repoId: string;
-    owner: string;
-    repo: string;
-  }> = [];
-
-  for (const [repoId, entry] of registry.repos) {
-    if (repoFilter && repoId !== repoFilter) continue;
-    const parsed = parseCloneUrl(entry.clone);
-    if (!parsed) {
-      log.warn("Cannot parse clone URL, skipping repo", { repoId, clone: entry.clone });
-      continue;
-    }
-    repoEntries.push({ repoId, owner: parsed.owner, repo: parsed.repo });
-  }
-
-  const prListResults = await Promise.all(
-    repoEntries.map((r) => listPrsForRepo(r.owner, r.repo, state, limit, currentUser || undefined)),
-  );
-
-  // Collect all raw PRs with their repo metadata
-  // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
-  const rawPrsWithMeta: Array<{ pr: any; repoId: string; owner: string; repo: string }> = [];
-  for (let i = 0; i < repoEntries.length; i++) {
-    const r = repoEntries[i];
-    for (const pr of prListResults[i]) {
-      rawPrsWithMeta.push({ pr, repoId: r.repoId, owner: r.owner, repo: r.repo });
-    }
-  }
-
-  // Fetch comment stats for all PRs in parallel
-  let commentResults: Array<PrCommentStats | null> = rawPrsWithMeta.map(() => null);
-  if (includeComments) {
-    commentResults = await Promise.all(
-      rawPrsWithMeta.map((item) =>
-        fetchPrCommentStats(item.owner, item.repo, item.pr.number, currentUser),
-      ),
-    );
-  }
-
-  for (let i = 0; i < rawPrsWithMeta.length; i++) {
-    const { pr, repoId, owner, repo } = rawPrsWithMeta[i];
-    allPrs.push({
-      url: pr.url,
-      number: pr.number,
-      title: pr.title,
-      state: pr.state,
-      headRefName: pr.headRefName,
-      updatedAt: pr.updatedAt,
-      createdAt: pr.createdAt,
-      author: pr.author?.login || "unknown",
-      repo: repoId,
-      repoFullName: `${owner}/${repo}`,
-      isDraft: pr.isDraft ?? false,
-      additions: pr.additions ?? 0,
-      deletions: pr.deletions ?? 0,
-      comments: commentResults[i],
-    });
-  }
-
-  // Sort by updatedAt descending
-  allPrs.sort((a, b) => new Date(b.updatedAt).getTime() - new Date(a.updatedAt).getTime());
-
-  return allPrs;
 }

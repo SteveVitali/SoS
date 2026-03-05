@@ -37,7 +37,7 @@ import {
   sendWorkerCommand,
   subscribeToLogs,
 } from "../workers/workerRegistry.js";
-import { fetchBatchPrStats, listPrs } from "./ghPrs.js";
+import { fetchBatchPrStats } from "./ghPrs.js";
 
 const log = createLogger("server:api:web");
 
@@ -300,55 +300,6 @@ export function createWebRoutes(config: ServerConfig): Router {
         error: (err as Error).message,
         task_id: pstr(req.params.task_id),
       });
-      res.status(500).json({ error: "Internal error" });
-    }
-  });
-
-  // GET /api/web/prs — list PRs across registered repos with comment stats
-  router.get("/prs", async (req: Request, res: Response) => {
-    try {
-      if (!config.repoRegistryPath) {
-        res.status(501).json({ error: "SOS_REPO_REGISTRY not configured on server" });
-        return;
-      }
-      const state = (qstr(req.query.state) || "open") as "open" | "closed" | "merged" | "all";
-      const limit = parseInt(qstr(req.query.limit), 10) || 20;
-      const includeComments = qstr(req.query.include_comments) !== "false";
-      const repoFilter = qstr(req.query.repo) || undefined;
-
-      const prs = await listPrs({
-        registryPath: config.repoRegistryPath,
-        state,
-        limit,
-        includeComments,
-        repoFilter,
-      });
-
-      // Cross-link with jobs: find jobs whose pr_urls match any of these PRs
-      const prUrls = prs.map((p) => p.url);
-      if (prUrls.length > 0) {
-        try {
-          const { jobs } = await jobService.queryJobs({ limit: 200, offset: 0 });
-          const urlToTaskId = new Map<string, string>();
-          for (const job of jobs) {
-            for (const url of job.pr_urls || []) {
-              if (!urlToTaskId.has(url)) {
-                urlToTaskId.set(url, job.task_id);
-              }
-            }
-          }
-          for (const pr of prs) {
-            pr.linkedJobTaskId = urlToTaskId.get(pr.url);
-          }
-          // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
-        } catch (linkErr: any) {
-          log.warn("Failed to cross-link PRs with jobs", { error: linkErr.message });
-        }
-      }
-
-      res.json({ prs });
-    } catch (err: unknown) {
-      log.error("List PRs error", { error: (err as Error).message });
       res.status(500).json({ error: "Internal error" });
     }
   });

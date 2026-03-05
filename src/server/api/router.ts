@@ -4,6 +4,7 @@ import { createChatRoutes } from "../chat/chatRoutes.js";
 import type { ServerConfig } from "../config.js";
 import { createKBWebRoutes, createKBWorkerRoutes } from "../kb/index.js";
 import type { SlackPoster } from "../slack/slackClient.js";
+import { createGitHubRoutes } from "./githubRoutes.js";
 import { createWebRoutes } from "./webRoutes.js";
 import { createWorkerRoutes } from "./workerRoutes.js";
 
@@ -22,6 +23,7 @@ export function createRouter(config: ServerConfig, slackPoster?: SlackPoster): R
   router.use("/api/web", webAuth, createWebRoutes(config));
   router.use("/api/web/chats", webAuth, createChatRoutes(config));
   router.use("/api/web/kb", webAuth, createKBWebRoutes());
+  router.use("/api/web/github", webAuth, createGitHubRoutes(config));
 
   return router;
 }
