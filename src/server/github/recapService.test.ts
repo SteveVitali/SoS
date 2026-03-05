@@ -1,33 +1,18 @@
 import { describe, expect, it } from "vitest";
-import type { GitHubPrDoc } from "../../shared/githubTypes.js";
 import type { RecapData, TeamRecapData } from "./recapService.js";
 import { buildMyRecapPrompt, buildTeamRecapPrompt } from "./recapService.js";
+import { makePr as _makePr } from "./testHelpers.js";
 
-function makePr(overrides: Partial<GitHubPrDoc> = {}): GitHubPrDoc {
-  return {
-    _id: "org/repo#1",
-    org: "org",
-    repo: "org/repo",
-    number: 1,
-    title: "Fix bug",
-    author: "alice",
+/** Wrapper that defaults state to 'merged' for recap tests. */
+const makePr: typeof _makePr = (overrides = {}) =>
+  _makePr({
     state: "merged",
-    is_draft: false,
-    head_ref: "fix-bug",
-    base_ref: "main",
     additions: 50,
     deletions: 10,
     changed_files: 3,
-    labels: [],
-    created_at: new Date("2026-01-01"),
-    updated_at: new Date("2026-01-02"),
     merged_at: new Date("2026-01-02"),
-    requested_reviewers: [],
-    reviews: [],
-    synced_at: new Date(),
     ...overrides,
-  };
-}
+  });
 
 describe("buildMyRecapPrompt", () => {
   it("includes PR details in the prompt", () => {

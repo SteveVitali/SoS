@@ -21,6 +21,9 @@ interface SearchResult {
 
 const log = createLogger("github:prSyncer");
 
+/** Maximum PR body size to store (bytes). Bodies exceeding this are truncated. */
+const MAX_BODY_BYTES = 10_000;
+
 // --- Types for REST search results ---
 
 interface SearchIssueItem {
@@ -609,7 +612,6 @@ async function enrichPrDetails(
         .filter(Boolean);
 
       // Store PR description (body) with 10KB cap
-      const MAX_BODY_BYTES = 10_000;
       const rawBody = detail.data.body || "";
       pr.body = rawBody.length > MAX_BODY_BYTES ? rawBody.slice(0, MAX_BODY_BYTES) : rawBody;
       pr.body_truncated = rawBody.length > MAX_BODY_BYTES;

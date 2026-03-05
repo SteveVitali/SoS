@@ -321,10 +321,11 @@ export function createWebRoutes(config: ServerConfig): Router {
           return m ? { url, id: `${m[1]}#${m[2]}` } : null;
         })
         .filter(Boolean) as Array<{ url: string; id: string }>;
+      const ids = parsed.map((p) => p.id);
       const docs =
-        parsed.length > 0
+        ids.length > 0
           ? await getPrsCollection()
-              .find({ _id: { $in: parsed.map((p) => p.id) } as any })
+              .find({ _id: { $in: ids } })
               .project({ _id: 1, comment_stats: 1 })
               .toArray()
           : [];

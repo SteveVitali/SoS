@@ -62,6 +62,8 @@ export async function fetchMyRecapData(
       "reviews.author": userLower,
       author: { $ne: userLower },
     })
+    .sort({ merged_at: -1 })
+    .limit(200)
     .toArray();
 
   return {
@@ -198,16 +200,22 @@ export async function executeRecapInline(
   }
 
   const model = getModelForRole("routing");
-  const result = await llmProvider.chat({
-    system:
-      "You generate concise developer activity recap summaries for Slack. " +
-      "Use markdown formatting suitable for Slack (bold with *, bullets with •). " +
-      "Be direct and informative — no filler.",
-    messages: [{ role: "user", content: prompt }],
-    tools: [],
-    maxTokens: 2048,
-    model,
-  });
+  const RECAP_TIMEOUT_MS = 30_000;
+  const result = await Promise.race([
+    llmProvider.chat({
+      system:
+        "You generate concise developer activity recap summaries for Slack. " +
+        "Use markdown formatting suitable for Slack (bold with *, bullets with •). " +
+        "Be direct and informative — no filler.",
+      messages: [{ role: "user", content: prompt }],
+      tools: [],
+      maxTokens: 2048,
+      model,
+    }),
+    new Promise<never>((_, reject) =>
+      setTimeout(() => reject(new Error("Recap LLM call timed out")), RECAP_TIMEOUT_MS),
+    ),
+  ]);
 
   const label = queryType === "my_recap" ? "My" : "Team";
   return `📊 *${label} Recap (${range})*\n\n${result.text}`;
