@@ -30,6 +30,8 @@
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
     "@lancedb/lancedb": "^0.26.2",
+    "@octokit/plugin-throttling": "^11.0.3",
+    "@octokit/rest": "^22.0.1",
     "@slack/bolt": "^4.1.0",
     "adm-zip": "^0.5.16",
     "dotenv": "^17.3.1",
@@ -40,6 +42,7 @@
     "pdf-parse": "^2.4.5",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.0",
+    "recharts": "^3.7.0",
     "uuid": "^13.0.0",
     "ws": "^8.19.0",
     "yaml": "^2.5.0",

@@ -21,6 +21,15 @@ export async function connectMongo(uri: string, dbName: string): Promise<Db> {
   await initResearchSessionsCollection(db);
   await ensureRaptorIndexes();
   await ensureUploadJobIndexes();
+  // GitHub Hub indexes (non-fatal if they fail)
+  try {
+    const { ensureGitHubIndexes } = await import("./githubSync/index.js");
+    await ensureGitHubIndexes();
+  } catch (err: unknown) {
+    log.warn("Failed to ensure GitHub Hub indexes (non-fatal)", {
+      error: (err as Error).message,
+    });
+  }
   return db;
 }
 
