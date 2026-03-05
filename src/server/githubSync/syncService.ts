@@ -201,7 +201,7 @@ export class GitHubSyncService {
 
       switch (task.type) {
         case "hot-prs":
-          await syncOpenPrs(config.token, config.org);
+          await syncOpenPrs(config.token, config.org, task.lastRunAt);
           break;
 
         case "org-sync":
