@@ -169,15 +169,18 @@ async function main() {
   const { attachWorkerWs } = await import("./workers/workerWs.js");
   attachWorkerWs(httpServer, config.internalApiToken);
 
-  // Auto-spawn one worker so the system is ready out of the box
+  // Auto-spawn worker processes so the system is ready out of the box
+  const defaultWorkerCount = Number(process.env.SOS_WORKER_PROCESSES) || 4;
   const { spawnWorkerProcess } = await import("./workers/spawnWorker.js");
-  try {
-    const pid = spawnWorkerProcess();
-    log.info("Auto-spawned default worker", { pid });
-  } catch (err: unknown) {
-    log.warn("Failed to auto-spawn worker (non-fatal)", {
-      error: err instanceof Error ? (err as Error).message : String(err),
-    });
+  for (let i = 0; i < defaultWorkerCount; i++) {
+    try {
+      const pid = spawnWorkerProcess();
+      log.info("Auto-spawned worker process", { pid, index: i + 1, total: defaultWorkerCount });
+    } catch (err: unknown) {
+      log.warn("Failed to auto-spawn worker (non-fatal)", {
+        error: err instanceof Error ? (err as Error).message : String(err),
+      });
+    }
   }
 
   // Start lease reaper (transitions stale RUNNING jobs to FAILED)
@@ -194,6 +197,18 @@ async function main() {
     }
   }
 
+  // Start GitHub Hub sync service (non-fatal if it fails)
+  try {
+    const { ensureGitHubIndexes, getGitHubSyncService } = await import("./githubSync/index.js");
+    await ensureGitHubIndexes();
+    const syncService = getGitHubSyncService();
+    await syncService.start();
+  } catch (err: unknown) {
+    log.warn("Failed to start GitHub sync service (non-fatal)", {
+      error: (err as Error).message,
+    });
+  }
+
   // Graceful shutdown
   const { shutdownAllWorkers } = await import("./workers/spawnWorker.js");
   const shutdown = async () => {
@@ -203,6 +218,12 @@ async function main() {
       await slackPoster.setPresenceAway();
     }
     stopLeaseReaper();
+    try {
+      const { getGitHubSyncService } = await import("./githubSync/index.js");
+      getGitHubSyncService().stop();
+    } catch {
+      /* best effort */
+    }
     await closeVectorStore();
     await closeMongo();
     process.exit(0);
