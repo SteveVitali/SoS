@@ -22,6 +22,7 @@ import {
   getContributionsCollection,
   getGitHubSettings,
   getGitHubSyncService,
+  getOctokit,
   getOrgMembersCollection,
   getPrsCollection,
   getRateLimitBudget,
@@ -531,7 +532,6 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
       let tokenScopes: string[] = [];
       if (config.token) {
         try {
-          const { getOctokit } = await import("../githubSync/octokitClient.js");
           const octokit = getOctokit(config.token);
           const resp = await octokit.users.getAuthenticated();
           tokenValid = true;

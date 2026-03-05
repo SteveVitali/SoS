@@ -25,7 +25,7 @@ export function ScopeToggle({ value, onChange }: ScopeToggleProps) {
         overflow: "hidden",
       }}
     >
-      {scopes.map((s) => (
+      {scopes.map((s, idx) => (
         <button
           key={s.key}
           type="button"
@@ -33,7 +33,7 @@ export function ScopeToggle({ value, onChange }: ScopeToggleProps) {
           style={{
             padding: "5px 14px",
             border: "none",
-            borderRight: s.key !== "org" ? "1px solid var(--border)" : "none",
+            borderRight: idx < scopes.length - 1 ? "1px solid var(--border)" : "none",
             background: value === s.key ? "var(--accent)" : "var(--bg2)",
             color: value === s.key ? "#fff" : "var(--fg2)",
             fontSize: 12,

@@ -8,7 +8,7 @@
 
 import type { ChunkInfo } from "../../shared/githubTypes.js";
 
-const MS_PER_DAY = 24 * 60 * 60 * 1000;
+export const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
 /**
  * Given any date, compute the chunk it belongs to.

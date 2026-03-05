@@ -107,10 +107,6 @@ export async function saveGitHubSettings(settings: Partial<GitHubSettings>): Pro
 
 // --- PR CRUD helpers ---
 
-export async function upsertPr(pr: GitHubPrDoc): Promise<void> {
-  await getPrsCollection().updateOne({ _id: pr._id }, { $set: pr }, { upsert: true });
-}
-
 export async function upsertPrsBatch(prs: GitHubPrDoc[]): Promise<number> {
   if (prs.length === 0) return 0;
   const ops = prs.map((pr) => ({
@@ -125,14 +121,6 @@ export async function upsertPrsBatch(prs: GitHubPrDoc[]): Promise<number> {
 }
 
 // --- Org member CRUD ---
-
-export async function upsertOrgMember(member: GitHubOrgMember): Promise<void> {
-  await getOrgMembersCollection().updateOne(
-    { _id: member._id },
-    { $set: member },
-    { upsert: true },
-  );
-}
 
 export async function upsertTeam(team: GitHubTeam): Promise<void> {
   await getTeamsCollection().updateOne({ _id: team._id }, { $set: team }, { upsert: true });

@@ -10,9 +10,8 @@
  * Respects rate limits and gracefully shuts down.
  */
 
-import type { ChunkInfo } from "../../shared/githubTypes.js";
 import { createLogger } from "../../shared/logger.js";
-import { buildChunkDocId, getAllChunks, parseChunkConfig } from "./chunks.js";
+import { buildChunkDocId, getAllChunks, MS_PER_DAY, parseChunkConfig } from "./chunks.js";
 import { rebuildContributions } from "./contributionSyncer.js";
 import type { ResolvedGitHubConfig } from "./githubConfig.js";
 import { resolveGitHubConfig } from "./githubConfig.js";
@@ -273,7 +272,7 @@ export class GitHubSyncService {
     });
 
     const org = config.org.toLowerCase();
-    const since = new Date(Date.now() - chunkConfig.historyDays * 24 * 60 * 60 * 1000);
+    const since = new Date(Date.now() - chunkConfig.historyDays * MS_PER_DAY);
     const now = new Date();
     const allChunks = getAllChunks(since, now, chunkConfig.epochDate, chunkConfig.chunkDays);
 
@@ -286,9 +285,9 @@ export class GitHubSyncService {
     if (existingSample) {
       const existingSpanMs =
         existingSample.chunk_end.getTime() - existingSample.chunk_start.getTime();
-      const configuredSpanMs = chunkConfig.chunkDays * 24 * 60 * 60 * 1000;
+      const configuredSpanMs = chunkConfig.chunkDays * MS_PER_DAY;
       if (Math.abs(existingSpanMs - configuredSpanMs) > 60_000) {
-        const oldDays = Math.round(existingSpanMs / (24 * 60 * 60 * 1000));
+        const oldDays = Math.round(existingSpanMs / MS_PER_DAY);
         log.warn("Chunk size changed, dropping stale chunks and re-initializing", {
           oldChunkDays: oldDays,
           newChunkDays: chunkConfig.chunkDays,

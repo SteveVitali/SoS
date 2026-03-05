@@ -7,6 +7,7 @@ export {
   getAllChunks,
   getChunkForDate,
   isCurrentChunk,
+  MS_PER_DAY,
   parseChunkConfig,
   toDateStr,
 } from "./chunks.js";

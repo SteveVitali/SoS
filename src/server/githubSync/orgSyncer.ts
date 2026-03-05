@@ -3,14 +3,9 @@
  * Warm-tier task: runs every 15-30 minutes.
  */
 
-import type { GitHubOrgMember, GitHubTeam } from "../../shared/githubTypes.js";
+import type { GitHubTeam } from "../../shared/githubTypes.js";
 import { createLogger } from "../../shared/logger.js";
-import {
-  getOrgMembersCollection,
-  getTeamsCollection,
-  upsertOrgMember,
-  upsertTeam,
-} from "./githubRepo.js";
+import { getOrgMembersCollection, getTeamsCollection, upsertTeam } from "./githubRepo.js";
 import { getOctokit, getRateLimitBudget, updateBudgetFromResponse } from "./octokitClient.js";
 import { writeSyncLog } from "./syncEventLog.js";
 
@@ -93,23 +88,22 @@ export async function syncTeamMembers(
       const login = member.login.toLowerCase();
       memberLogins.push(login);
 
-      // Upsert the member, adding this team to their teams array
-      const existing = await getOrgMembersCollection().findOne({ _id: login as any });
-      const teams = existing?.teams || [];
-      if (!teams.includes(teamSlug)) {
-        teams.push(teamSlug);
-      }
-
-      const doc: GitHubOrgMember = {
-        _id: login,
-        login: member.login,
-        avatar_url: member.avatar_url || "",
-        name: (member as any).name || existing?.name,
-        teams,
-        org,
-        synced_at: new Date(),
-      };
-      await upsertOrgMember(doc);
+      // Atomic upsert: always update base fields, $addToSet the team slug
+      await getOrgMembersCollection().updateOne(
+        { _id: login as any },
+        {
+          $set: {
+            login: member.login,
+            avatar_url: member.avatar_url || "",
+            org,
+            synced_at: new Date(),
+            ...((member as any).name ? { name: (member as any).name } : {}),
+          },
+          $addToSet: { teams: teamSlug },
+          $setOnInsert: { _id: login },
+        } as any,
+        { upsert: true },
+      );
     }
 
     return memberLogins;
@@ -141,18 +135,21 @@ export async function syncOrgMembers(token: string, org: string): Promise<number
 
     for (const member of members) {
       const login = member.login.toLowerCase();
-      const existing = await getOrgMembersCollection().findOne({ _id: login as any });
 
-      const doc: GitHubOrgMember = {
-        _id: login,
-        login: member.login,
-        avatar_url: member.avatar_url || "",
-        name: existing?.name,
-        teams: existing?.teams || [],
-        org,
-        synced_at: new Date(),
-      };
-      await upsertOrgMember(doc);
+      // Atomic upsert: update base fields, preserve name/teams on existing docs
+      await getOrgMembersCollection().updateOne(
+        { _id: login as any },
+        {
+          $set: {
+            login: member.login,
+            avatar_url: member.avatar_url || "",
+            org,
+            synced_at: new Date(),
+          },
+          $setOnInsert: { _id: login, name: undefined, teams: [] },
+        } as any,
+        { upsert: true },
+      );
       memberCount++;
     }
 

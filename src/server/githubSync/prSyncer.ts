@@ -8,7 +8,7 @@
 
 import type { GitHubPrDoc } from "../../shared/githubTypes.js";
 import { createLogger } from "../../shared/logger.js";
-import { buildChunkDocId, toDateStr } from "./chunks.js";
+import { buildChunkDocId, MS_PER_DAY, toDateStr } from "./chunks.js";
 import { getSyncChunk, upsertPrsBatch, upsertSyncChunk } from "./githubRepo.js";
 import { getOctokit, getRateLimitBudget, updateBudgetFromResponse } from "./octokitClient.js";
 import { writeSyncLog } from "./syncEventLog.js";
@@ -56,8 +56,9 @@ export async function syncOpenPrs(token: string, org: string): Promise<number> {
 
     let prs: GitHubPrDoc[];
     if (result.hitCap) {
-      // Subdivide by updated-date windows to get complete results
-      prs = await searchOpenPrsSubdivided(token, org, budget);
+      // Subdivide by updated-date windows to get complete results;
+      // seed with the PRs we already fetched so they aren't wasted.
+      prs = await searchOpenPrsSubdivided(token, org, budget, result.prs);
     } else {
       prs = result.prs;
     }
@@ -294,16 +295,22 @@ async function searchOpenPrsSubdivided(
   token: string,
   org: string,
   budget: ReturnType<typeof getRateLimitBudget>,
+  initialPrs: GitHubPrDoc[] = [],
 ): Promise<GitHubPrDoc[]> {
   const dedupMap = new Map<string, GitHubPrDoc>();
+
+  // Seed with any PRs already fetched from the initial broad query
+  for (const pr of initialPrs) {
+    dedupMap.set(pr._id, pr);
+  }
   const now = new Date();
 
   // Time windows: 0-30d, 30-90d, 90-180d, 180-365d, 365d+
   const windowDays = [30, 90, 180, 365];
 
   for (let i = 0; i < windowDays.length; i++) {
-    const recentDate = i === 0 ? now : new Date(now.getTime() - windowDays[i - 1] * 86400000);
-    const olderDate = new Date(now.getTime() - windowDays[i] * 86400000);
+    const recentDate = i === 0 ? now : new Date(now.getTime() - windowDays[i - 1] * MS_PER_DAY);
+    const olderDate = new Date(now.getTime() - windowDays[i] * MS_PER_DAY);
     const recentStr = toDateStr(recentDate);
     const olderStr = toDateStr(olderDate);
 
@@ -327,7 +334,7 @@ async function searchOpenPrsSubdivided(
 
   // Final window: very old open PRs (updated >365d ago)
   const oldestStr = toDateStr(
-    new Date(now.getTime() - windowDays[windowDays.length - 1] * 86400000),
+    new Date(now.getTime() - windowDays[windowDays.length - 1] * MS_PER_DAY),
   );
   const oldResult = await searchPrs(
     token,
