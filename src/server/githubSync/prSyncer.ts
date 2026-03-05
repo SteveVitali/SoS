@@ -52,7 +52,7 @@ export async function syncOpenPrs(token: string, org: string): Promise<number> {
 
   try {
     const query = `org:${org} type:pr is:open`;
-    const result = await searchPrs(token, query, budget);
+    const result = await searchPrs(token, query, budget, "hot_sync");
 
     let prs: GitHubPrDoc[];
     if (result.hitCap) {
@@ -134,21 +134,21 @@ export async function syncChunk(
 
     // Step 1: PRs created in this range
     const createdQuery = `org:${org} type:pr created:${chunkStart}..${endStr}`;
-    const created = await searchPrs(token, createdQuery, budget);
+    const created = await searchPrs(token, createdQuery, budget, "backfill");
     for (const pr of created.prs) {
       allPrs.set(pr._id, pr);
     }
 
     // Step 2: PRs merged in this range
     const mergedQuery = `org:${org} type:pr is:merged merged:${chunkStart}..${endStr}`;
-    const merged = await searchPrs(token, mergedQuery, budget);
+    const merged = await searchPrs(token, mergedQuery, budget, "backfill");
     for (const pr of merged.prs) {
       allPrs.set(pr._id, pr);
     }
 
     // Step 3: PRs closed (unmerged) in this range
     const closedQuery = `org:${org} type:pr is:unmerged is:closed closed:${chunkStart}..${endStr}`;
-    const closed = await searchPrs(token, closedQuery, budget);
+    const closed = await searchPrs(token, closedQuery, budget, "backfill");
     for (const pr of closed.prs) {
       allPrs.set(pr._id, pr);
     }
@@ -234,6 +234,7 @@ async function searchPrs(
   token: string,
   query: string,
   budget: ReturnType<typeof getRateLimitBudget>,
+  logCategory: "hot_sync" | "backfill" = "backfill",
 ): Promise<SearchResult> {
   const octokit = getOctokit(token);
   const allPrs: GitHubPrDoc[] = [];
@@ -263,6 +264,23 @@ async function searchPrs(
       }
     }
 
+    log.debug("Search page fetched", {
+      query: query.slice(0, 100),
+      page,
+      items: items.length,
+      total_count: response.data.total_count,
+      cumulative: allPrs.length,
+    });
+    await writeSyncLog(
+      "debug",
+      logCategory,
+      `GET search/issues p${page}: ${items.length} items (${allPrs.length}/${response.data.total_count} total) q=${query.slice(0, 80)}`,
+      {
+        api_endpoint: "GET /search/issues",
+        items_fetched: items.length,
+      },
+    );
+
     // Check if there are more pages
     if (items.length < perPage || allPrs.length >= response.data.total_count) {
       break;
@@ -274,8 +292,8 @@ async function searchPrs(
       log.warn("Search hit 1000-result cap", { query, total: response.data.total_count });
       await writeSyncLog(
         "warn",
-        "backfill",
-        `Search hit 1000-result cap for query: ${query.slice(0, 80)}`,
+        logCategory,
+        `Search hit 1000-result cap (${allPrs.length}/${response.data.total_count}) for: ${query.slice(0, 80)}`,
         { items_fetched: allPrs.length },
       );
       break;
@@ -283,6 +301,13 @@ async function searchPrs(
 
     page++;
   }
+
+  log.info("Search complete", {
+    query: query.slice(0, 100),
+    pages: page,
+    prs: allPrs.length,
+    hitCap,
+  });
 
   return { prs: allPrs, hitCap };
 }
@@ -319,14 +344,23 @@ async function searchOpenPrsSubdivided(
         ? `org:${org} type:pr is:open updated:>=${olderStr}`
         : `org:${org} type:pr is:open updated:${olderStr}..${recentStr}`;
 
-    const result = await searchPrs(token, query, budget);
+    const windowLabel = i === 0 ? `updated:>=${olderStr}` : `updated:${olderStr}..${recentStr}`;
+    const result = await searchPrs(token, query, budget, "hot_sync");
+    const newPrs = result.prs.filter((pr) => !dedupMap.has(pr._id)).length;
     for (const pr of result.prs) {
       dedupMap.set(pr._id, pr);
     }
 
+    await writeSyncLog(
+      "info",
+      "hot_sync",
+      `Subdivision window ${windowLabel}: ${result.prs.length} PRs (${newPrs} new, ${dedupMap.size} cumulative)`,
+      { items_fetched: result.prs.length },
+    );
+
     if (result.hitCap) {
       log.warn("Subdivision window still hit 1000-result cap", {
-        window: `${olderStr}..${recentStr}`,
+        window: windowLabel,
         fetched: result.prs.length,
       });
     }
@@ -340,15 +374,31 @@ async function searchOpenPrsSubdivided(
     token,
     `org:${org} type:pr is:open updated:<${oldestStr}`,
     budget,
+    "hot_sync",
   );
+  const oldNew = oldResult.prs.filter((pr) => !dedupMap.has(pr._id)).length;
   for (const pr of oldResult.prs) {
     dedupMap.set(pr._id, pr);
   }
+
+  await writeSyncLog(
+    "info",
+    "hot_sync",
+    `Subdivision window updated:<${oldestStr}: ${oldResult.prs.length} PRs (${oldNew} new, ${dedupMap.size} cumulative)`,
+    { items_fetched: oldResult.prs.length },
+  );
 
   log.info("Open PR subdivision complete", {
     windows: windowDays.length + 1,
     totalPrs: dedupMap.size,
   });
+
+  await writeSyncLog(
+    "info",
+    "hot_sync",
+    `Open PR subdivision complete: ${windowDays.length + 1} windows, ${dedupMap.size} unique PRs (seeded with ${initialPrs.length})`,
+    { items_fetched: dedupMap.size },
+  );
 
   return Array.from(dedupMap.values());
 }
