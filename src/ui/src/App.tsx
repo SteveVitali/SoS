@@ -3,13 +3,12 @@ import { Link, Route, Routes, useLocation } from "react-router-dom";
 import { CreateJobForm } from "./components/CreateJobForm.js";
 import { ChatDetail } from "./components/chat/ChatDetail.js";
 import { ChatsList } from "./components/chat/ChatsList.js";
+import { GitHubPage } from "./components/github/GitHubPage.js";
 import { JobDetail } from "./components/jobs/JobDetail.js";
 import { JobsList } from "./components/jobs/JobsList.js";
 import { KBDetail } from "./components/kb/KBDetail.js";
 import { KBList } from "./components/kb/KBList.js";
 import { ModelsPage } from "./components/models/ModelsPage.js";
-import { PrsList } from "./components/prs/PrsList.js";
-import { RepoRegistryEditor } from "./components/registry/RepoRegistryEditor.js";
 import { ResearchPage } from "./components/research/ResearchPage.js";
 import { RoutingConfigEditor } from "./components/routing/RoutingConfigEditor.js";
 import { NavTab } from "./components/shared/NavTab.js";
@@ -25,12 +24,11 @@ function AppShell() {
   const isChatsTab = path === "/chats" || path.startsWith("/chats/");
   const showChatsList = path === "/chats";
   const showJobsList = path === "/";
-  const showPrsList = path === "/prs";
+  const isGitHubTab = path === "/github" || path.startsWith("/github");
+  const showGitHubPage = path === "/github";
   const isWorkersTab = path === "/workers" || path.startsWith("/workers/");
   const showWorkersList = path === "/workers";
   const isJobsTab = path === "/" || path.startsWith("/jobs");
-  const isPrsTab = path === "/prs";
-  const isReposTab = path === "/repos";
   const isKnowledgeTab = path === "/knowledge" || path.startsWith("/knowledge/");
   const showKnowledgeList = path === "/knowledge";
   const isResearchTab = path === "/research";
@@ -47,9 +45,8 @@ function AppShell() {
           <div style={{ display: "flex", gap: 0, marginLeft: 16 }}>
             <NavTab to="/chats" label="Chats" active={isChatsTab} />
             <NavTab to="/" label="Jobs" active={isJobsTab} />
-            <NavTab to="/prs" label="PRs" active={isPrsTab} />
+            <NavTab to="/github" label="Git" active={isGitHubTab} />
             <NavTab to="/workers" label="Workers" active={isWorkersTab} />
-            <NavTab to="/repos" label="Repos" active={isReposTab} />
             <NavTab to="/knowledge" label="Knowledge" active={isKnowledgeTab} />
             <NavTab to="/research" label="Research" active={isResearchTab} />
             <NavTab to="/routing" label="Routing" active={isRoutingTab} />
@@ -77,8 +74,8 @@ function AppShell() {
       <div style={{ display: showJobsList ? "block" : "none" }}>
         <JobsList />
       </div>
-      <div style={{ display: showPrsList ? "block" : "none" }}>
-        <PrsList />
+      <div style={{ display: showGitHubPage ? "block" : "none" }}>
+        <GitHubPage />
       </div>
       <div style={{ display: showWorkersList ? "block" : "none" }}>
         <WorkersList />
@@ -91,7 +88,6 @@ function AppShell() {
       <Routes>
         <Route path="/workers/:id" element={<WorkerDetail />} />
         <Route path="/chats/:id" element={<ChatDetail />} />
-        <Route path="/repos" element={<RepoRegistryEditor />} />
         <Route path="/knowledge/:id" element={<KBDetail />} />
         <Route path="/research" element={<ResearchPage />} />
         <Route path="/routing" element={<RoutingConfigEditor />} />
