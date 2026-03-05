@@ -107,6 +107,7 @@ export class OpenAICompatibleProvider implements LLMProvider {
       model: params.model,
       prompt: params.prompt,
       n: 1,
+      response_format: "b64_json",
     };
 
     // gpt-image-1 and dall-e-3 support different param sets
