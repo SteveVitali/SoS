@@ -76,7 +76,6 @@ The worker also supports additional job types:
 - **`respond_to_pr_comments`** — fetches unresolved PR review threads, runs Claude to address each thread, commits, pushes, and replies to the threads.
 - **`self_review_pr`** — checks out an existing PR branch, runs a self-review pass (Claude as Staff Engineer code reviewer), fixes issues found, and pushes.
 - **`add_pr_review_comments`** — reviews a PR and posts inline review comments on GitHub as the bot.
-- **`github_summary`** — fetches GitHub activity data (merged PRs, reviews, stats) via `gh` CLI, builds an LLM prompt, runs Claude to generate a narrative recap, and posts the formatted summary.
 
 On startup, the worker **registers** with the server (hostname, PID, concurrency) and opens a **WebSocket** connection for real-time log streaming and receiving commands (e.g., shutdown). Each loop reports its status (idle/busy, current task) on every poll cycle. Claude's raw stream-json output is teed to the server via WebSocket so it can be viewed live in the web UI.
 
@@ -84,7 +83,7 @@ Workers are **stateless** — all persistent state lives in MongoDB via the serv
 
 ### MongoDB
 
-Twelve collections:
+Thirteen collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
@@ -423,10 +422,10 @@ son-of-steve/
 │   │   │   ├── anthropicProvider.ts   # Anthropic API implementation
 │   │   │   ├── openaiProvider.ts      # OpenAI-compatible implementation
 │   │   │   └── index.ts               # Provider factory
-│   │   ├── github/                # Legacy gh CLI-based GitHub queries (instant queries, recap data)
-│   │   │   ├── teamCache.ts       # Cached GitHub team member resolution via Teams API
-│   │   │   ├── queries.ts         # gh CLI wrappers for PR search, recap data fetching
-│   │   │   ├── formatting.ts      # Slack formatting for query results + LLM prompt builders
+│   │   ├── github/                # GitHub instant queries + inline recaps (MongoDB-backed)
+│   │   │   ├── mongoQueries.ts    # Instant query execution from MongoDB cache
+│   │   │   ├── mongoFormatting.ts # Slack formatting for query results (rich data from sync cache)
+│   │   │   ├── recapService.ts    # Inline recap execution (MongoDB data fetch → LLM summary)
 │   │   │   └── index.ts           # Barrel export
 │   │   ├── githubSync/            # GitHub Hub sync engine (REST API + MongoDB cache)
 │   │   │   ├── syncService.ts     # Main orchestrator: priority-queue loop (hot PRs, backfill, org sync, contributions)
@@ -484,8 +483,7 @@ son-of-steve/
 │   │       ├── router.ts        # Mount worker + web + chat + KB + GitHub routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)
 │   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, routing, models, worktrees)
-│   │       ├── githubRoutes.ts  # /api/web/github/* (PRs, contributions, teams, sync, settings)
-│   │       └── ghPrs.ts         # Legacy GitHub PR listing + comment stats (with TTL cache)
+│   │       └── githubRoutes.ts  # /api/web/github/* (PRs, contributions, teams, sync, settings)
 │   │
 │   ├── worker/                # sos-worker process
 │   │   ├── index.ts           # Entry point: register, start loops, connect WS
@@ -498,10 +496,10 @@ son-of-steve/
 │   │   └── executor/
 │   │       ├── runJob.ts              # Main orchestrator: full create-job workflow
 │   │       ├── runPlanJob.ts          # Pre-flight planning workflow (read-only Claude)
-│   │       ├── runGithubSummaryJob.ts # GitHub recap summary (data fetch → Claude → format)
 │   │       ├── runRespondToComments.ts # PR comment review workflow
 │   │       ├── runSelfReviewPr.ts      # Self-review existing PR (Claude as reviewer → fix → push)
 │   │       ├── runAddReviewComments.ts # Review PR and post inline comments on GitHub
+│   │       ├── executorContext.ts      # Shared execution context (logger, API client, abort signal)
 │   │       ├── errors.ts              # Sentinel errors (RequeueError, LeaseAbortedError)
 │   │       ├── repoRegistry.ts        # YAML registry loader
 │   │       ├── repoResolver.ts        # Hint/keyword-based repo resolution
@@ -529,13 +527,18 @@ son-of-steve/
 │           │   └── AppDataContext.tsx  # Shared state + polling (jobs, PRs, workers, etc.)
 │           └── components/
 │               ├── chat/          # ChatsList, ChatDetail
-│               ├── jobs/          # JobsList, JobDetail (incl. ResearchAudit), JobRow, etc.
+│               ├── jobs/          # JobsList, JobDetail, JobRow, EventsTimeline, PerformanceCard, ResearchAudit
 │               ├── kb/            # KBList, KBDetail, KBPlayground, kbShared, ResearchPlayground, ResearchTimeline, ResearchHistory, RaptorStatus, RaptorTree, StrategyComparison
 │               ├── prs/           # PrsList, PrRow
-│               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal
-│               ├── registry/      # RepoRegistryEditor
+│               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal, LogTerminal
+│               ├── github/        # GitHubPage, GitHubPrsView, GitHubContributionsView, GitHubSyncDashboard, GitHubSettingsView, ScopeToggle, TeamCombobox, TeamMemberRoster
+│               ├── models/        # ModelsPage, ModelAutocomplete
+│               ├── research/      # ResearchPage
+│               ├── registry/      # RepoRegistryEditor, RepoCard, CommandEditor
 │               ├── routing/       # RoutingConfigEditor, ParameterListEditor, ExecutionEditor
-│               └── shared/        # PageHeader, NavTab, HoverRow, Badge, Spinner, etc.
+│               ├── CreateJobForm.tsx   # Web UI job creation form
+│               ├── TokenSetup.tsx      # First-run token setup wizard
+│               └── shared/        # PageHeader, NavTab, HoverRow, Badge, Spinner, Pagination, SortPills, etc.
 │
 ├── docs/                  # Documentation
 ├── package.json
@@ -592,9 +595,9 @@ Claude Code can produce hundreds of stream-json lines per second during an activ
 
 Responding to PR review comments is fundamentally different from creating new code: the worker needs to check out the existing PR branch, read specific review threads, fix each one, and reply inline. Rather than cramming this into the `create` pipeline with flags, a dedicated `respond_to_pr_comments` job type has its own clean workflow in `runRespondToComments.ts`.
 
-### Why split GitHub queries into instant vs. async?
+### Why split GitHub queries into instant vs. recap?
 
-GitHub queries like "my open PRs" or "team review requests" are fast `gh search prs` calls that return in seconds — these execute synchronously on the server and return results directly in the Slack reply. Recap summaries ("my weekly recap", "team recap") require fetching data for potentially many team members, enriching PRs with per-PR detail calls, then running Claude to generate a narrative — this can take minutes, so they're queued as `github_summary` worker jobs. A single polymorphic `github` tool in the LLM router handles both; the `commandExecutor` dispatches to the right path based on the `query_type`.
+Instant queries ("my open PRs", "team review requests") read directly from the MongoDB sync cache and return results in the Slack reply within seconds. Recap summaries ("my weekly recap", "team recap") also read from MongoDB but additionally run an LLM call to generate a narrative — these execute inline on the server via `recapService.ts` (no background worker job needed). A single polymorphic `github` tool in the LLM router handles both; the `commandExecutor` dispatches to the right path based on the `query_type`.
 
 ### Why a local vector database for knowledge bases?
 

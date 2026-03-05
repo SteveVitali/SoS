@@ -87,7 +87,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 1. Add to `WorkerEventType` union in `src/shared/types.ts`
 2. If it should update job fields, add handling in `jobService.ts` → `handleWorkerEvent`
-3. If it should trigger a Slack message, add to `SLACK_NOTIFY_EVENTS` and handle in `formatting.ts`
+3. If it should trigger a Slack message, add to `SLACK_NOTIFY_EVENTS` and handle in `src/server/slack/formatting.ts`
 4. Emit from the appropriate place in `src/worker/executor/runJob.ts`
 
 ### Adding a new CI provider
