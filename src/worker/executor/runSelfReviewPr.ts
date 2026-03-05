@@ -52,9 +52,14 @@ export async function runSelfReviewPr(
     await ctx.events.emit("PHASE_STARTED", { phase: "prepare_workspace" });
     const branch = getPrBranch(prUrl);
     const baseBranch = getPrBaseBranch(prUrl);
-    const clonePath = ensureClone(config.workspaceRoot, repo);
+    const clonePath = await ensureClone(config.workspaceRoot, repo);
 
-    ctx.acquiredSlot = worktreePool.acquireExistingBranch(repo, clonePath, job.task_id, branch);
+    ctx.acquiredSlot = await worktreePool.acquireExistingBranch(
+      repo,
+      clonePath,
+      job.task_id,
+      branch,
+    );
     if (!ctx.acquiredSlot) {
       throw new RequeueError(
         `No worktree slots available for ${repo.id} (max: ${repo.max_worktrees})`,
@@ -120,6 +125,6 @@ export async function runSelfReviewPr(
   } catch (err: unknown) {
     await ctx.handleError(err);
   } finally {
-    ctx.releaseWorktree();
+    await ctx.releaseWorktree();
   }
 }

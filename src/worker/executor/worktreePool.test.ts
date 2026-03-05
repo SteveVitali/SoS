@@ -16,6 +16,12 @@ vi.mock("node:fs", () => ({
   unlinkSync: vi.fn(),
 }));
 
+// Mock repoLock — withRepoLock just runs the callback immediately
+vi.mock("./repoLock.js", () => ({
+  // biome-ignore lint/suspicious/noExplicitAny: test mock type
+  withRepoLock: vi.fn(async (_repoId: string, fn: () => any) => fn()),
+}));
+
 // Import after mocks are set up
 const { worktreePool } = await import("./worktreePool.js");
 const { existsSync, readFileSync, readdirSync } = await import("node:fs");
@@ -51,9 +57,9 @@ describe("WorktreePool", () => {
   });
 
   describe("acquire", () => {
-    it("creates a new slot when pool is empty", () => {
+    it("creates a new slot when pool is empty", async () => {
       const repo = makeRepo({ max_worktrees: 2 });
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/fix-bug");
+      const slot = await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/fix-bug");
 
       expect(slot).not.toBeNull();
       expect(slot?.slotName as string).toBe("my-repo-n-1");
@@ -62,59 +68,118 @@ describe("WorktreePool", () => {
       expect(slot?.worktreePath).toContain("worktrees/my-repo-n-1");
     });
 
-    it("creates a second slot when first is in use", () => {
+    it("creates a second slot when first is in use", async () => {
       const repo = makeRepo({ max_worktrees: 2 });
-      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
-      const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
+      await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot2 = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-2",
+        "sos/branch-2",
+      );
 
       expect(slot2).not.toBeNull();
       expect(slot2?.slotName as string).toBe("my-repo-n-2");
       expect(slot2?.slotIndex).toBe(2);
     });
 
-    it("returns null when all slots are occupied and at max", () => {
+    it("returns null when all slots are occupied and at max", async () => {
       const repo = makeRepo({ max_worktrees: 1 });
-      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
-      const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
+      await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot2 = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-2",
+        "sos/branch-2",
+      );
 
       expect(slot2).toBeNull();
     });
 
-    it("reuses a released slot", () => {
+    it("rolls back slot reservation if resetWorktree fails", async () => {
+      // Discover one existing slot
+      // biome-ignore lint/suspicious/noExplicitAny: test mock type
+      vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
+
       const repo = makeRepo({ max_worktrees: 1 });
-      const slot1 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+
+      // Make the fetch inside resetWorktree throw (simulates git fetch failure)
+      let callCount = 0;
+      vi.mocked(execSync).mockImplementation(() => {
+        callCount++;
+        // The first execSync call in resetWorktree is git fetch — make it fail
+        if (callCount === 1) throw new Error("fetch failed");
+        return "";
+      });
+
+      await expect(
+        worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1"),
+      ).rejects.toThrow("fetch failed");
+
+      // Slot should NOT be permanently leaked — it should be free again
+      expect(worktreePool.isInUse("my-repo", "my-repo-n-1")).toBe(false);
+
+      // A subsequent acquire should succeed (reset mocks first)
+      vi.mocked(execSync).mockImplementation(() => "");
+      const slot = await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/b2");
+      expect(slot).not.toBeNull();
+    });
+
+    it("reuses a released slot", async () => {
+      const repo = makeRepo({ max_worktrees: 1 });
+      const slot1 = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-1",
+        "sos/branch-1",
+      );
       expect(slot1).not.toBeNull();
 
-      worktreePool.release("my-repo", slot1?.slotName as string);
+      await worktreePool.release("my-repo", slot1?.slotName as string);
 
-      const slot2 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/branch-2");
+      const slot2 = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-2",
+        "sos/branch-2",
+      );
       expect(slot2).not.toBeNull();
       expect(slot2?.slotName as string).toBe(slot1?.slotName as string); // same slot reused
     });
   });
 
   describe("release", () => {
-    it("marks a slot as available", () => {
+    it("marks a slot as available", async () => {
       const repo = makeRepo({ max_worktrees: 1 });
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-1",
+        "sos/branch-1",
+      );
       expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(true);
 
-      worktreePool.release("my-repo", slot?.slotName as string);
+      await worktreePool.release("my-repo", slot?.slotName as string);
       expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(false);
     });
 
-    it("is a no-op for unknown repo", () => {
+    it("is a no-op for unknown repo", async () => {
       // Should not throw
-      worktreePool.release("nonexistent", "fake-slot");
+      await worktreePool.release("nonexistent", "fake-slot");
     });
 
-    it("parks worktree on base branch and deletes feature branch", () => {
+    it("parks worktree on base branch and deletes feature branch", async () => {
       const repo = makeRepo({ max_worktrees: 1 });
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-1",
+        "sos/branch-1",
+      );
       expect(slot).not.toBeNull();
 
       vi.mocked(execSync).mockClear();
-      worktreePool.release("my-repo", slot?.slotName as string);
+      await worktreePool.release("my-repo", slot?.slotName as string);
 
       const calls = vi.mocked(execSync).mock.calls.map((c) => c[0]);
       // Should fetch origin main
@@ -127,9 +192,14 @@ describe("WorktreePool", () => {
       expect(calls.some((c) => (c as string).includes("branch -D sos/branch-1"))).toBe(true);
     });
 
-    it("does not throw if park fails", () => {
+    it("does not throw if park fails", async () => {
       const repo = makeRepo({ max_worktrees: 1 });
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-1",
+        "sos/branch-1",
+      );
       expect(slot).not.toBeNull();
 
       // Make git commands fail during release
@@ -138,7 +208,9 @@ describe("WorktreePool", () => {
       });
 
       // Should not throw — park is best-effort
-      expect(() => worktreePool.release("my-repo", slot?.slotName as string)).not.toThrow();
+      await expect(
+        worktreePool.release("my-repo", slot?.slotName as string),
+      ).resolves.not.toThrow();
       expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(false);
     });
   });
@@ -148,51 +220,61 @@ describe("WorktreePool", () => {
       expect(worktreePool.isInUse("unknown", "slot")).toBe(false);
     });
 
-    it("returns correct state after acquire and release", () => {
+    it("returns correct state after acquire and release", async () => {
       const repo = makeRepo();
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-1",
+        "sos/branch-1",
+      );
 
       expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(true);
-      worktreePool.release("my-repo", slot?.slotName as string);
+      await worktreePool.release("my-repo", slot?.slotName as string);
       expect(worktreePool.isInUse("my-repo", slot?.slotName as string)).toBe(false);
     });
   });
 
   describe("discovery of existing worktrees", () => {
-    it("picks up existing worktree directories on first access", () => {
+    it("picks up existing worktree directories on first access", async () => {
       // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any, "my-repo-n-2" as any]);
 
       const repo = makeRepo({ max_worktrees: 3 });
       // First acquire should discover the 2 existing slots, reuse one
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/branch-1");
+      const slot = await worktreePool.acquire(
+        repo,
+        "/tmp/clones/my-repo",
+        "task-1",
+        "sos/branch-1",
+      );
 
       expect(slot).not.toBeNull();
       expect(slot?.slotName as string).toBe("my-repo-n-1"); // reuses first discovered
     });
 
-    it("respects max_worktrees even with discovered slots", () => {
+    it("respects max_worktrees even with discovered slots", async () => {
       // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any, "my-repo-n-2" as any]);
 
       const repo = makeRepo({ max_worktrees: 2 });
       // Acquire both discovered slots
-      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
-      worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/b2");
+      await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+      await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/b2");
 
       // Third should return null — at max
-      const slot3 = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-3", "sos/b3");
+      const slot3 = await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-3", "sos/b3");
       expect(slot3).toBeNull();
     });
   });
 
   describe("independent repo pools", () => {
-    it("manages slots independently per repo", () => {
+    it("manages slots independently per repo", async () => {
       const repo1 = makeRepo({ id: "repo-a", max_worktrees: 1 });
       const repo2 = makeRepo({ id: "repo-b", max_worktrees: 1 });
 
-      const slot1 = worktreePool.acquire(repo1, "/tmp/clones/repo-a", "t1", "sos/b1");
-      const slot2 = worktreePool.acquire(repo2, "/tmp/clones/repo-b", "t2", "sos/b2");
+      const slot1 = await worktreePool.acquire(repo1, "/tmp/clones/repo-a", "t1", "sos/b1");
+      const slot2 = await worktreePool.acquire(repo2, "/tmp/clones/repo-b", "t2", "sos/b2");
 
       expect(slot1).not.toBeNull();
       expect(slot2).not.toBeNull();
@@ -202,7 +284,7 @@ describe("WorktreePool", () => {
   });
 
   describe("file-based locking", () => {
-    it("denies acquire when lockfile held by a live process", () => {
+    it("denies acquire when lockfile held by a live process", async () => {
       // Discover one existing slot on disk
       // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
@@ -215,13 +297,13 @@ describe("WorktreePool", () => {
       );
 
       const repo = makeRepo({ max_worktrees: 1 });
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+      const slot = await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
 
       // PID 1 is always alive, so the slot should be denied
       expect(slot).toBeNull();
     });
 
-    it("reclaims slot when lockfile held by a dead process", () => {
+    it("reclaims slot when lockfile held by a dead process", async () => {
       // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
 
@@ -235,14 +317,14 @@ describe("WorktreePool", () => {
       );
 
       const repo = makeRepo({ max_worktrees: 1 });
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+      const slot = await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
 
       // Dead PID → stale lock removed → slot available
       expect(slot).not.toBeNull();
       expect(slot?.slotName as string).toBe("my-repo-n-1");
     });
 
-    it("allows acquire when lockfile is from our own process", () => {
+    it("allows acquire when lockfile is from our own process", async () => {
       // biome-ignore lint/suspicious/noExplicitAny: test mock type
       vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
 
@@ -256,7 +338,7 @@ describe("WorktreePool", () => {
       );
 
       const repo = makeRepo({ max_worktrees: 1 });
-      const slot = worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
+      const slot = await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1");
 
       expect(slot).not.toBeNull();
       expect(slot?.slotName as string).toBe("my-repo-n-1");

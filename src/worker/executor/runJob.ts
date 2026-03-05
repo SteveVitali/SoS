@@ -218,10 +218,10 @@ export async function runJob(
     // 2) Prepare workspace via worktree pool
     t0 = Date.now();
     await events.emit("PHASE_STARTED", { phase: "prepare_workspace" });
-    const clonePath = ensureClone(config.workspaceRoot, repo);
+    const clonePath = await ensureClone(config.workspaceRoot, repo);
     const branch = `sos/${job.task_id.slice(0, 8)}-${slugify(job.task_text, 30)}`;
 
-    acquiredSlot = worktreePool.acquire(repo, clonePath, job.task_id, branch);
+    acquiredSlot = await worktreePool.acquire(repo, clonePath, job.task_id, branch);
     if (!acquiredSlot) {
       throw new RequeueError(
         `No worktree slots available for ${repo.id} (max: ${repo.max_worktrees})`,
@@ -659,7 +659,7 @@ export async function runJob(
   } finally {
     // Always release the worktree slot back to the pool
     if (acquiredSlot && resolvedRepoId) {
-      worktreePool.release(resolvedRepoId, acquiredSlot.slotName);
+      await worktreePool.release(resolvedRepoId, acquiredSlot.slotName);
     }
   }
 }
