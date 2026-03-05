@@ -40,6 +40,13 @@ export interface SlackPoster {
   postEvent(job: JobDoc, type: string, payload?: any): Promise<void>;
   fetchThread(channelId: string, threadTs: string, limit?: number): Promise<SlackThreadMessage[]>;
   downloadFile(urlPrivate: string): Promise<Buffer>;
+  uploadFile(
+    channelId: string,
+    threadTs: string,
+    file: Buffer,
+    filename: string,
+    title?: string,
+  ): Promise<void>;
   setPresenceActive(): Promise<void>;
   setPresenceAway(): Promise<void>;
 }
@@ -195,6 +202,30 @@ export function createSlackPoster(botToken: string, notifyUserId?: string): Slac
       }
       const arrayBuffer = await response.arrayBuffer();
       return Buffer.from(arrayBuffer);
+    },
+
+    async uploadFile(
+      channelId: string,
+      threadTs: string,
+      file: Buffer,
+      filename: string,
+      title?: string,
+    ): Promise<void> {
+      try {
+        await client.filesUploadV2({
+          channel_id: channelId,
+          thread_ts: threadTs,
+          file,
+          filename,
+          title: title || filename,
+        });
+      } catch (err: unknown) {
+        log.error("Failed to upload file to Slack", {
+          error: (err as Error).message,
+          channel: channelId,
+          filename,
+        });
+      }
     },
 
     async setPresenceActive() {

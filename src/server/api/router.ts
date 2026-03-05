@@ -16,6 +16,9 @@ export function createRouter(config: ServerConfig, slackPoster?: SlackPoster): R
   router.use("/api/worker", internalAuth(config.internalApiToken), createWorkerRoutes(slackPoster));
   router.use("/api/worker/kb", internalAuth(config.internalApiToken), createKBWorkerRoutes());
 
+  // Image serving — no auth required (UUIDs are unguessable, images are immutable)
+  router.use("/api/web/images", createImageRoutes());
+
   // Web routes — optional basic auth or Bearer token
   const webAuth = config.webBasicAuthUser
     ? optionalBasicAuth(config.webBasicAuthUser, config.webBasicAuthPass)
@@ -24,7 +27,6 @@ export function createRouter(config: ServerConfig, slackPoster?: SlackPoster): R
   router.use("/api/web", webAuth, createWebRoutes(config));
   router.use("/api/web/chats", webAuth, createChatRoutes(config));
   router.use("/api/web/kb", webAuth, createKBWebRoutes());
-  router.use("/api/web/images", webAuth, createImageRoutes());
   router.use("/api/web/github", webAuth, createGitHubRoutes(config));
 
   return router;

@@ -10,9 +10,6 @@ export interface CommandResult {
   reply: string;
   actionTaken: string;
   taskId?: string;
-  // TODO: Slack message handler doesn't consume images yet — Slack-originated
-  // image generation returns text only. Consider uploading via files.upload or
-  // appending a "view in web chat" note to the reply.
   images?: Array<{ url: string; alt?: string }>;
 }
 
