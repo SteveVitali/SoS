@@ -83,13 +83,15 @@ export async function fetchTeamRecapData(
     .project<{ _id: string }>({ _id: 1 })
     .toArray();
 
-  const memberRecaps: TeamRecapData["members"] = [];
-  for (const m of members.map((member) => member._id)) {
-    const recap = await fetchMyRecapData(org, m, since);
-    if (recap.mergedPrs.length > 0 || recap.reviewedPrs.length > 0) {
-      memberRecaps.push({ username: m, recap });
-    }
-  }
+  const allRecaps = await Promise.all(
+    members.map(async (member) => {
+      const recap = await fetchMyRecapData(org, member._id, since);
+      return { username: member._id, recap };
+    }),
+  );
+  const memberRecaps = allRecaps.filter(
+    (m) => m.recap.mergedPrs.length > 0 || m.recap.reviewedPrs.length > 0,
+  );
   memberRecaps.sort((a, b) => b.recap.mergedPrs.length - a.recap.mergedPrs.length);
 
   return {

@@ -26,6 +26,8 @@ const KNOWN_DIMENSIONS: Record<string, number> = {
   "text-embedding-3-small": 1536,
   "text-embedding-3-large": 3072,
   "text-embedding-ada-002": 1536,
+  "amazon.titan-embed-text-v2:0": 1024,
+  "bedrock/amazon.titan-embed-text-v2:0": 1024,
 };
 
 const MAX_BATCH_SIZE = 2048;
