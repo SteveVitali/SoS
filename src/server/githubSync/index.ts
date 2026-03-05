@@ -11,6 +11,7 @@ export {
   parseChunkConfig,
   toDateStr,
 } from "./chunks.js";
+export { rebuildContributions } from "./contributionSyncer.js";
 export type { ResolvedGitHubConfig } from "./githubConfig.js";
 export {
   getGitHubConfigSync,
@@ -32,4 +33,7 @@ export {
   saveGitHubSettings,
 } from "./githubRepo.js";
 export { getOctokit, getRateLimitBudget, resetOctokitClient } from "./octokitClient.js";
+export { syncOrg, syncOrgMembers, syncOrgTeams, syncTeamMembers } from "./orgSyncer.js";
+export { syncChunk, syncOpenPrs } from "./prSyncer.js";
 export { getRecentSyncLogs, subscribeSyncLog, writeSyncLog } from "./syncEventLog.js";
+export { GitHubSyncService, getGitHubSyncService } from "./syncService.js";
