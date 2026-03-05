@@ -20,6 +20,8 @@ import {
   getIncompleteChunks,
   getSyncChunk,
   getSyncChunksCollection,
+  getSyncCursor,
+  setSyncCursor,
   upsertSyncChunk,
 } from "./githubRepo.js";
 import { getRateLimitBudget } from "./octokitClient.js";
@@ -74,6 +76,15 @@ export class GitHubSyncService {
 
     this.running = true;
 
+    // Restore last hot sync cursor from MongoDB (survives reboots)
+    const cursor = await getSyncCursor(config.org.toLowerCase());
+    const restoredLastRun = cursor.last_hot_sync_at;
+    if (restoredLastRun) {
+      log.info("Restored hot sync cursor from MongoDB", {
+        last_hot_sync_at: restoredLastRun.toISOString(),
+      });
+    }
+
     // Initialize tasks
     this.tasks = [
       {
@@ -82,6 +93,7 @@ export class GitHubSyncService {
         priority: 1,
         nextRunAt: new Date(), // run immediately
         intervalMs: config.hotIntervalSeconds * 1000,
+        lastRunAt: restoredLastRun,
       },
       {
         id: "org-sync",
@@ -202,6 +214,8 @@ export class GitHubSyncService {
       switch (task.type) {
         case "hot-prs":
           await syncOpenPrs(config.token, config.org, task.lastRunAt);
+          // Persist cursor so it survives reboots
+          await setSyncCursor(config.org.toLowerCase(), new Date());
           break;
 
         case "org-sync":

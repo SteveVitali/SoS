@@ -150,6 +150,30 @@ export async function getIncompleteChunks(
     .toArray();
 }
 
+// --- Sync cursor (persists across reboots) ---
+
+interface SyncCursorDoc {
+  _id: string;
+  last_hot_sync_at?: Date;
+}
+
+function getSyncStateCollection(): Collection<SyncCursorDoc> {
+  return getDb().collection<SyncCursorDoc>("github_sync_state");
+}
+
+export async function getSyncCursor(org: string): Promise<{ last_hot_sync_at?: Date }> {
+  const doc = await getSyncStateCollection().findOne({ _id: org });
+  return { last_hot_sync_at: doc?.last_hot_sync_at };
+}
+
+export async function setSyncCursor(org: string, lastHotSyncAt: Date): Promise<void> {
+  await getSyncStateCollection().updateOne(
+    { _id: org },
+    { $set: { last_hot_sync_at: lastHotSyncAt } },
+    { upsert: true },
+  );
+}
+
 export async function getChunkStats(
   org: string,
   dataType: string,
