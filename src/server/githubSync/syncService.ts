@@ -283,8 +283,9 @@ export class GitHubSyncService {
 
     const chunkStart = next.chunk_start.toISOString().split("T")[0];
     const chunkEnd = next.chunk_end.toISOString().split("T")[0];
+    const org = config.org.toLowerCase();
 
-    await syncChunk(config.token, config.org, chunkStart, chunkEnd);
+    await syncChunk(config.token, org, chunkStart, chunkEnd);
   }
 
   private async initializeBackfillChunks(config: ResolvedGitHubConfig): Promise<void> {

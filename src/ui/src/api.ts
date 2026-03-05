@@ -1261,6 +1261,12 @@ export interface SyncStatusResponse {
     search: { tokens_available: number; limit: number };
     backfill_budget_available: number;
   };
+  cached_counts: {
+    prs: number;
+    open_prs: number;
+    members: number;
+    teams: number;
+  };
   hot_sync: {
     last_run_at?: string;
     next_run_at?: string;

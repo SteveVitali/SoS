@@ -169,6 +169,12 @@ export interface SyncStatusResponse {
   };
   backfill: BackfillProgress;
   rate_limit: RateLimitStatus;
+  cached_counts: {
+    prs: number;
+    open_prs: number;
+    members: number;
+    teams: number;
+  };
   hot_sync: {
     last_run_at?: string;
     next_run_at?: string;

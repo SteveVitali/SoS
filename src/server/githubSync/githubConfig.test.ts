@@ -42,8 +42,8 @@ describe("githubConfig", () => {
       expect(config.chunkDays).toBe(28);
       expect(config.chunkEpoch).toBe("2024-01-01");
       expect(config.syncEnabled).toBe(true);
-      expect(config.hotIntervalSeconds).toBe(120);
-      expect(config.warmIntervalSeconds).toBe(900);
+      expect(config.hotIntervalSeconds).toBe(600);
+      expect(config.warmIntervalSeconds).toBe(3600);
       expect(config.defaultScope).toBe("me");
       expect(config.pinnedRepos).toEqual([]);
       expect(config.contributionRange).toBe("30d");

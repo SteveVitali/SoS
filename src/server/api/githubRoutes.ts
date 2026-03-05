@@ -442,12 +442,29 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
         };
       }
 
+      // Cached data counts
+      const prsCol = getPrsCollection();
+      const membersCol = getOrgMembersCollection();
+      const teamsCol = getTeamsCollection();
+      const [prCount, openPrCount, memberCount, teamCount] = await Promise.all([
+        prsCol.countDocuments({ org }),
+        prsCol.countDocuments({ org, state: "open" }),
+        membersCol.countDocuments({ org }),
+        teamsCol.countDocuments({ org }),
+      ]);
+
       const response: SyncStatusResponse = {
         enabled: serviceStatus.enabled,
         active_task: serviceStatus.active_task ?? undefined,
         rate_limit_blocked: rateLimitBlocked,
         backfill,
         rate_limit: rateLimitStatus,
+        cached_counts: {
+          prs: prCount,
+          open_prs: openPrCount,
+          members: memberCount,
+          teams: teamCount,
+        },
         hot_sync: {
           last_run_at: hotTask?.lastRunAt,
           next_run_at: hotTask?.nextRunAt,

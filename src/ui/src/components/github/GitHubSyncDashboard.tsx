@@ -263,16 +263,26 @@ export function GitHubSyncDashboard() {
         <SyncTimerCard
           label="Hot Sync"
           description="Open PRs"
+          cachedCount={
+            status?.cached_counts
+              ? `${status.cached_counts.open_prs.toLocaleString()} open / ${status.cached_counts.prs.toLocaleString()} total`
+              : undefined
+          }
           lastRunAt={status?.hot_sync.last_run_at}
-          intervalSeconds={status?.hot_sync.interval_seconds || 120}
+          intervalSeconds={status?.hot_sync.interval_seconds || 600}
           now={now}
           onTrigger={() => handleTrigger("prs")}
         />
         <SyncTimerCard
           label="Warm Sync"
           description="Teams & Members"
+          cachedCount={
+            status?.cached_counts
+              ? `${status.cached_counts.members.toLocaleString()} members · ${status.cached_counts.teams.toLocaleString()} teams`
+              : undefined
+          }
           lastRunAt={status?.warm_sync.last_run_at}
-          intervalSeconds={status?.warm_sync.interval_seconds || 900}
+          intervalSeconds={status?.warm_sync.interval_seconds || 3600}
           now={now}
           onTrigger={() => handleTrigger("teams")}
         />
@@ -400,6 +410,7 @@ export function GitHubSyncDashboard() {
 function SyncTimerCard({
   label,
   description,
+  cachedCount,
   lastRunAt,
   intervalSeconds,
   now,
@@ -407,6 +418,7 @@ function SyncTimerCard({
 }: {
   label: string;
   description: string;
+  cachedCount?: string;
   lastRunAt?: string;
   intervalSeconds: number;
   now: number;
@@ -440,7 +452,10 @@ function SyncTimerCard({
       >
         <div>
           <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
-          <div style={{ fontSize: 11, color: "var(--fg3)" }}>{description}</div>
+          <div style={{ fontSize: 11, color: "var(--fg3)" }}>
+            {description}
+            {cachedCount ? ` · ${cachedCount}` : ""}
+          </div>
         </div>
         <button type="button" style={css.btnSmall} onClick={onTrigger}>
           Run Now
