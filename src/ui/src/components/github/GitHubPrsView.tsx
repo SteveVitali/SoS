@@ -9,6 +9,7 @@ import {
   type GitHubHubPrsResponse,
   type GitHubScope,
   listGitHubPrs,
+  type PrSortField,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { relativeTime } from "../../utils/format.js";
@@ -17,6 +18,22 @@ import { ScopeToggle } from "./ScopeToggle.js";
 const STATE_OPTIONS = ["open", "merged", "closed", "all"] as const;
 const PAGE_SIZE = 30;
 
+interface ColumnDef {
+  key: PrSortField;
+  label: string;
+  width: string;
+}
+
+const COLUMNS: ColumnDef[] = [
+  { key: "title", label: "Title", width: "35%" },
+  { key: "author", label: "Author", width: "12%" },
+  { key: "repo", label: "Repo", width: "14%" },
+  { key: "state", label: "State", width: "8%" },
+  { key: "size", label: "Size", width: "8%" },
+  { key: "reviews", label: "Reviews", width: "10%" },
+  { key: "updated", label: "Updated", width: "13%" },
+];
+
 export function GitHubPrsView() {
   const [scope, setScope] = useState<GitHubScope>("team");
   const [state, setState] = useState<string>("open");
@@ -24,19 +41,38 @@ export function GitHubPrsView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [offset, setOffset] = useState(0);
+  const [sortField, setSortField] = useState<PrSortField>("updated");
+  const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
+
+  const handleSort = (field: PrSortField) => {
+    if (field === sortField) {
+      setSortOrder((prev) => (prev === "desc" ? "asc" : "desc"));
+    } else {
+      setSortField(field);
+      setSortOrder(field === "title" || field === "author" || field === "repo" ? "asc" : "desc");
+    }
+    setOffset(0);
+  };
 
   const refresh = useCallback(async () => {
     setLoading(true);
     setError("");
     try {
-      const res = await listGitHubPrs({ scope, state, limit: PAGE_SIZE, offset });
+      const res = await listGitHubPrs({
+        scope,
+        state,
+        limit: PAGE_SIZE,
+        offset,
+        sort: sortField,
+        order: sortOrder,
+      });
       setData(res);
     } catch (err: unknown) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
       setLoading(false);
     }
-  }, [scope, state, offset]);
+  }, [scope, state, offset, sortField, sortOrder]);
 
   useEffect(() => {
     refresh();
@@ -100,13 +136,30 @@ export function GitHubPrsView() {
         <table style={{ ...css.table, minWidth: 800 }}>
           <thead>
             <tr>
-              <th style={{ ...css.th, width: "35%" }}>Title</th>
-              <th style={{ ...css.th, width: "12%" }}>Author</th>
-              <th style={{ ...css.th, width: "14%" }}>Repo</th>
-              <th style={{ ...css.th, width: "8%" }}>State</th>
-              <th style={{ ...css.th, width: "8%" }}>Size</th>
-              <th style={{ ...css.th, width: "10%" }}>Reviews</th>
-              <th style={{ ...css.th, width: "13%" }}>Updated</th>
+              {COLUMNS.map((col) => (
+                <th
+                  key={col.key}
+                  style={{
+                    ...css.th,
+                    width: col.width,
+                    cursor: "pointer",
+                    userSelect: "none",
+                    whiteSpace: "nowrap",
+                  }}
+                  onClick={() => handleSort(col.key)}
+                >
+                  {col.label}
+                  <span
+                    style={{
+                      marginLeft: 4,
+                      fontSize: 10,
+                      opacity: sortField === col.key ? 1 : 0.3,
+                    }}
+                  >
+                    {sortField === col.key ? (sortOrder === "asc" ? "▲" : "▼") : "▲"}
+                  </span>
+                </th>
+              ))}
             </tr>
           </thead>
           <tbody>

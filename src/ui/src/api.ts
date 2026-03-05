@@ -1108,13 +1108,24 @@ export interface GitHubHubPrsResponse {
   };
 }
 
+export type PrSortField =
+  | "updated"
+  | "created"
+  | "title"
+  | "author"
+  | "repo"
+  | "state"
+  | "size"
+  | "reviews";
+
 export async function listGitHubPrs(params: {
   scope?: GitHubScope;
   team?: string;
   state?: string;
   author?: string;
   repo?: string;
-  sort?: "updated" | "created";
+  sort?: PrSortField;
+  order?: "asc" | "desc";
   limit?: number;
   offset?: number;
 }): Promise<GitHubHubPrsResponse> {
@@ -1125,6 +1136,7 @@ export async function listGitHubPrs(params: {
   if (params.author) qs.set("author", params.author);
   if (params.repo) qs.set("repo", params.repo);
   if (params.sort) qs.set("sort", params.sort);
+  if (params.order) qs.set("order", params.order);
   if (params.limit) qs.set("limit", String(params.limit));
   if (params.offset) qs.set("offset", String(params.offset));
   return request("GET", `/github/prs?${qs.toString()}`);

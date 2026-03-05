@@ -54,7 +54,9 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
       const state = qstr(req.query.state) || "open";
       const author = qstr(req.query.author) || undefined;
       const repo = qstr(req.query.repo) || undefined;
-      const sort = (qstr(req.query.sort) || "updated") as "updated" | "created";
+      const sortKey = qstr(req.query.sort) || "updated";
+      const orderParam = qstr(req.query.order);
+      const order = orderParam === "asc" ? 1 : -1;
       const limit = parseInt(qstr(req.query.limit), 10) || 50;
       const offset = parseInt(qstr(req.query.offset), 10) || 0;
 
@@ -93,14 +95,44 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
         filter.repo = repo;
       }
 
-      const sortField = sort === "created" ? "created_at" : "updated_at";
+      // Sort field mapping — supports all table columns
+      const SORT_FIELD_MAP: Record<string, string> = {
+        updated: "updated_at",
+        created: "created_at",
+        title: "title",
+        author: "author",
+        repo: "repo",
+        state: "state",
+      };
 
-      const prs = await getPrsCollection()
-        .find(filter as any)
-        .sort({ [sortField]: -1 })
-        .skip(offset)
-        .limit(limit)
-        .toArray();
+      // Build aggregation pipeline for sorting (supports computed fields)
+      // biome-ignore lint/suspicious/noExplicitAny: MongoDB pipeline stages
+      const pipeline: any[] = [{ $match: filter }];
+
+      if (sortKey === "size") {
+        pipeline.push({
+          $addFields: { _sort_size: { $add: ["$additions", "$deletions"] } },
+        });
+        pipeline.push({ $sort: { _sort_size: order } });
+      } else if (sortKey === "reviews") {
+        pipeline.push({
+          $addFields: { _sort_reviews: { $size: { $ifNull: ["$reviews", []] } } },
+        });
+        pipeline.push({ $sort: { _sort_reviews: order } });
+      } else {
+        const dbField = SORT_FIELD_MAP[sortKey] || "updated_at";
+        pipeline.push({ $sort: { [dbField]: order } });
+      }
+
+      pipeline.push({ $skip: offset });
+      pipeline.push({ $limit: limit });
+
+      // Strip computed sort fields from output
+      if (sortKey === "size" || sortKey === "reviews") {
+        pipeline.push({ $project: { _sort_size: 0, _sort_reviews: 0 } });
+      }
+
+      const prs = await getPrsCollection().aggregate(pipeline).toArray();
 
       const total = await getPrsCollection().countDocuments(filter as any);
 
