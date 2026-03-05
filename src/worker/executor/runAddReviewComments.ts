@@ -48,6 +48,31 @@ function parseReviewComments(text: string): ReviewCommentInput[] {
   }
 }
 
+/** Max characters for the review body posted to GitHub (well under the 65536 API limit). */
+const MAX_REVIEW_BODY_LENGTH = 10_000;
+
+/**
+ * Extract a review summary from Claude's output.
+ * Looks for text AFTER the ```json block; if empty, uses the default.
+ * The old regex `/```[\s\S]*?```/` matched ANY code block, so a ```diff or
+ * ```scala block before the JSON block would cause everything after it
+ * (including the JSON + reasoning text) to be captured as the body.
+ */
+function extractReviewSummary(fullText: string, commentCount: number): string {
+  const fallback = `Automated code review — ${commentCount} comment(s)`;
+
+  // Specifically match the ```json ... ``` block
+  const jsonBlockMatch = fullText.match(/```json\s*\n[\s\S]*?```/);
+  if (!jsonBlockMatch || jsonBlockMatch.index == null) return fallback;
+
+  const afterJson = fullText.slice(jsonBlockMatch.index + jsonBlockMatch[0].length).trim();
+  if (afterJson.length > 10) {
+    return afterJson.slice(0, MAX_REVIEW_BODY_LENGTH);
+  }
+
+  return fallback;
+}
+
 /**
  * Analyze a PR diff and post inline review comments on GitHub.
  */
@@ -160,10 +185,8 @@ export async function runAddReviewComments(
     // 6) Post the review on GitHub
     await ctx.checkCanceled();
     t0 = Date.now();
-    // Extract summary text after the JSON block
-    const summaryMatch = claudeResult.fullText.match(/```[\s\S]*?```\s*([\s\S]*)/);
-    const reviewSummary =
-      summaryMatch?.[1]?.trim() || `Automated code review — ${comments.length} comment(s)`;
+    // Extract summary text: prefer text after the ```json block, fall back to default
+    const reviewSummary = extractReviewSummary(claudeResult.fullText, comments.length);
 
     createPullRequestReview(prUrl, comments, reviewSummary, "COMMENT");
     ctx.durations.post_review_ms = Date.now() - t0;

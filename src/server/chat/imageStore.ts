@@ -95,10 +95,18 @@ export async function findImage(imageId: string): Promise<GeneratedImageDoc | nu
 export function createImageRoutes(): Router {
   const router = Router();
 
+  const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
+
   // GET /api/web/images/:id — serve a generated image
   router.get("/:id", async (req: Request, res: Response) => {
     try {
-      const doc = await findImage(String(req.params.id));
+      const imageId = String(req.params.id);
+      if (!UUID_RE.test(imageId)) {
+        res.status(400).json({ error: "Invalid image ID" });
+        return;
+      }
+
+      const doc = await findImage(imageId);
       if (!doc) {
         res.status(404).json({ error: "Image not found" });
         return;

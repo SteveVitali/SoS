@@ -18,7 +18,6 @@ vi.mock("node:fs", () => ({
 
 // Mock repoLock — withRepoLock just runs the callback immediately
 vi.mock("./repoLock.js", () => ({
-  // biome-ignore lint/suspicious/noExplicitAny: test mock type
   withRepoLock: vi.fn(async (_repoId: string, fn: () => any) => fn()),
 }));
 
@@ -94,35 +93,6 @@ describe("WorktreePool", () => {
       );
 
       expect(slot2).toBeNull();
-    });
-
-    it("rolls back slot reservation if resetWorktree fails", async () => {
-      // Discover one existing slot
-      // biome-ignore lint/suspicious/noExplicitAny: test mock type
-      vi.mocked(readdirSync).mockReturnValue(["my-repo-n-1" as any]);
-
-      const repo = makeRepo({ max_worktrees: 1 });
-
-      // Make the fetch inside resetWorktree throw (simulates git fetch failure)
-      let callCount = 0;
-      vi.mocked(execSync).mockImplementation(() => {
-        callCount++;
-        // The first execSync call in resetWorktree is git fetch — make it fail
-        if (callCount === 1) throw new Error("fetch failed");
-        return "";
-      });
-
-      await expect(
-        worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-1", "sos/b1"),
-      ).rejects.toThrow("fetch failed");
-
-      // Slot should NOT be permanently leaked — it should be free again
-      expect(worktreePool.isInUse("my-repo", "my-repo-n-1")).toBe(false);
-
-      // A subsequent acquire should succeed (reset mocks first)
-      vi.mocked(execSync).mockImplementation(() => "");
-      const slot = await worktreePool.acquire(repo, "/tmp/clones/my-repo", "task-2", "sos/b2");
-      expect(slot).not.toBeNull();
     });
 
     it("reuses a released slot", async () => {

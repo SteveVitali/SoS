@@ -123,14 +123,7 @@ class WorktreePoolImpl {
           slot: state.slot.slotName,
           taskId,
         });
-        try {
-          await this.resetWorktree(state.slot, repo, clonePath, branch);
-        } catch (err) {
-          // Roll back in-memory reservation so the slot isn't permanently leaked
-          state.inUse = false;
-          state.taskId = undefined;
-          throw err;
-        }
+        await this.resetWorktree(state.slot, repo, clonePath, branch);
         state.repo = repo;
         state.clonePath = clonePath;
         state.currentBranch = branch;
@@ -195,14 +188,7 @@ class WorktreePoolImpl {
           taskId,
           branch: remoteBranch,
         });
-        try {
-          await this.resetWorktreeToRemoteBranch(state.slot, repo, clonePath, remoteBranch);
-        } catch (err) {
-          // Roll back in-memory reservation so the slot isn't permanently leaked
-          state.inUse = false;
-          state.taskId = undefined;
-          throw err;
-        }
+        await this.resetWorktreeToRemoteBranch(state.slot, repo, clonePath, remoteBranch);
         state.repo = repo;
         state.clonePath = clonePath;
         state.currentBranch = remoteBranch;

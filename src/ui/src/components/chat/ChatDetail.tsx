@@ -134,6 +134,15 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
                   cursor: "pointer",
                   display: "block",
                 }}
+                onError={(e) => {
+                  const el = e.currentTarget;
+                  el.style.display = "none";
+                  const placeholder = document.createElement("div");
+                  placeholder.textContent = "⚠️ Image expired or unavailable";
+                  placeholder.style.cssText =
+                    "padding:12px;border-radius:8px;background:var(--bg3);color:var(--fg-muted);font-size:13px;text-align:center;border:1px dashed var(--border)";
+                  el.parentElement?.appendChild(placeholder);
+                }}
               />
             </a>
           ))}
