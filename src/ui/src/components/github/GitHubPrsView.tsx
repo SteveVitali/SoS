@@ -11,6 +11,7 @@ import {
   listGitHubPrs,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { relativeTime } from "../../utils/format.js";
 import { ScopeToggle } from "./ScopeToggle.js";
 
 const STATE_OPTIONS = ["open", "merged", "closed", "all"] as const;
@@ -166,7 +167,7 @@ function PrRow({ pr }: { pr: GitHubHubPr }) {
   const approvals = pr.reviews?.filter((r) => r.state === "APPROVED").length || 0;
   const changesReq = pr.reviews?.filter((r) => r.state === "CHANGES_REQUESTED").length || 0;
 
-  const updated = timeAgo(pr.updated_at);
+  const updated = relativeTime(pr.updated_at);
 
   return (
     <tr style={{ cursor: "pointer" }} onClick={() => window.open(prUrl, "_blank")}>
@@ -233,18 +234,4 @@ function PrRow({ pr }: { pr: GitHubHubPr }) {
       </td>
     </tr>
   );
-}
-
-function timeAgo(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diff = now - then;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(dateStr).toLocaleDateString();
 }

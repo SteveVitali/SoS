@@ -291,7 +291,6 @@ export class GitHubSyncService {
           attempt: 0,
         });
         pendingCount++;
-      } else if (existing.status === "complete" && !isCurrentChunk(chunk, now)) {
       }
     }
 

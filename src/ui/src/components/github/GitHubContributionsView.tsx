@@ -97,44 +97,46 @@ export function GitHubContributionsView() {
           <div
             style={{ display: "flex", alignItems: "flex-end", gap: 2, height: 120, marginTop: 12 }}
           >
-            {data.data_points.map((dp) => {
+            {(() => {
               const maxVal = Math.max(
                 ...data.data_points.map((d) => d.prs_merged + d.reviews_submitted),
                 1,
               );
-              const val = dp.prs_merged + dp.reviews_submitted;
-              const height = Math.max(2, (val / maxVal) * 100);
-              return (
-                <div
-                  key={dp.period}
-                  title={`${dp.period}: ${dp.prs_merged} merged, ${dp.reviews_submitted} reviews`}
-                  style={{
-                    flex: 1,
-                    height: `${height}%`,
-                    background: "var(--accent)",
-                    borderRadius: "3px 3px 0 0",
-                    minWidth: 6,
-                    opacity: 0.8,
-                    position: "relative",
-                  }}
-                >
-                  {dp.reviews_submitted > 0 && (
-                    <div
-                      style={{
-                        position: "absolute",
-                        bottom: 0,
-                        left: 0,
-                        right: 0,
-                        height: `${Math.max(2, (dp.reviews_submitted / (dp.prs_merged + dp.reviews_submitted)) * 100)}%`,
-                        background: "#22c55e",
-                        borderRadius: "0 0 3px 3px",
-                        opacity: 0.7,
-                      }}
-                    />
-                  )}
-                </div>
-              );
-            })}
+              return data.data_points.map((dp) => {
+                const val = dp.prs_merged + dp.reviews_submitted;
+                const height = Math.max(2, (val / maxVal) * 100);
+                return (
+                  <div
+                    key={dp.period}
+                    title={`${dp.period}: ${dp.prs_merged} merged, ${dp.reviews_submitted} reviews`}
+                    style={{
+                      flex: 1,
+                      height: `${height}%`,
+                      background: "var(--accent)",
+                      borderRadius: "3px 3px 0 0",
+                      minWidth: 6,
+                      opacity: 0.8,
+                      position: "relative",
+                    }}
+                  >
+                    {dp.reviews_submitted > 0 && (
+                      <div
+                        style={{
+                          position: "absolute",
+                          bottom: 0,
+                          left: 0,
+                          right: 0,
+                          height: `${Math.max(2, (dp.reviews_submitted / (dp.prs_merged + dp.reviews_submitted)) * 100)}%`,
+                          background: "#22c55e",
+                          borderRadius: "0 0 3px 3px",
+                          opacity: 0.7,
+                        }}
+                      />
+                    )}
+                  </div>
+                );
+              });
+            })()}
           </div>
           <div style={{ display: "flex", justifyContent: "space-between", marginTop: 4 }}>
             <span style={{ fontSize: 10, color: "var(--fg3)" }}>{data.data_points[0]?.period}</span>

@@ -184,10 +184,8 @@ export async function syncOrg(token: string, org: string): Promise<void> {
 
   // 2. Sync members for each team
   const teams = await getTeamsCollection().find({ org }).toArray();
-  let totalTeamMembers = 0;
   for (const team of teams) {
-    const members = await syncTeamMembers(token, org, team.slug);
-    totalTeamMembers += members.length;
+    await syncTeamMembers(token, org, team.slug);
   }
 
   // 3. Sync all org members (catches people not in any team)

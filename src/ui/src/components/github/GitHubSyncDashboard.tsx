@@ -16,6 +16,7 @@ import {
   triggerGitHubSync,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { relativeTime } from "../../utils/format.js";
 
 export function GitHubSyncDashboard() {
   const [status, setStatus] = useState<SyncStatusResponse | null>(null);
@@ -182,7 +183,8 @@ export function GitHubSyncDashboard() {
           <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Hot Sync (Open PRs)</div>
           <div style={{ fontSize: 12, color: "var(--fg3)" }}>
             <div>
-              Last: {status?.hot_sync.last_run_at ? timeAgo(status.hot_sync.last_run_at) : "never"}
+              Last:{" "}
+              {status?.hot_sync.last_run_at ? relativeTime(status.hot_sync.last_run_at) : "never"}
             </div>
             <div>Interval: {status?.hot_sync.interval_seconds || 120}s</div>
           </div>
@@ -192,7 +194,7 @@ export function GitHubSyncDashboard() {
           <div style={{ fontSize: 12, color: "var(--fg3)" }}>
             <div>
               Last:{" "}
-              {status?.warm_sync.last_run_at ? timeAgo(status.warm_sync.last_run_at) : "never"}
+              {status?.warm_sync.last_run_at ? relativeTime(status.warm_sync.last_run_at) : "never"}
             </div>
             <div>Interval: {status?.warm_sync.interval_seconds || 900}s</div>
           </div>
@@ -377,16 +379,4 @@ function GaugeCard({
       <div style={{ fontSize: 10, color: "var(--fg3)", marginTop: 4 }}>{subtitle}</div>
     </div>
   );
-}
-
-function timeAgo(dateStr: string): string {
-  const now = Date.now();
-  const then = new Date(dateStr).getTime();
-  const diff = now - then;
-  const mins = Math.floor(diff / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  return `${Math.floor(hrs / 24)}d ago`;
 }

@@ -605,24 +605,6 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
     }
   });
 
-  // --- Config (read-only, for UI display) ---
-
-  router.get("/config", async (_req: Request, res: Response) => {
-    try {
-      const config = await resolveGitHubConfig();
-      res.json({
-        org: config.org,
-        team_slug: config.teamSlug,
-        username: config.username,
-        sync_enabled: config.syncEnabled,
-        history_days: config.historyDays,
-      });
-    } catch (err: unknown) {
-      log.error("GitHub config error", { error: (err as Error).message });
-      res.status(500).json({ error: "Internal error" });
-    }
-  });
-
   return router;
 }
 

@@ -13,9 +13,8 @@ let cachedSettings: GitHubSettings | null = null;
 let cacheTime = 0;
 const CACHE_TTL_MS = 30_000;
 
-/** Resolve the full GitHub config, merging DB settings over env vars over defaults. */
-export async function resolveGitHubConfig(): Promise<ResolvedGitHubConfig> {
-  const dbSettings = await getCachedSettings();
+/** Build config from DB settings (nullable) merged over env vars over defaults. */
+function buildConfig(dbSettings: GitHubSettings | null): ResolvedGitHubConfig {
   return {
     org: dbSettings?.org || process.env.SOS_GITHUB_ORG || "Foursquare",
     teamSlug: dbSettings?.team_slug || process.env.SOS_GITHUB_TEAM_SLUG || "places-engineering",
@@ -34,25 +33,15 @@ export async function resolveGitHubConfig(): Promise<ResolvedGitHubConfig> {
   };
 }
 
+/** Resolve the full GitHub config, merging DB settings over env vars over defaults. */
+export async function resolveGitHubConfig(): Promise<ResolvedGitHubConfig> {
+  const dbSettings = await getCachedSettings();
+  return buildConfig(dbSettings);
+}
+
 /** Get config synchronously from cache (for hot paths). Falls back to env vars only. */
 export function getGitHubConfigSync(): ResolvedGitHubConfig {
-  const dbSettings = cachedSettings;
-  return {
-    org: dbSettings?.org || process.env.SOS_GITHUB_ORG || "Foursquare",
-    teamSlug: dbSettings?.team_slug || process.env.SOS_GITHUB_TEAM_SLUG || "places-engineering",
-    username: dbSettings?.username || process.env.SOS_GITHUB_USERNAME || "",
-    token: process.env.SOS_GITHUB_TOKEN || "",
-    historyDays:
-      dbSettings?.history_days || parseInt(process.env.SOS_GITHUB_HISTORY_DAYS || "365", 10),
-    chunkDays: parseInt(process.env.SOS_GITHUB_CHUNK_DAYS || "28", 10),
-    chunkEpoch: process.env.SOS_GITHUB_CHUNK_EPOCH || "2024-01-01",
-    syncEnabled: dbSettings?.sync_enabled ?? process.env.SOS_GITHUB_SYNC_ENABLED !== "false",
-    hotIntervalSeconds: parseInt(process.env.SOS_GITHUB_SYNC_HOT_INTERVAL || "120", 10),
-    warmIntervalSeconds: parseInt(process.env.SOS_GITHUB_SYNC_WARM_INTERVAL || "900", 10),
-    defaultScope: dbSettings?.default_scope || "me",
-    pinnedRepos: dbSettings?.pinned_repos || [],
-    contributionRange: dbSettings?.contribution_range || "30d",
-  };
+  return buildConfig(cachedSettings);
 }
 
 export interface ResolvedGitHubConfig {
@@ -78,7 +67,7 @@ export function invalidateSettingsCache(): void {
 }
 
 async function getCachedSettings(): Promise<GitHubSettings | null> {
-  if (cachedSettings && Date.now() - cacheTime < CACHE_TTL_MS) {
+  if (cacheTime > 0 && Date.now() - cacheTime < CACHE_TTL_MS) {
     return cachedSettings;
   }
   try {

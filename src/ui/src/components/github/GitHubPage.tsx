@@ -4,7 +4,6 @@
  */
 
 import { useState } from "react";
-import { css } from "../../styles/theme.js";
 import { GitHubContributionsView } from "./GitHubContributionsView.js";
 import { GitHubPrsView } from "./GitHubPrsView.js";
 import { GitHubSettingsView } from "./GitHubSettingsView.js";
