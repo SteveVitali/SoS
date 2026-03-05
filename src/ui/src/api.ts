@@ -198,38 +198,6 @@ export interface PrCommentStats {
   unaddressed_threads: number;
 }
 
-export interface GitHubPr {
-  url: string;
-  number: number;
-  title: string;
-  state: string;
-  headRefName: string;
-  updatedAt: string;
-  createdAt: string;
-  author: string;
-  repo: string;
-  repoFullName: string;
-  isDraft: boolean;
-  additions: number;
-  deletions: number;
-  comments: PrCommentStats | null;
-  linkedJobTaskId?: string;
-}
-
-export async function listPrs(params: {
-  state?: string;
-  limit?: number;
-  include_comments?: boolean;
-  repo?: string;
-}): Promise<{ prs: GitHubPr[] }> {
-  const qs = new URLSearchParams();
-  if (params.state) qs.set("state", params.state);
-  if (params.limit) qs.set("limit", String(params.limit));
-  if (params.include_comments === false) qs.set("include_comments", "false");
-  if (params.repo) qs.set("repo", params.repo);
-  return request("GET", `/prs?${qs.toString()}`);
-}
-
 export async function fetchPrStats(urls: string[]): Promise<Record<string, PrCommentStats>> {
   if (urls.length === 0) return {};
   const res = await request<{ stats: Record<string, PrCommentStats> }>("POST", "/prs/stats", {
@@ -1056,4 +1024,324 @@ export async function listResearchSessions(params?: {
 
 export async function getResearchSession(sessionId: string): Promise<{ session: ResearchSession }> {
   return request("GET", `/kb/research/sessions/${sessionId}`);
+}
+
+// --- GitHub Hub ---
+
+export type GitHubScope = "me" | "team" | "org";
+
+export interface GitHubHubPr {
+  _id: string;
+  org: string;
+  repo: string;
+  number: number;
+  title: string;
+  author: string;
+  state: "open" | "closed" | "merged";
+  is_draft: boolean;
+  head_ref: string;
+  base_ref: string;
+  additions: number;
+  deletions: number;
+  changed_files: number;
+  labels: string[];
+  review_decision?: string;
+  created_at: string;
+  updated_at: string;
+  merged_at?: string;
+  closed_at?: string;
+  comment_stats?: PrCommentStats;
+  requested_reviewers: string[];
+  reviews: Array<{
+    author: string;
+    state: string;
+    submitted_at: string;
+  }>;
+  synced_at: string;
+  detail_synced_at?: string;
+  linked_job_task_id?: string;
+}
+
+export interface GitHubHubPrsResponse {
+  prs: GitHubHubPr[];
+  total: number;
+  data_source: "cache" | "partial-cache";
+  backfill_progress: {
+    completed: number;
+    total: number;
+    percentage: number;
+  };
+}
+
+export type PrSortField =
+  | "updated"
+  | "created"
+  | "title"
+  | "author"
+  | "repo"
+  | "state"
+  | "size"
+  | "reviews";
+
+export async function listGitHubPrs(params: {
+  scope?: GitHubScope;
+  team?: string;
+  state?: string;
+  author?: string;
+  repo?: string;
+  sort?: PrSortField;
+  order?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+}): Promise<GitHubHubPrsResponse> {
+  const qs = new URLSearchParams();
+  if (params.scope) qs.set("scope", params.scope);
+  if (params.team) qs.set("team", params.team);
+  if (params.state) qs.set("state", params.state);
+  if (params.author) qs.set("author", params.author);
+  if (params.repo) qs.set("repo", params.repo);
+  if (params.sort) qs.set("sort", params.sort);
+  if (params.order) qs.set("order", params.order);
+  if (params.limit) qs.set("limit", String(params.limit));
+  if (params.offset) qs.set("offset", String(params.offset));
+  return request("GET", `/github/prs?${qs.toString()}`);
+}
+
+export interface ContributionSummary {
+  prs_opened: number;
+  prs_merged: number;
+  prs_closed: number;
+  reviews_submitted: number;
+  review_comments: number;
+  commits: number;
+  additions: number;
+  deletions: number;
+  repos_touched: string[];
+}
+
+export interface ContributionDataPoint {
+  period: string;
+  prs_merged: number;
+  reviews_submitted: number;
+  commits: number;
+  additions: number;
+  deletions: number;
+}
+
+export interface LeaderboardEntry {
+  login: string;
+  avatar_url?: string;
+  name?: string;
+  prs_merged: number;
+  reviews_submitted: number;
+  additions: number;
+  deletions: number;
+  repos_touched: string[];
+}
+
+export interface ContributionsResponse {
+  summary: ContributionSummary;
+  data_points: ContributionDataPoint[];
+  leaderboard: LeaderboardEntry[];
+  data_source: "cache" | "partial-cache";
+}
+
+export async function getGitHubContributions(params: {
+  scope?: GitHubScope;
+  team?: string;
+  login?: string;
+  range?: string;
+  start?: string;
+  end?: string;
+  group_by?: "day" | "week" | "month";
+}): Promise<ContributionsResponse> {
+  const qs = new URLSearchParams();
+  if (params.scope) qs.set("scope", params.scope);
+  if (params.team) qs.set("team", params.team);
+  if (params.login) qs.set("login", params.login);
+  if (params.range) qs.set("range", params.range);
+  if (params.start) qs.set("start", params.start);
+  if (params.end) qs.set("end", params.end);
+  if (params.group_by) qs.set("group_by", params.group_by);
+  return request("GET", `/github/contributions?${qs.toString()}`);
+}
+
+export interface GitHubTeamInfo {
+  _id: string;
+  org: string;
+  slug: string;
+  name: string;
+  description?: string;
+  member_count: number;
+}
+
+export interface GitHubMemberInfo {
+  _id: string;
+  login: string;
+  avatar_url: string;
+  name?: string;
+  teams: string[];
+  org: string;
+}
+
+export async function listGitHubTeams(): Promise<{ teams: GitHubTeamInfo[] }> {
+  return request("GET", "/github/teams");
+}
+
+export async function listGitHubMembers(): Promise<{ members: GitHubMemberInfo[] }> {
+  return request("GET", "/github/members");
+}
+
+export async function listGitHubTeamMembers(
+  slug: string,
+): Promise<{ members: GitHubMemberInfo[] }> {
+  return request("GET", `/github/teams/${encodeURIComponent(slug)}/members`);
+}
+
+export interface BackfillProgress {
+  total_chunks: number;
+  completed_chunks: number;
+  in_progress_chunk?: string;
+  failed_chunks: number;
+  estimated_completion?: string;
+  oldest_data_available?: string;
+  newest_data_available?: string;
+  prs_total: number;
+}
+
+export interface SyncStatusResponse {
+  enabled: boolean;
+  active_task?: {
+    type: string;
+    started_at: string;
+  };
+  rate_limit_blocked?: {
+    blocked: boolean;
+    reason: string;
+    unblocks_at?: string;
+  };
+  backfill: BackfillProgress;
+  rate_limit: {
+    rest: { remaining: number; limit: number; resets_at: string };
+    search: { tokens_available: number; limit: number };
+    backfill_budget_available: number;
+  };
+  cached_counts: {
+    prs: number;
+    open_prs: number;
+    members: number;
+    teams: number;
+  };
+  hot_sync: {
+    last_run_at?: string;
+    next_run_at?: string;
+    interval_seconds: number;
+  };
+  warm_sync: {
+    last_run_at?: string;
+    next_run_at?: string;
+    interval_seconds: number;
+  };
+}
+
+export async function getGitHubSyncStatus(): Promise<SyncStatusResponse> {
+  return request("GET", "/github/sync-status");
+}
+
+export interface SyncLogEntry {
+  ts: string;
+  level: string;
+  category: string;
+  message: string;
+  details?: Record<string, unknown>;
+}
+
+export async function getGitHubSyncLog(params?: {
+  limit?: number;
+  since?: string;
+  category?: string;
+}): Promise<{ entries: SyncLogEntry[] }> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.since) qs.set("since", params.since);
+  if (params?.category) qs.set("category", params.category);
+  return request("GET", `/github/sync-log?${qs.toString()}`);
+}
+
+export interface SyncChunkInfo {
+  id: string;
+  start: string;
+  end: string;
+  status: "pending" | "in_progress" | "complete" | "failed";
+  total_items: number;
+  attempt: number;
+  error?: string;
+  completed_at?: string;
+}
+
+export async function getGitHubSyncChunks(): Promise<{ chunks: SyncChunkInfo[] }> {
+  return request("GET", "/github/sync-chunks");
+}
+
+export async function triggerGitHubSync(
+  scope: "prs" | "teams" | "contributions" | "backfill",
+): Promise<{ ok: boolean }> {
+  return request("POST", "/github/sync/trigger", { scope });
+}
+
+export interface GitHubSettingsResponse {
+  resolved: {
+    org: string;
+    team_slug: string;
+    username: string;
+    history_days: number;
+    default_scope: GitHubScope;
+    pinned_repos: string[];
+    contribution_range: string;
+    sync_enabled: boolean;
+    hot_interval_seconds: number;
+    warm_interval_seconds: number;
+  };
+  db_overrides: Record<string, unknown> | null;
+  token: {
+    configured: boolean;
+    valid: boolean;
+    scopes: string[];
+  };
+}
+
+export async function getGitHubSettings(): Promise<GitHubSettingsResponse> {
+  return request("GET", "/github/settings");
+}
+
+export async function saveGitHubSettings(
+  settings: Record<string, unknown>,
+): Promise<{ ok: boolean }> {
+  return request("POST", "/github/settings", settings);
+}
+
+/**
+ * SSE subscription for live GitHub sync log events.
+ */
+export function subscribeGitHubSyncLog(onEntry: (entry: SyncLogEntry) => void): () => void {
+  const token = localStorage.getItem("sos_token") || "";
+  const params = new URLSearchParams();
+  if (token) params.set("token", token);
+  const url = `${BASE}/github/sync-log/stream?${params.toString()}`;
+
+  const es = new EventSource(url);
+
+  es.onmessage = (ev) => {
+    try {
+      onEntry(JSON.parse(ev.data));
+    } catch {
+      // ignore
+    }
+  };
+
+  es.onerror = () => {
+    // Will auto-reconnect
+  };
+
+  return () => es.close();
 }
