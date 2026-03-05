@@ -448,7 +448,13 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
       res.write(`data: ${JSON.stringify(entry)}\n\n`);
     });
 
+    // Heartbeat to prevent proxy/LB idle-timeout disconnects
+    const heartbeat = setInterval(() => {
+      res.write(": keepalive\n\n");
+    }, 15_000);
+
     req.on("close", () => {
+      clearInterval(heartbeat);
       unsubscribe();
     });
   });

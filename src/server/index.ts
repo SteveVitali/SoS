@@ -196,7 +196,8 @@ async function main() {
 
   // Start GitHub Hub sync service (non-fatal if it fails)
   try {
-    const { getGitHubSyncService } = await import("./githubSync/index.js");
+    const { ensureGitHubIndexes, getGitHubSyncService } = await import("./githubSync/index.js");
+    await ensureGitHubIndexes();
     const syncService = getGitHubSyncService();
     await syncService.start();
   } catch (err: unknown) {

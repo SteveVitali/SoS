@@ -3,7 +3,7 @@
  * Handles all CRUD operations and index management.
  */
 
-import type { Collection, Db } from "mongodb";
+import type { Collection } from "mongodb";
 import type {
   GitHubContribution,
   GitHubOrgMember,

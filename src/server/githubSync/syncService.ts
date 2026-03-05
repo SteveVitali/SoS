@@ -12,11 +12,17 @@
 
 import type { ChunkInfo } from "../../shared/githubTypes.js";
 import { createLogger } from "../../shared/logger.js";
-import { buildChunkDocId, getAllChunks, isCurrentChunk, parseChunkConfig } from "./chunks.js";
+import { buildChunkDocId, getAllChunks, parseChunkConfig } from "./chunks.js";
 import { rebuildContributions } from "./contributionSyncer.js";
 import type { ResolvedGitHubConfig } from "./githubConfig.js";
 import { resolveGitHubConfig } from "./githubConfig.js";
-import { getChunkStats, getIncompleteChunks, getSyncChunk, upsertSyncChunk } from "./githubRepo.js";
+import {
+  getChunkStats,
+  getIncompleteChunks,
+  getSyncChunk,
+  getSyncChunksCollection,
+  upsertSyncChunk,
+} from "./githubRepo.js";
 import { getRateLimitBudget } from "./octokitClient.js";
 import { syncOrg } from "./orgSyncer.js";
 import { syncChunk, syncOpenPrs } from "./prSyncer.js";
@@ -31,7 +37,6 @@ interface SyncTask {
   nextRunAt: Date;
   intervalMs: number;
   lastRunAt?: Date;
-  meta?: { chunkStart?: string; chunkEnd?: string; chunkId?: string };
 }
 
 export class GitHubSyncService {
@@ -240,18 +245,22 @@ export class GitHubSyncService {
       return;
     }
 
-    const next = incomplete[0];
-    const chunkStart = next.chunk_start.toISOString().split("T")[0];
-    const chunkEnd = next.chunk_end.toISOString().split("T")[0];
-
-    // Skip chunks that have failed too many times
-    if (next.attempt >= 3 && next.status === "failed") {
-      log.warn("Skipping chunk with too many failures", {
-        chunk: next._id,
-        attempts: next.attempt,
-      });
+    // Find first chunk that hasn't permanently failed (3+ attempts)
+    const next = incomplete.find((c) => !(c.attempt >= 3 && c.status === "failed"));
+    if (!next) {
+      // All remaining chunks are permanently failed — remove backfill task
+      this.tasks = this.tasks.filter((t) => t.type !== "backfill-chunk");
+      log.warn("All remaining backfill chunks have permanently failed (3+ attempts)");
+      await writeSyncLog(
+        "warn",
+        "backfill",
+        "All remaining chunks permanently failed. Trigger manually to reset.",
+      );
       return;
     }
+
+    const chunkStart = next.chunk_start.toISOString().split("T")[0];
+    const chunkEnd = next.chunk_end.toISOString().split("T")[0];
 
     await syncChunk(config.token, config.org, chunkStart, chunkEnd);
   }
@@ -326,10 +335,9 @@ export class GitHubSyncService {
 
   private async resetFailedChunks(): Promise<void> {
     const config = await resolveGitHubConfig();
-    const { getSyncChunksCollection } = await import("./githubRepo.js");
     await getSyncChunksCollection().updateMany(
       { org: config.org.toLowerCase(), status: "failed" },
-      { $set: { status: "pending", attempt: 0, error: undefined } },
+      { $set: { status: "pending", attempt: 0 }, $unset: { error: 1 } } as any,
     );
     await writeSyncLog("info", "backfill", "Reset all failed chunks for retry");
   }
