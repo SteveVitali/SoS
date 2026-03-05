@@ -209,7 +209,6 @@ export function GitHubSyncDashboard() {
             style={{
               display: "flex",
               gap: 2,
-              flexWrap: "wrap",
             }}
           >
             {chunks.map((chunk) => {
@@ -226,7 +225,7 @@ export function GitHubSyncDashboard() {
                   key={chunk.id}
                   title={`${chunk.start} — ${chunk.end}\nStatus: ${chunk.status}\nItems: ${chunk.total_items}${chunk.error ? `\nError: ${chunk.error}` : ""}`}
                   style={{
-                    width: 14,
+                    flex: 1,
                     height: 14,
                     borderRadius: 2,
                     background: color,
