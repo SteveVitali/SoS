@@ -128,6 +128,7 @@ interface GitHubTeam {
   slug: string;
   name: string;
   description?: string;
+  parent_slug?: string;      // slug of parent team (for hierarchy propagation)
   member_count: number;
   synced_at: Date;
 }
@@ -164,6 +165,7 @@ interface GitHubPrDoc {
     total_threads: number;
     total_comments: number;
     unresolved_threads: number;
+    unaddressed_threads: number;
   };
 
   // Reviewers
@@ -244,7 +246,7 @@ interface GitHubSyncLogEntry {
   _id: ObjectId;
   ts: Date;
   level: "info" | "warn" | "error" | "debug";
-  category: "backfill" | "hot_sync" | "rate_limit" | "org_sync" | "live_fallback";
+  category: "backfill" | "hot_sync" | "rate_limit" | "org_sync" | "live_fallback" | "contribution_sync";
   message: string;
   details?: {
     chunk_id?: string;
@@ -560,8 +562,8 @@ SOS_GITHUB_CHUNK_EPOCH=2024-01-01        # Epoch anchor date for chunk boundarie
 
 # Sync tuning
 SOS_GITHUB_SYNC_ENABLED=true             # Master switch for background sync
-SOS_GITHUB_SYNC_HOT_INTERVAL=120         # Seconds between hot tier syncs (default: 120)
-SOS_GITHUB_SYNC_WARM_INTERVAL=900        # Seconds between warm tier syncs (default: 900)
+SOS_GITHUB_SYNC_HOT_INTERVAL=600         # Seconds between hot tier syncs (default: 600)
+SOS_GITHUB_SYNC_WARM_INTERVAL=3600       # Seconds between warm tier syncs (default: 3600)
 ```
 
 ### 6.3 UI-Overridable Settings
@@ -887,8 +889,8 @@ This is the transparency panel. It gives full real-time visibility into the sync
 │ ┌─ Sync Configuration ─────────────────────────────────┐  │
 │ │  Sync enabled:         [✓]                             │  │
 │ │  History depth:        [365 ] days                     │  │
-│ │  Hot sync interval:    [120 ] seconds                  │  │
-│ │  Warm sync interval:   [900 ] seconds                  │  │
+│ │  Hot sync interval:    [600 ] seconds                  │  │
+│ │  Warm sync interval:   [3600] seconds                  │  │
 │ │                                                        │  │
 │ │  Token status:  ✓ Valid (Foursquare SSO authorized)    │  │
 │ │  Token scopes:  repo, read:org                         │  │

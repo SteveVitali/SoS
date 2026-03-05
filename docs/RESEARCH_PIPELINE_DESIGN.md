@@ -1316,7 +1316,7 @@ The research pipeline needs a lightweight LLM client for its internal reasoning 
 - Supports structured JSON output (for stage prompts)
 - Supports tool-use (for Phase 4 agent)
 - Tracks token usage and cost per call
-- Fast models preferred (e.g., `gpt-4o-mini`, `claude-3-haiku`) — research
+- Fast models preferred (e.g., `claude-opus-4.5`, `gpt-4o-mini`) — research
   reasoning doesn't need the most powerful model
 
 ### Implementation
@@ -1325,7 +1325,7 @@ The research pipeline needs a lightweight LLM client for its internal reasoning 
 // research/llmClient.ts
 
 export interface LLMClientConfig {
-  model: string;              // default: "bedrock/amazon.nova-pro-v1:0" (overridable via SOS_RESEARCH_LLM_MODEL)
+  model: string;              // default: "claude-opus-4.5" (overridable via SOS_RESEARCH_LLM_MODEL)
   api_key: string;
   base_url: string;           // OpenAI-compatible endpoint
   temperature: number;        // default: 0.0 (deterministic for research)
@@ -1354,14 +1354,14 @@ export function createResearchLLMClient(config?: Partial<LLMClientConfig>): LLMC
 
 **Config via environment:**
 ```
-SOS_RESEARCH_LLM_MODEL=bedrock/amazon.nova-pro-v1:0
+SOS_RESEARCH_LLM_MODEL=claude-opus-4.5
 SOS_RESEARCH_LLM_API_KEY=...     # falls back to OPENAI_API_KEY
 SOS_RESEARCH_LLM_BASE_URL=...    # falls back to https://api.openai.com/v1
 SOS_RESEARCH_LLM_TEMPERATURE=0.0
 ```
 
 Using a fast, cheap model keeps research pipeline costs minimal even with 10+
-LLM calls. The default is `bedrock/amazon.nova-pro-v1:0` but any OpenAI-compatible
+LLM calls. The default is `claude-opus-4.5` but any OpenAI-compatible
 model works (e.g., `gpt-4o-mini` at ~$0.15/1M input tokens).
 
 ---
@@ -1370,7 +1370,7 @@ model works (e.g., `gpt-4o-mini` at ~$0.15/1M input tokens).
 
 ### Per-Strategy Estimates
 
-Assuming gpt-4o-mini for research LLM calls and text-embedding-3-small for embeddings:
+Assuming the default research LLM (`claude-opus-4.5`) and text-embedding-3-small for embeddings:
 
 | Strategy | LLM Calls | Embed Calls | Vector Searches | Latency | Est. Cost |
 |----------|-----------|-------------|-----------------|---------|-----------|
@@ -1464,7 +1464,7 @@ Phased delivery where each phase is independently shippable.
 1. **Research LLM model:** Should we use `gpt-4o-mini` (cheapest, fastest) or a
    slightly more capable model like `claude-3.5-haiku` for the research reasoning?
    The reasoning quality directly impacts query decomposition and CRAG evaluation.
-   Answer: more capable model; but user should be able to toggle from list in UI.
+   Answer: Default is `claude-opus-4.5`; user can toggle from list in UI (Research Playground model selector).
 
 2. **RAPTOR rebuild triggers:** Should RAPTOR trees auto-rebuild when new documents
    are ingested? Or only on manual trigger? Auto-rebuild is convenient but could be

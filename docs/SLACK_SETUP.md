@@ -48,8 +48,8 @@ Best for open-source / individual users. Calls the Anthropic API directly.
 
 ```bash
 # .env
-SOS_LLM_PROVIDER=anthropic                     # optional, this is the default
-SOS_LLM_MODEL=claude-sonnet-4-20250514       # optional, this is the default
+SOS_LLM_PROVIDER=anthropic                     # set explicitly (default is openai_compatible)
+SOS_LLM_MODEL=claude-opus-4.5               # optional, this is the default
 SOS_LLM_API_KEY=sk-ant-...                      # or set ANTHROPIC_API_KEY
 ```
 
@@ -64,7 +64,7 @@ Best for teams that run a shared LLM proxy (e.g., [LiteLLM](https://docs.litellm
 ```bash
 # .env
 SOS_LLM_PROVIDER=openai_compatible
-SOS_LLM_MODEL=anthropic/claude-sonnet-4-20250514   # model string your proxy expects
+SOS_LLM_MODEL=anthropic/claude-opus-4.5            # model string your proxy expects
 SOS_LLM_BASE_URL=https://litellm.example.com       # your LiteLLM / OpenAI-compatible endpoint
 SOS_LLM_API_KEY=your-bearer-token                   # sent as Authorization: Bearer <token>
 ```

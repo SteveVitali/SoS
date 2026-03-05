@@ -50,8 +50,8 @@ The GitHub Hub feature provides a MongoDB-cached view of your org's GitHub activ
 | `SOS_GITHUB_CHUNK_DAYS` | No (default: `28`) | Size of each backfill chunk in days |
 | `SOS_GITHUB_CHUNK_EPOCH` | No (default: `2024-01-01`) | Epoch anchor date for deterministic chunk boundaries |
 | `SOS_GITHUB_SYNC_ENABLED` | No (default: `true`) | Set to `false` to disable background sync |
-| `SOS_GITHUB_SYNC_HOT_INTERVAL` | No (default: `120`) | Seconds between hot syncs (open PRs) |
-| `SOS_GITHUB_SYNC_WARM_INTERVAL` | No (default: `900`) | Seconds between warm syncs (org/team membership) |
+| `SOS_GITHUB_SYNC_HOT_INTERVAL` | No (default: `600`) | Seconds between hot syncs (open PRs) |
+| `SOS_GITHUB_SYNC_WARM_INTERVAL` | No (default: `3600`) | Seconds between warm syncs (org/team membership) |
 
 ## Knowledge Base (Embeddings)
 
