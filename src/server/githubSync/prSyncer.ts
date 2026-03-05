@@ -328,75 +328,115 @@ async function searchOpenPrsSubdivided(
   for (const pr of initialPrs) {
     dedupMap.set(pr._id, pr);
   }
-  const now = new Date();
 
-  // Time windows: 0-30d, 30-90d, 90-180d, 180-365d, 365d+
-  const windowDays = [30, 90, 180, 365];
+  // Adaptive subdivision: search a window, and if it hits the 1000-result
+  // cap, bisect it into two halves and recurse.  Stops bisecting at a
+  // minimum window width of 7 days (at that point we accept the cap).
+  const MIN_WINDOW_DAYS = 7;
+  const MAX_DEPTH = 6; // safety valve: 2^6 = 64 max leaf windows
+  let windowCount = 0;
 
-  for (let i = 0; i < windowDays.length; i++) {
-    const recentDate = i === 0 ? now : new Date(now.getTime() - windowDays[i - 1] * MS_PER_DAY);
-    const olderDate = new Date(now.getTime() - windowDays[i] * MS_PER_DAY);
-    const recentStr = toDateStr(recentDate);
-    const olderStr = toDateStr(olderDate);
+  async function searchWindow(
+    startDate: Date | null,
+    endDate: Date | null,
+    depth: number,
+  ): Promise<void> {
+    const startStr = startDate ? toDateStr(startDate) : null;
+    const endStr = endDate ? toDateStr(endDate) : null;
 
-    const query =
-      i === 0
-        ? `org:${org} type:pr is:open updated:>=${olderStr}`
-        : `org:${org} type:pr is:open updated:${olderStr}..${recentStr}`;
+    // Build query with appropriate date qualifier
+    let dateQualifier: string;
+    if (startStr && endStr) {
+      dateQualifier = `updated:${startStr}..${endStr}`;
+    } else if (startStr) {
+      dateQualifier = `updated:>=${startStr}`;
+    } else if (endStr) {
+      dateQualifier = `updated:<=${endStr}`;
+    } else {
+      dateQualifier = "";
+    }
 
-    const windowLabel = i === 0 ? `updated:>=${olderStr}` : `updated:${olderStr}..${recentStr}`;
+    const query = `org:${org} type:pr is:open${dateQualifier ? ` ${dateQualifier}` : ""}`;
     const result = await searchPrs(token, query, budget, "hot_sync");
     const newPrs = result.prs.filter((pr) => !dedupMap.has(pr._id)).length;
     for (const pr of result.prs) {
       dedupMap.set(pr._id, pr);
     }
+    windowCount++;
 
+    const windowLabel = dateQualifier || "(all)";
     await writeSyncLog(
       "info",
       "hot_sync",
-      `Subdivision window ${windowLabel}: ${result.prs.length} PRs (${newPrs} new, ${dedupMap.size} cumulative)`,
+      `Window ${windowLabel}: ${result.prs.length} PRs (${newPrs} new, ${dedupMap.size} cumulative)`,
       { items_fetched: result.prs.length },
     );
 
-    if (result.hitCap) {
-      log.warn("Subdivision window still hit 1000-result cap", {
+    if (!result.hitCap) return; // window fully captured
+
+    // Hit the cap — check if we can bisect further
+    const spanMs =
+      startDate && endDate ? endDate.getTime() - startDate.getTime() : Number.MAX_SAFE_INTEGER;
+    const spanDays = spanMs / MS_PER_DAY;
+
+    if (spanDays <= MIN_WINDOW_DAYS || depth >= MAX_DEPTH) {
+      log.warn("Window hit cap but cannot subdivide further", {
         window: windowLabel,
         fetched: result.prs.length,
+        spanDays: Math.round(spanDays),
+        depth,
       });
+      return;
     }
+
+    // Bisect: split into two halves
+    const midMs =
+      startDate && endDate
+        ? startDate.getTime() + spanMs / 2
+        : endDate
+          ? endDate.getTime() - 365 * MS_PER_DAY
+          : startDate
+            ? startDate.getTime() + 365 * MS_PER_DAY
+            : Date.now();
+    const midDate = new Date(midMs);
+
+    log.info("Bisecting window", { window: windowLabel, midpoint: toDateStr(midDate) });
+    await writeSyncLog(
+      "info",
+      "hot_sync",
+      `Bisecting ${windowLabel} at ${toDateStr(midDate)} (depth ${depth + 1})`,
+    );
+
+    // Search older half first, then newer half
+    await searchWindow(startDate, midDate, depth + 1);
+    await searchWindow(midDate, endDate, depth + 1);
   }
 
-  // Final window: very old open PRs (updated >365d ago)
-  const oldestStr = toDateStr(
-    new Date(now.getTime() - windowDays[windowDays.length - 1] * MS_PER_DAY),
-  );
-  const oldResult = await searchPrs(
-    token,
-    `org:${org} type:pr is:open updated:<${oldestStr}`,
-    budget,
-    "hot_sync",
-  );
-  const oldNew = oldResult.prs.filter((pr) => !dedupMap.has(pr._id)).length;
-  for (const pr of oldResult.prs) {
-    dedupMap.set(pr._id, pr);
+  // Kick off with initial broad windows to minimize API calls when
+  // most windows are under the cap.  Boundaries: 30d, 90d, 365d, 730d, open-ended.
+  const now = new Date();
+  const boundaries = [30, 90, 365, 730].map((d) => new Date(now.getTime() - d * MS_PER_DAY));
+
+  // Window 0: now..30d ago (most recent, use >= for freshness)
+  await searchWindow(boundaries[0], null, 0);
+
+  // Windows 1..N: between consecutive boundaries
+  for (let i = 1; i < boundaries.length; i++) {
+    await searchWindow(boundaries[i], boundaries[i - 1], 0);
   }
 
-  await writeSyncLog(
-    "info",
-    "hot_sync",
-    `Subdivision window updated:<${oldestStr}: ${oldResult.prs.length} PRs (${oldNew} new, ${dedupMap.size} cumulative)`,
-    { items_fetched: oldResult.prs.length },
-  );
+  // Final window: older than the last boundary (open-ended start)
+  await searchWindow(null, boundaries[boundaries.length - 1], 0);
 
   log.info("Open PR subdivision complete", {
-    windows: windowDays.length + 1,
+    windows: windowCount,
     totalPrs: dedupMap.size,
   });
 
   await writeSyncLog(
     "info",
     "hot_sync",
-    `Open PR subdivision complete: ${windowDays.length + 1} windows, ${dedupMap.size} unique PRs (seeded with ${initialPrs.length})`,
+    `Open PR subdivision complete: ${windowCount} windows, ${dedupMap.size} unique PRs (seeded with ${initialPrs.length})`,
     { items_fetched: dedupMap.size },
   );
 
