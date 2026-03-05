@@ -1,6 +1,6 @@
 # GitHub Hub — Design Document
 
-> **Status:** Draft v2 — Awaiting Approval
+> **Status:** Implemented
 > **Author:** Steve + Cascade
 > **Date:** 2026-03-04
 > **Revised:** 2026-03-04 — REST-only, deterministic chunking, backfill system, sync transparency UI
@@ -218,7 +218,7 @@ Tracks the state of every deterministic backfill chunk (see §4 for full explana
 
 ```typescript
 interface GitHubSyncChunk {
-  _id: string;                // e.g. "prs:MyOrganization:2025-07-07..2025-08-04"
+  _id: string;                // e.g. "prs:Foursquare:2025-07-07..2025-08-04"
   org: string;
   data_type: "prs" | "reviews" | "contributions";
   chunk_start: Date;          // inclusive
@@ -363,20 +363,20 @@ Server starts
 
 Because we can't use GraphQL, each chunk requires multiple REST Search API calls with date-range qualifiers.
 
-For a chunk `2025-09-22..2025-10-20` in org `MyOrganization`:
+For a chunk `2025-09-22..2025-10-20` in org `Foursquare`:
 
 ```
 Step 1: Search for PRs created in this date range
-  GET /search/issues?q=org:MyOrganization+type:pr+created:2025-09-22..2025-10-19
+  GET /search/issues?q=org:Foursquare+type:pr+created:2025-09-22..2025-10-19
     &sort=created&order=asc&per_page=100&page=1
   (paginate through all pages, up to 1000 results)
 
 Step 2: Search for PRs merged in this date range (catches PRs created earlier but merged in this window)
-  GET /search/issues?q=org:MyOrganization+type:pr+merged:2025-09-22..2025-10-19
+  GET /search/issues?q=org:Foursquare+type:pr+merged:2025-09-22..2025-10-19
     &sort=updated&order=asc&per_page=100&page=1
 
 Step 3: Search for PRs closed (not merged) in this date range
-  GET /search/issues?q=org:MyOrganization+type:pr+is:unmerged+closed:2025-09-22..2025-10-19
+  GET /search/issues?q=org:Foursquare+type:pr+is:unmerged+closed:2025-09-22..2025-10-19
     &sort=updated&order=asc&per_page=100&page=1
 
 Step 4: For each new/updated PR, fetch detail (additions, deletions, reviews)
@@ -546,12 +546,12 @@ The token is **never exposed to the UI** — it's server-side only.
 
 ```bash
 # Required
-SOS_GITHUB_ORG=MyOrganization                 # The org to sync
+SOS_GITHUB_ORG=Foursquare                 # The org to sync
 SOS_GITHUB_TOKEN=ghp_xxx                  # Classic PAT with repo + read:org scopes
 
 # Optional — defaults can be overridden in UI
-SOS_GITHUB_TEAM_SLUG=my-team   # Default "my team"
-SOS_GITHUB_USERNAME=jdoe               # Override auto-detected user
+SOS_GITHUB_TEAM_SLUG=places-engineering   # Default "my team"
+SOS_GITHUB_USERNAME=svitali               # Override auto-detected user
 
 # Backfill
 SOS_GITHUB_HISTORY_DAYS=365              # Max age to backfill (default: 365 = 1 year)
@@ -713,19 +713,19 @@ The route changes from `/prs` to `/github`, with sub-routes:
 │                                                             │
 │ ┌──────────────────┐  ┌──────────────┐  ┌───────────────┐  │
 │ │  ● Me            │  │  My Team     │  │  My Org       │  │
-│ │  (jdoe)          │  │ (my-team)    │  │ (MyOrganization)  │  │
+│ │  (svitali)       │  │ (places-e…)  │  │ (Foursquare)  │  │
 │ └──────────────────┘  └──────────────┘  └───────────────┘  │
 │                                                             │
 │ State: [Open ▾]   Repo: [All repos ▾]   Author: [All ▾]   │
 │                                                             │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ OPEN  Fix cache invalidation bug                        │ │
-│ │       my-org/service#4521 · jdoe · feat/cache    │ │
+│ │       foursquare/pilgrim#4521 · svitali · feat/cache    │ │
 │ │       Updated 2h ago · +34/-12 · 3 threads (1 unresol.) │ │
 │ │                                [Self Review ▾] [Trigger] │ │
 │ ├─────────────────────────────────────────────────────────┤ │
 │ │ OPEN  Add TypeScript strict mode                        │ │
-│ │       my-org/web-app#891 · jdoe · feat/strict-ts   │ │
+│ │       foursquare/web-app#891 · jdoe · feat/strict-ts   │ │
 │ │       Updated 5h ago · +892/-340 · Awaiting review      │ │
 │ │                                           [Trigger ▾]   │ │
 │ └─────────────────────────────────────────────────────────┘ │
@@ -776,8 +776,8 @@ The route changes from `/prs` to `/github`, with sub-routes:
 │                                                             │
 │ ┌─ Leaderboard (Team/Org scope) ────────────────────────┐  │
 │ │  #  Author     PRs   Reviews  +/-        Repos        │  │
-│ │  1  jdoe        8      12     +2.1k/-400  service,web │  │
-│ │  2  alee        6      18     +1.8k/-900  web-app     │  │
+│ │  1  svitali     8      12     +2.1k/-400  pilgrim,web │  │
+│ │  2  jdoe        6      18     +1.8k/-900  web-app     │  │
 │ │  3  asmith      4       8     +900/-200   api,infra   │  │
 │ └───────────────────────────────────────────────────────┘  │
 │                                                             │
@@ -871,16 +871,16 @@ This is the transparency panel. It gives full real-time visibility into the sync
 │ └──────┘└──────────────┘└──────┘└──────────────┘            │
 │                                                             │
 │ ┌─ Organization ────────────────────────────────────────┐  │
-│ │  Org:           [MyOrganization        ]  (env: MyOrganization)│  │
-│ │  My Team:       [my-team▾]                   │  │
-│ │  My Username:   [jdoe           ]  (auto-detected)  │  │
+│ │  Org:           [Foursquare        ]  (env: Foursquare)│  │
+│ │  My Team:       [places-engineering▾]                   │  │
+│ │  My Username:   [svitali           ]  (auto-detected)  │  │
 │ └───────────────────────────────────────────────────────┘  │
 │                                                             │
 │ ┌─ Defaults ────────────────────────────────────────────┐  │
 │ │  Default scope:        (●) Me  ( ) Team  ( ) Org      │  │
 │ │  Contribution range:   [30 days ▾]                     │  │
-│ │  Pinned repos:         [my-org/service      ] [x]  │  │
-│ │                        [my-org/web-app      ] [x]  │  │
+│ │  Pinned repos:         [foursquare/pilgrim      ] [x]  │  │
+│ │                        [foursquare/web-app      ] [x]  │  │
 │ │                        [+ Add repo]                    │  │
 │ └───────────────────────────────────────────────────────┘  │
 │                                                             │
@@ -890,7 +890,7 @@ This is the transparency panel. It gives full real-time visibility into the sync
 │ │  Hot sync interval:    [120 ] seconds                  │  │
 │ │  Warm sync interval:   [900 ] seconds                  │  │
 │ │                                                        │  │
-│ │  Token status:  ✓ Valid (MyOrganization SSO authorized)    │  │
+│ │  Token status:  ✓ Valid (Foursquare SSO authorized)    │  │
 │ │  Token scopes:  repo, read:org                         │  │
 │ │                                                        │  │
 │ │  [Save Settings]   [Reset to Defaults]                 │  │
@@ -1009,48 +1009,48 @@ const octokit = new ThrottledOctokit({
 
 ### Phase 1: Foundation (1-2 sprints)
 
-- [ ] Add `@octokit/rest`, `@octokit/plugin-throttling` dependencies
-- [ ] Create MongoDB collections + indexes (§3.2)
-- [ ] Implement `RateLimitBudget` with dual REST/Search tracking (§5)
-- [ ] Implement deterministic chunk system — `getChunkForDate()`, `getAllChunks()` (§4.1)
-- [ ] Build `GitHubSyncService` with priority-queue loop
-- [ ] Implement OrgSyncer (teams + members via REST)
-- [ ] Implement PrSyncer — hot sync (open PRs) + chunk-based backfill (§4.3)
-- [ ] Implement chunk state tracking in `github_sync_chunks` (§4.6)
-- [ ] Implement `SyncEventLog` writing to `github_sync_log`
-- [ ] Wire up sync service to start on server boot
-- [ ] Add `SOS_GITHUB_TOKEN` + all new env vars (§6.2)
-- [ ] Add `/api/web/github/sync-status` + `/sync-log` endpoints (§7.4)
+- [x] Add `@octokit/rest`, `@octokit/plugin-throttling` dependencies
+- [x] Create MongoDB collections + indexes (§3.2)
+- [x] Implement `RateLimitBudget` with dual REST/Search tracking (§5)
+- [x] Implement deterministic chunk system — `getChunkForDate()`, `getAllChunks()` (§4.1)
+- [x] Build `GitHubSyncService` with priority-queue loop
+- [x] Implement OrgSyncer (teams + members via REST)
+- [x] Implement PrSyncer — hot sync (open PRs) + chunk-based backfill (§4.3)
+- [x] Implement chunk state tracking in `github_sync_chunks` (§4.6)
+- [x] Implement `SyncEventLog` writing to `github_sync_log`
+- [x] Wire up sync service to start on server boot
+- [x] Add `SOS_GITHUB_TOKEN` + all new env vars (§6.2)
+- [x] Add `/api/web/github/sync-status` + `/sync-log` endpoints (§7.4)
 
 ### Phase 2: API + UI Migration (1-2 sprints)
 
-- [ ] Build new read-from-MongoDB API endpoints (§7.1-7.3)
-- [ ] Implement live-fetch fallback for incomplete cache (§9)
-- [ ] Rename "PRs" tab to "GitHub", add sub-tab navigation
-- [ ] Build scope toggle (Me / Team / Org) component
-- [ ] Migrate PrsList to read from new `/api/web/github/prs` endpoint
-- [ ] Add team/author/repo filter dropdowns
-- [ ] Preserve "Trigger" action functionality on all PRs
-- [ ] Build Sync Dashboard sub-tab (§8.4) — backfill progress, rate limits, live activity feed
-- [ ] Add SSE endpoint for live sync log streaming
-- [ ] Add sync status footer indicator on PRs/Contributions views
+- [x] Build new read-from-MongoDB API endpoints (§7.1-7.3)
+- [x] Implement live-fetch fallback for incomplete cache (§9)
+- [x] Rename "PRs" tab to "GitHub", add sub-tab navigation
+- [x] Build scope toggle (Me / Team / Org) component
+- [x] Migrate PrsList to read from new `/api/web/github/prs` endpoint
+- [x] Add team/author/repo filter dropdowns
+- [x] Preserve "Trigger" action functionality on all PRs
+- [x] Build Sync Dashboard sub-tab (§8.4) — backfill progress, rate limits, live activity feed
+- [x] Add SSE endpoint for live sync log streaming
+- [x] Add sync status footer indicator on PRs/Contributions views
 
 ### Phase 3: Contributions (1 sprint)
 
-- [ ] Build ContributionSyncer — aggregates from `github_prs` data via MongoDB pipeline
-- [ ] Build `/api/web/github/contributions` endpoint with aggregation
-- [ ] Build Contributions sub-tab UI (§8.3)
-- [ ] Summary cards + stacked bar activity chart (recharts)
-- [ ] Leaderboard table with individual drill-down
-- [ ] "Copy as Markdown" export
+- [x] Build ContributionSyncer — aggregates from `github_prs` data via MongoDB pipeline
+- [x] Build `/api/web/github/contributions` endpoint with aggregation
+- [x] Build Contributions sub-tab UI (§8.3)
+- [x] Summary cards + stacked bar activity chart (recharts)
+- [x] Leaderboard table with individual drill-down
+- [x] "Copy as Markdown" export
 
 ### Phase 4: Polish + Migration (1 sprint)
 
-- [ ] Build Settings sub-tab (§8.5) with token validation
-- [ ] Settings persistence to `github_settings` collection
+- [x] Build Settings sub-tab (§8.5) with token validation
+- [x] Settings persistence to `github_settings` collection
 - [ ] Migrate existing `github_summary` jobs to read from MongoDB (§10.1)
 - [ ] Migrate `executeInstantQuery()` to read from MongoDB (§10.2)
-- [ ] Performance tuning (MongoDB indexes, query optimization)
+- [x] Performance tuning (MongoDB indexes, query optimization)
 - [ ] Deprecate old `ghPrs.ts` + `queries.ts` + `teamCache.ts` code paths
 
 ---

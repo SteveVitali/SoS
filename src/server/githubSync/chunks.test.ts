@@ -103,8 +103,8 @@ describe("isCurrentChunk", () => {
 
 describe("buildChunkDocId", () => {
   it("produces the expected format", () => {
-    const id = buildChunkDocId("prs", "MyOrganization", "2024-01-01..2024-01-29");
-    expect(id).toBe("prs:MyOrganization:2024-01-01..2024-01-29");
+    const id = buildChunkDocId("prs", "Foursquare", "2024-01-01..2024-01-29");
+    expect(id).toBe("prs:Foursquare:2024-01-01..2024-01-29");
   });
 });
 

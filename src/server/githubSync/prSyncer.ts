@@ -13,6 +13,11 @@ import { getSyncChunk, upsertPrsBatch, upsertSyncChunk } from "./githubRepo.js";
 import { getOctokit, getRateLimitBudget, updateBudgetFromResponse } from "./octokitClient.js";
 import { writeSyncLog } from "./syncEventLog.js";
 
+interface SearchResult {
+  prs: GitHubPrDoc[];
+  hitCap: boolean;
+}
+
 const log = createLogger("github:prSyncer");
 
 // --- Types for REST search results ---
@@ -47,7 +52,15 @@ export async function syncOpenPrs(token: string, org: string): Promise<number> {
 
   try {
     const query = `org:${org} type:pr is:open`;
-    const prs = await searchPrs(token, query, budget);
+    const result = await searchPrs(token, query, budget);
+
+    let prs: GitHubPrDoc[];
+    if (result.hitCap) {
+      // Subdivide by updated-date windows to get complete results
+      prs = await searchOpenPrsSubdivided(token, org, budget);
+    } else {
+      prs = result.prs;
+    }
 
     if (prs.length > 0) {
       await upsertPrsBatch(prs);
@@ -121,21 +134,21 @@ export async function syncChunk(
     // Step 1: PRs created in this range
     const createdQuery = `org:${org} type:pr created:${chunkStart}..${endStr}`;
     const created = await searchPrs(token, createdQuery, budget);
-    for (const pr of created) {
+    for (const pr of created.prs) {
       allPrs.set(pr._id, pr);
     }
 
     // Step 2: PRs merged in this range
     const mergedQuery = `org:${org} type:pr is:merged merged:${chunkStart}..${endStr}`;
     const merged = await searchPrs(token, mergedQuery, budget);
-    for (const pr of merged) {
+    for (const pr of merged.prs) {
       allPrs.set(pr._id, pr);
     }
 
     // Step 3: PRs closed (unmerged) in this range
     const closedQuery = `org:${org} type:pr is:unmerged is:closed closed:${chunkStart}..${endStr}`;
     const closed = await searchPrs(token, closedQuery, budget);
-    for (const pr of closed) {
+    for (const pr of closed.prs) {
       allPrs.set(pr._id, pr);
     }
 
@@ -220,11 +233,12 @@ async function searchPrs(
   token: string,
   query: string,
   budget: ReturnType<typeof getRateLimitBudget>,
-): Promise<GitHubPrDoc[]> {
+): Promise<SearchResult> {
   const octokit = getOctokit(token);
   const allPrs: GitHubPrDoc[] = [];
   let page = 1;
   const perPage = 100;
+  let hitCap = false;
 
   while (true) {
     // Acquire search rate limit token
@@ -255,6 +269,7 @@ async function searchPrs(
 
     // GitHub search caps at 1000 results
     if (page * perPage >= 1000) {
+      hitCap = true;
       log.warn("Search hit 1000-result cap", { query, total: response.data.total_count });
       await writeSyncLog(
         "warn",
@@ -268,7 +283,67 @@ async function searchPrs(
     page++;
   }
 
-  return allPrs;
+  return { prs: allPrs, hitCap };
+}
+
+/**
+ * Subdivide open-PR search by `updated` date windows to work around
+ * the 1000-result Search API cap.
+ */
+async function searchOpenPrsSubdivided(
+  token: string,
+  org: string,
+  budget: ReturnType<typeof getRateLimitBudget>,
+): Promise<GitHubPrDoc[]> {
+  const dedupMap = new Map<string, GitHubPrDoc>();
+  const now = new Date();
+
+  // Time windows: 0-30d, 30-90d, 90-180d, 180-365d, 365d+
+  const windowDays = [30, 90, 180, 365];
+
+  for (let i = 0; i < windowDays.length; i++) {
+    const recentDate = i === 0 ? now : new Date(now.getTime() - windowDays[i - 1] * 86400000);
+    const olderDate = new Date(now.getTime() - windowDays[i] * 86400000);
+    const recentStr = toDateStr(recentDate);
+    const olderStr = toDateStr(olderDate);
+
+    const query =
+      i === 0
+        ? `org:${org} type:pr is:open updated:>=${olderStr}`
+        : `org:${org} type:pr is:open updated:${olderStr}..${recentStr}`;
+
+    const result = await searchPrs(token, query, budget);
+    for (const pr of result.prs) {
+      dedupMap.set(pr._id, pr);
+    }
+
+    if (result.hitCap) {
+      log.warn("Subdivision window still hit 1000-result cap", {
+        window: `${olderStr}..${recentStr}`,
+        fetched: result.prs.length,
+      });
+    }
+  }
+
+  // Final window: very old open PRs (updated >365d ago)
+  const oldestStr = toDateStr(
+    new Date(now.getTime() - windowDays[windowDays.length - 1] * 86400000),
+  );
+  const oldResult = await searchPrs(
+    token,
+    `org:${org} type:pr is:open updated:<${oldestStr}`,
+    budget,
+  );
+  for (const pr of oldResult.prs) {
+    dedupMap.set(pr._id, pr);
+  }
+
+  log.info("Open PR subdivision complete", {
+    windows: windowDays.length + 1,
+    totalPrs: dedupMap.size,
+  });
+
+  return Array.from(dedupMap.values());
 }
 
 /** Parse a search result item into a GitHubPrDoc. */

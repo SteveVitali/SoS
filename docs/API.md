@@ -762,14 +762,75 @@ Returns the active model assignments for all roles (routing, titleGeneration, re
 ```json
 {
   "models": {
-    "routing": { "model": "claude-sonnet-4-20250514", "envVar": "SOS_LLM_MODEL" },
-    "titleGeneration": { "model": "claude-sonnet-4-20250514", "envVar": "SOS_TITLE_MODEL" },
-    "research": { "model": "bedrock/amazon.nova-pro-v1:0", "envVar": "SOS_RESEARCH_LLM_MODEL" },
-    "raptorSummarization": { "model": "bedrock/amazon.nova-pro-v1:0", "envVar": "SOS_RAPTOR_MODEL" },
+    "routing": { "model": "claude-opus-4.5", "envVar": "SOS_LLM_MODEL" },
+    "titleGeneration": { "model": "claude-opus-4.5", "envVar": "SOS_TITLE_MODEL" },
+    "research": { "model": "claude-opus-4.5", "envVar": "SOS_RESEARCH_LLM_MODEL" },
+    "raptorSummarization": { "model": "claude-opus-4.5", "envVar": "SOS_RAPTOR_MODEL" },
     "embedding": { "model": "text-embedding-3-small", "envVar": "SOS_EMBEDDING_MODEL" }
   }
 }
 ```
+
+### Get Available Models
+
+```
+GET /api/web/available-models
+```
+
+Proxies the LiteLLM `/model/info` endpoint to return available chat models. Results are cached for 60 seconds. Uses resolved provider settings (YAML > env > default) for the base URL.
+
+**Response:**
+```json
+{
+  "models": ["claude-opus-4.5", "claude-sonnet-4-20250514", "gpt-4o", ...]
+}
+```
+
+### Get Model Config (YAML Overrides)
+
+```
+GET /api/web/model-config
+```
+
+Returns the current `model-config.yaml` overrides, the resolved model registry, and provider settings.
+
+**Response:**
+```json
+{
+  "path": "/path/to/model-config.yaml",
+  "overrides": { "routing": "claude-opus-4.5" },
+  "registry": { "routing": { "model": "...", ... }, ... },
+  "provider": { "type": "openai_compatible", "baseUrl": "...", "hasKey": true }
+}
+```
+
+### Update Model Config
+
+```
+PUT /api/web/model-config
+```
+
+Writes model overrides to `model-config.yaml`. Provider settings are also saved.
+
+**Body:**
+```json
+{
+  "overrides": { "routing": "claude-opus-4.5", "research": "gpt-4o" },
+  "provider": { "type": "openai_compatible", "baseUrl": "http://localhost:4000" }
+}
+```
+
+**Response (200):** `{ "ok": true, "registry": { ... } }`
+
+### Reload Model Config
+
+```
+POST /api/web/model-config/reload
+```
+
+Force-reloads model config from disk.
+
+**Response (200):** `{ "ok": true, "registry": { ... } }`
 
 ---
 
@@ -1189,6 +1250,186 @@ Returns all RAPTOR tree nodes (level > 0) for visualization. Leaf-level (level 0
 
 ---
 
+## GitHub Hub Endpoints (`/api/web/github`)
+
+### List PRs (Cached)
+
+```
+GET /api/web/github/prs?scope=team&repo=my-app&author=alice&status=open&sort=updated&order=desc&limit=50&offset=0
+```
+
+Returns PRs from the MongoDB cache (populated by the GitHub sync engine). Supports filtering by scope (`me`, `team`, `org`), repo, author, and status.
+
+**Response:**
+```json
+{
+  "prs": [{ "number": 42, "title": "Fix auth", "repo": "my-app", "author": "alice", "state": "open", ... }],
+  "total": 150
+}
+```
+
+### Get Contributions
+
+```
+GET /api/web/github/contributions?scope=team&range=30d&author=alice
+```
+
+Returns pre-aggregated contribution data (PRs merged, reviews, comments) from the cache. Supports time ranges (`7d`, `30d`, `90d`, `365d`) and scope filtering.
+
+**Response:**
+```json
+{
+  "summary": { "prs_merged": 12, "reviews": 24, "comments": 47 },
+  "data_points": [{ "date": "2025-03-01", "prs_merged": 2, "reviews": 3 }],
+  "leaderboard": [{ "author": "alice", "prs_merged": 5, "reviews": 10 }]
+}
+```
+
+### List Teams
+
+```
+GET /api/web/github/teams
+```
+
+Returns cached org teams.
+
+**Response:** `{ "teams": [{ "slug": "platform-eng", "name": "Platform Engineering", "member_count": 12 }] }`
+
+### List Team Members
+
+```
+GET /api/web/github/teams/:slug/members
+```
+
+Returns cached members of a specific team.
+
+**Response:** `{ "members": [{ "login": "alice", "avatar_url": "...", "name": "Alice" }] }`
+
+### List Org Members
+
+```
+GET /api/web/github/members
+```
+
+Returns cached org members.
+
+**Response:** `{ "members": [{ "login": "alice", "avatar_url": "..." }] }`
+
+### Get Sync Status
+
+```
+GET /api/web/github/sync-status
+```
+
+Returns current sync engine status: whether sync is enabled/running, task queue state, backfill progress, and rate limit status.
+
+**Response:**
+```json
+{
+  "service": { "enabled": true, "running": true, "tasks": [{ "id": "hot-prs", "type": "hot-prs", "priority": 1, "nextRunAt": "...", "lastRunAt": "..." }] },
+  "backfill": { "total": 14, "complete": 10, "pending": 3, "failed": 1, "percent_complete": 71.4 },
+  "rate_limits": { "rest": { "remaining": 4500, "limit": 5000, "resets_at": "..." }, "search": { "tokens_available": 28, "limit": 30 }, "backfill_budget_available": 3500 }
+}
+```
+
+### Get Sync Log
+
+```
+GET /api/web/github/sync-log?limit=50
+```
+
+Returns recent sync activity log entries.
+
+**Response:** `{ "entries": [{ "level": "info", "category": "hot_sync", "message": "Synced 5 open PRs", "created_at": "..." }] }`
+
+### Subscribe to Sync Log (SSE)
+
+```
+GET /api/web/github/sync-log/stream
+```
+
+Server-Sent Events stream of real-time sync activity. First replays recent history, then streams new entries as they occur.
+
+**Events:** `data: { "level": "info", "category": "backfill", "message": "...", "created_at": "..." }`
+
+### Get Sync Chunks
+
+```
+GET /api/web/github/sync-chunks
+```
+
+Returns all backfill chunk documents for timeline visualization.
+
+**Response:**
+```json
+{
+  "chunks": [{ "_id": "prs:foursquare:2024-01-01..2024-01-29", "status": "complete", "chunk_start": "...", "chunk_end": "...", "total_items": 42, "pages_fetched": 3 }]
+}
+```
+
+### Trigger Sync Task
+
+```
+POST /api/web/github/sync/trigger
+```
+
+Manually triggers a specific sync task to run immediately.
+
+**Body:** `{ "task": "hot-prs" }` (one of: `hot-prs`, `backfill-chunk`, `org-sync`, `contributions`)
+
+**Response (200):** `{ "ok": true }`
+
+### Get GitHub Settings
+
+```
+GET /api/web/github/settings
+```
+
+Returns the current GitHub Hub settings (merged from DB + env + defaults).
+
+**Response:**
+```json
+{
+  "settings": { "org": "Foursquare", "team_slug": "places-engineering", "sync_enabled": true, "history_days": 365, ... },
+  "token_status": { "configured": true, "scopes": ["repo", "read:org"], "valid": true }
+}
+```
+
+### Update GitHub Settings
+
+```
+POST /api/web/github/settings
+```
+
+Saves GitHub Hub settings to MongoDB. Invalidates the config cache so changes take effect immediately.
+
+**Body:**
+```json
+{
+  "org": "Foursquare",
+  "team_slug": "places-engineering",
+  "sync_enabled": true,
+  "history_days": 365,
+  "default_scope": "team",
+  "pinned_repos": ["my-app"],
+  "contribution_range": "30d"
+}
+```
+
+**Response (200):** `{ "ok": true }`
+
+### Validate GitHub Token
+
+```
+GET /api/web/github/token-status
+```
+
+Validates the configured `SOS_GITHUB_TOKEN` against the GitHub API and returns scope information.
+
+**Response:** `{ "configured": true, "valid": true, "scopes": ["repo", "read:org"], "login": "son-of-steve" }`
+
+---
+
 ## Job Document Schema
 
 ```typescript
@@ -1202,7 +1443,7 @@ interface JobDoc {
   };
   requested_by: string;               // Slack user ID or username
   slack_requester?: string;           // Original Slack user (when job owner differs)
-  status: "QUEUED" | "PLANNING" | "PENDING_CONFIRMATION" | "RUNNING"
+  status: "QUEUED" | "BLOCKED" | "PLANNING" | "PENDING_CONFIRMATION" | "RUNNING"
          | "FIXING_CI" | "WAITING_FOR_APPROVAL"
          | "DONE" | "FAILED" | "CANCELED" | "DELETED";
   created_at: Date;
@@ -1281,5 +1522,8 @@ interface JobDoc {
 
   // Linking
   parent_task_id?: string;            // set on retry
+
+  // Per-PR queue: this job is blocked until the referenced job finishes
+  blocked_by?: string;
 }
 ```

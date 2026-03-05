@@ -272,25 +272,52 @@ export class GitHubSyncService {
       historyDays: config.historyDays,
     });
 
+    const org = config.org.toLowerCase();
     const since = new Date(Date.now() - chunkConfig.historyDays * 24 * 60 * 60 * 1000);
     const now = new Date();
     const allChunks = getAllChunks(since, now, chunkConfig.epochDate, chunkConfig.chunkDays);
 
+    // Detect chunk-size drift: if existing chunks have a different span than
+    // the configured chunkDays, drop them all and re-initialize.
+    const existingSample = await getSyncChunksCollection().findOne({
+      org,
+      data_type: "prs",
+    } as any);
+    if (existingSample) {
+      const existingSpanMs =
+        existingSample.chunk_end.getTime() - existingSample.chunk_start.getTime();
+      const configuredSpanMs = chunkConfig.chunkDays * 24 * 60 * 60 * 1000;
+      if (Math.abs(existingSpanMs - configuredSpanMs) > 60_000) {
+        const oldDays = Math.round(existingSpanMs / (24 * 60 * 60 * 1000));
+        log.warn("Chunk size changed, dropping stale chunks and re-initializing", {
+          oldChunkDays: oldDays,
+          newChunkDays: chunkConfig.chunkDays,
+        });
+        await getSyncChunksCollection().deleteMany({ org, data_type: "prs" } as any);
+        await writeSyncLog(
+          "warn",
+          "backfill",
+          `Chunk size changed from ${oldDays}d → ${chunkConfig.chunkDays}d. Dropped all chunks and re-initializing.`,
+        );
+      }
+    }
+
     log.info("Initializing backfill chunks", {
       total: allChunks.length,
+      chunkDays: chunkConfig.chunkDays,
       since: since.toISOString(),
     });
 
     // Ensure each chunk has a document in github_sync_chunks
     let pendingCount = 0;
     for (const chunk of allChunks) {
-      const docId = buildChunkDocId("prs", config.org.toLowerCase(), chunk.id);
+      const docId = buildChunkDocId("prs", org, chunk.id);
       const existing = await getSyncChunk(docId);
 
       if (!existing) {
         await upsertSyncChunk({
           _id: docId,
-          org: config.org.toLowerCase(),
+          org,
           data_type: "prs",
           chunk_start: new Date(chunk.start),
           chunk_end: new Date(chunk.end),
@@ -320,7 +347,7 @@ export class GitHubSyncService {
       );
     } else {
       // Check if there are any incomplete
-      const stats = await getChunkStats(config.org.toLowerCase(), "prs");
+      const stats = await getChunkStats(org, "prs");
       if (stats.pending > 0 || stats.failed > 0) {
         this.tasks.push({
           id: "backfill-chunk",

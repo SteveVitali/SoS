@@ -16,8 +16,8 @@ const CACHE_TTL_MS = 30_000;
 /** Build config from DB settings (nullable) merged over env vars over defaults. */
 function buildConfig(dbSettings: GitHubSettings | null): ResolvedGitHubConfig {
   return {
-    org: dbSettings?.org || process.env.SOS_GITHUB_ORG || "MyOrganization",
-    teamSlug: dbSettings?.team_slug || process.env.SOS_GITHUB_TEAM_SLUG || "my-team",
+    org: dbSettings?.org || process.env.SOS_GITHUB_ORG || "Foursquare",
+    teamSlug: dbSettings?.team_slug || process.env.SOS_GITHUB_TEAM_SLUG || "places-engineering",
     username: dbSettings?.username || process.env.SOS_GITHUB_USERNAME || "",
     token: process.env.SOS_GITHUB_TOKEN || "",
     historyDays:
