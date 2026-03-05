@@ -4,17 +4,19 @@
  */
 
 import { useCallback, useEffect, useState } from "react";
+import { RepoRegistryEditor } from "../registry/RepoRegistryEditor.js";
 import { GitHubContributionsView } from "./GitHubContributionsView.js";
 import { GitHubPrsView } from "./GitHubPrsView.js";
 import { GitHubSettingsView } from "./GitHubSettingsView.js";
 import { GitHubSyncDashboard } from "./GitHubSyncDashboard.js";
 
-type SubTab = "prs" | "contributions" | "sync" | "settings";
+type SubTab = "prs" | "contributions" | "sync" | "repos" | "settings";
 
 const TAB_HASH_MAP: Record<SubTab, string> = {
   prs: "pull-requests",
   contributions: "contributions",
   sync: "sync",
+  repos: "repos",
   settings: "settings",
 };
 
@@ -45,9 +47,9 @@ export function GitHubPage() {
   return (
     <div>
       <div style={{ display: "flex", alignItems: "center", gap: 16, marginBottom: 20 }}>
-        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>GitHub</h2>
+        <h2 style={{ fontSize: 18, fontWeight: 600, margin: 0 }}>Git</h2>
         <div style={{ display: "flex", gap: 0 }}>
-          {(["prs", "contributions", "sync", "settings"] as SubTab[]).map((tab) => (
+          {(["prs", "contributions", "sync", "repos", "settings"] as SubTab[]).map((tab) => (
             <button
               key={tab}
               type="button"
@@ -65,7 +67,7 @@ export function GitHubPage() {
                 textTransform: "capitalize",
               }}
             >
-              {tab === "prs" ? "Pull Requests" : tab}
+              {tab === "prs" ? "Pull Requests" : tab === "repos" ? "Repos" : tab}
             </button>
           ))}
         </div>
@@ -74,6 +76,7 @@ export function GitHubPage() {
       {activeTab === "prs" && <GitHubPrsView />}
       {activeTab === "contributions" && <GitHubContributionsView />}
       {activeTab === "sync" && <GitHubSyncDashboard />}
+      {activeTab === "repos" && <RepoRegistryEditor />}
       {activeTab === "settings" && <GitHubSettingsView />}
     </div>
   );

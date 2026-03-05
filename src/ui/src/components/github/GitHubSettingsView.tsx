@@ -1,16 +1,21 @@
 /**
  * GitHubSettingsView — UI-editable settings for the GitHub Hub.
- * Shows resolved config, token status, and allows overrides.
+ * Shows resolved config, token status, team selector with member roster.
  */
 
 import { useCallback, useEffect, useState } from "react";
 import {
   type GitHubScope,
   type GitHubSettingsResponse,
+  type GitHubTeamInfo,
   getGitHubSettings,
+  listGitHubTeams,
   saveGitHubSettings,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { toErrorMessage } from "../../utils/format.js";
+import { TeamCombobox } from "./TeamCombobox.js";
+import { TeamMemberRoster } from "./TeamMemberRoster.js";
 
 export function GitHubSettingsView() {
   const [settings, setSettings] = useState<GitHubSettingsResponse | null>(null);
@@ -26,6 +31,10 @@ export function GitHubSettingsView() {
   const [historyDays, setHistoryDays] = useState(365);
   const [defaultScope, setDefaultScope] = useState<GitHubScope>("me");
   const [syncEnabled, setSyncEnabled] = useState(true);
+
+  // Teams list (for combobox)
+  const [teams, setTeams] = useState<GitHubTeamInfo[]>([]);
+  const [teamsLoading, setTeamsLoading] = useState(false);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -50,6 +59,15 @@ export function GitHubSettingsView() {
   useEffect(() => {
     refresh();
   }, [refresh]);
+
+  // Fetch teams for the combobox
+  useEffect(() => {
+    setTeamsLoading(true);
+    listGitHubTeams()
+      .then((res) => setTeams(res.teams))
+      .catch(() => {}) // non-fatal
+      .finally(() => setTeamsLoading(false));
+  }, []);
 
   const handleSave = async () => {
     setSaving(true);
@@ -78,10 +96,10 @@ export function GitHubSettingsView() {
   }
 
   return (
-    <div style={{ maxWidth: 600 }}>
+    <div>
       {error && <div style={{ ...css.error, marginBottom: 16 }}>{error}</div>}
 
-      {/* Token Status */}
+      {/* Token Status — full width */}
       <div style={{ ...css.card, marginBottom: 20 }}>
         <div style={{ ...css.sectionTitle, marginBottom: 12 }}>GitHub Token</div>
         <div style={{ display: "flex", alignItems: "center", gap: 8, marginBottom: 8 }}>
@@ -119,89 +137,132 @@ export function GitHubSettingsView() {
         )}
       </div>
 
-      {/* Settings Form */}
-      <div style={css.card}>
-        <div style={{ ...css.sectionTitle, marginBottom: 16 }}>Configuration</div>
+      {/* Two-column layout: Settings Form | Team Roster */}
+      <div
+        style={{
+          display: "grid",
+          gridTemplateColumns: "1fr 1fr",
+          gap: 16,
+          alignItems: "start",
+        }}
+      >
+        {/* Left: Settings Form */}
+        <div style={css.card}>
+          <div style={{ ...css.sectionTitle, marginBottom: 16 }}>Configuration</div>
 
-        <div style={css.field}>
-          <label style={css.label}>Organization</label>
-          <input
-            style={css.input}
-            value={org}
-            onChange={(e) => setOrg(e.target.value)}
-            placeholder="e.g. Foursquare"
-          />
-        </div>
+          <div style={css.field}>
+            <label style={css.label}>Organization</label>
+            <input
+              style={css.input}
+              value={org}
+              onChange={(e) => setOrg(e.target.value)}
+              placeholder="e.g. Foursquare"
+            />
+          </div>
 
-        <div style={css.field}>
-          <label style={css.label}>Team Slug</label>
-          <input
-            style={css.input}
-            value={teamSlug}
-            onChange={(e) => setTeamSlug(e.target.value)}
-            placeholder="e.g. places-engineering"
-          />
-        </div>
+          <div style={css.field}>
+            <label style={css.label}>Team</label>
+            <TeamCombobox
+              value={teamSlug}
+              onChange={setTeamSlug}
+              teams={teams}
+              loading={teamsLoading}
+            />
+            <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
+              Defines the "My Team" filter across PRs and Contributions
+            </div>
+          </div>
 
-        <div style={css.field}>
-          <label style={css.label}>GitHub Username</label>
-          <input
-            style={css.input}
-            value={username}
-            onChange={(e) => setUsername(e.target.value)}
-            placeholder="Auto-detected from token if empty"
-          />
-        </div>
+          <div style={css.field}>
+            <label style={css.label}>GitHub Username</label>
+            <input
+              style={css.input}
+              value={username}
+              onChange={(e) => setUsername(e.target.value)}
+              placeholder="Auto-detected from token if empty"
+            />
+          </div>
 
-        <div style={css.field}>
-          <label style={css.label}>History (days)</label>
-          <input
-            style={{ ...css.input, width: 120 }}
-            type="number"
-            value={historyDays}
-            onChange={(e) => setHistoryDays(parseInt(e.target.value, 10) || 365)}
-            min={7}
-            max={1825}
-          />
-          <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
-            How far back to backfill PR history
+          <div style={css.field}>
+            <label style={css.label}>History (days)</label>
+            <input
+              style={{ ...css.input, width: 120 }}
+              type="number"
+              value={historyDays}
+              onChange={(e) => setHistoryDays(parseInt(e.target.value, 10) || 365)}
+              min={7}
+              max={1825}
+            />
+            <div style={{ fontSize: 11, color: "var(--fg3)", marginTop: 4 }}>
+              How far back to backfill PR history
+            </div>
+          </div>
+
+          <div style={css.field}>
+            <label style={css.label}>Default Scope</label>
+            <select
+              style={css.select}
+              value={defaultScope}
+              onChange={(e) => setDefaultScope(e.target.value as GitHubScope)}
+            >
+              <option value="me">Me</option>
+              <option value="team">My Team</option>
+              <option value="org">My Org</option>
+            </select>
+          </div>
+
+          <div style={{ ...css.field, display: "flex", alignItems: "center", gap: 8 }}>
+            <input
+              type="checkbox"
+              checked={syncEnabled}
+              onChange={(e) => setSyncEnabled(e.target.checked)}
+              id="sync-enabled"
+            />
+            <label htmlFor="sync-enabled" style={{ fontSize: 13, cursor: "pointer" }}>
+              Enable background sync
+            </label>
+          </div>
+
+          <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
+            <button type="button" style={css.btnPrimary} onClick={handleSave} disabled={saving}>
+              {saving ? "Saving…" : "Save Settings"}
+            </button>
+            {saveMsg && <span style={{ fontSize: 13, color: "#22c55e" }}>{saveMsg}</span>}
           </div>
         </div>
 
-        <div style={css.field}>
-          <label style={css.label}>Default Scope</label>
-          <select
-            style={css.select}
-            value={defaultScope}
-            onChange={(e) => setDefaultScope(e.target.value as GitHubScope)}
+        {/* Right: Team Member Roster */}
+        <div style={css.card}>
+          <div
+            style={{
+              ...css.sectionTitle,
+              marginBottom: 12,
+              display: "flex",
+              alignItems: "center",
+              justifyContent: "space-between",
+            }}
           >
-            <option value="me">Me</option>
-            <option value="team">My Team</option>
-            <option value="org">My Org</option>
-          </select>
-        </div>
-
-        <div style={{ ...css.field, display: "flex", alignItems: "center", gap: 8 }}>
-          <input
-            type="checkbox"
-            checked={syncEnabled}
-            onChange={(e) => setSyncEnabled(e.target.checked)}
-            id="sync-enabled"
-          />
-          <label htmlFor="sync-enabled" style={{ fontSize: 13, cursor: "pointer" }}>
-            Enable background sync
-          </label>
-        </div>
-
-        <div style={{ display: "flex", gap: 8, alignItems: "center" }}>
-          <button type="button" style={css.btnPrimary} onClick={handleSave} disabled={saving}>
-            {saving ? "Saving…" : "Save Settings"}
-          </button>
-          {saveMsg && <span style={{ fontSize: 13, color: "#22c55e" }}>{saveMsg}</span>}
+            <span>Team Members</span>
+            {teamSlug && (
+              <span
+                style={{
+                  fontSize: 11,
+                  fontWeight: 400,
+                  color: "var(--fg3)",
+                  background: "var(--bg3)",
+                  padding: "2px 8px",
+                  borderRadius: 8,
+                }}
+              >
+                {teamSlug}
+              </span>
+            )}
+          </div>
+          <TeamMemberRoster teamSlug={teamSlug} />
         </div>
       </div>
 
-      {/* Environment Variables Reference */}
+      {/* Environment Variables Reference — full width */}
       <div style={{ ...css.card, marginTop: 16 }}>
         <div style={{ ...css.sectionTitle, marginBottom: 12 }}>Environment Variables</div>
         <div style={{ fontSize: 12, color: "var(--fg3)", lineHeight: 1.8 }}>

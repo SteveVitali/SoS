@@ -16,6 +16,7 @@ const log = createLogger("github:orgSyncer");
  * Uses GET /orgs/{org}/teams with pagination.
  */
 export async function syncOrgTeams(token: string, org: string): Promise<number> {
+  org = org.toLowerCase();
   const octokit = getOctokit(token);
   const budget = getRateLimitBudget();
   const startTime = Date.now();
@@ -70,6 +71,7 @@ export async function syncTeamMembers(
   org: string,
   teamSlug: string,
 ): Promise<string[]> {
+  org = org.toLowerCase();
   const octokit = getOctokit(token);
   const budget = getRateLimitBudget();
   const memberLogins: string[] = [];
@@ -118,6 +120,7 @@ export async function syncTeamMembers(
  * Uses GET /orgs/{org}/members with pagination.
  */
 export async function syncOrgMembers(token: string, org: string): Promise<number> {
+  org = org.toLowerCase();
   const octokit = getOctokit(token);
   const budget = getRateLimitBudget();
   const startTime = Date.now();
@@ -173,6 +176,7 @@ export async function syncOrgMembers(token: string, org: string): Promise<number
  * Full org sync: teams, then members per team, then all org members.
  */
 export async function syncOrg(token: string, org: string): Promise<void> {
+  org = org.toLowerCase();
   const startTime = Date.now();
   log.info("Starting full org sync", { org });
 

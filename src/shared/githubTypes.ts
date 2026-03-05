@@ -35,6 +35,7 @@ export interface GitHubPrCommentStats {
   total_threads: number;
   total_comments: number;
   unresolved_threads: number;
+  unaddressed_threads: number;
 }
 
 export interface GitHubPrDoc {

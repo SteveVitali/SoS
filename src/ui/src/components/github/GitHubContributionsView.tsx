@@ -5,6 +5,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { type ContributionsResponse, type GitHubScope, getGitHubContributions } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { formatCompactNumber, toErrorMessage } from "../../utils/format.js";
 import { ScopeToggle } from "./ScopeToggle.js";
 
 const RANGE_OPTIONS = [
@@ -28,7 +29,7 @@ export function GitHubContributionsView() {
       const res = await getGitHubContributions({ scope, range, group_by: "week" });
       setData(res);
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -220,14 +221,8 @@ function StatCard({ label, value, color }: { label: string; value: number; color
         textAlign: "center",
       }}
     >
-      <div style={{ fontSize: 24, fontWeight: 700, color }}>{formatNum(value)}</div>
+      <div style={{ fontSize: 24, fontWeight: 700, color }}>{formatCompactNumber(value)}</div>
       <div style={{ fontSize: 12, color: "var(--fg3)", marginTop: 4 }}>{label}</div>
     </div>
   );
-}
-
-function formatNum(n: number): string {
-  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
-  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
-  return String(n);
 }

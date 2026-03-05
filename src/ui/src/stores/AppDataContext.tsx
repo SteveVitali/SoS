@@ -2,14 +2,12 @@ import type React from "react";
 import { createContext, useCallback, useContext, useEffect, useRef, useState } from "react";
 import {
   fetchPrStats,
-  type GitHubPr,
   getIdentity,
   getRegistry,
   getUsers,
   getWorktreeStatus,
   type Job,
   listJobs,
-  listPrs,
   listWorkerNodes,
   type PrCommentStats,
   type RegistryData,
@@ -27,11 +25,6 @@ interface JobsFilter {
   offset?: number;
 }
 
-interface PrsFilter {
-  state?: "open" | "closed" | "merged" | "all";
-  limit?: number;
-}
-
 interface JobsState {
   jobs: Job[];
   total: number;
@@ -39,13 +32,6 @@ interface JobsState {
   loading: boolean;
   error: string;
   prStats: Record<string, PrCommentStats>;
-  lastRefreshedAt: number | null;
-}
-
-interface PrsState {
-  prs: GitHubPr[];
-  loading: boolean;
-  error: string;
   lastRefreshedAt: number | null;
 }
 
@@ -65,13 +51,11 @@ interface WorkerNodesState {
 
 interface AppDataContextValue {
   jobs: JobsState;
-  prs: PrsState;
   registry: RegistryState;
   worktrees: Record<string, WorktreeSlotStatus[]>;
   workerNodes: WorkerNodesState;
   jobOwner: string;
   refreshJobs: (filter?: JobsFilter) => Promise<void>;
-  refreshPrs: (filter?: PrsFilter) => Promise<void>;
   refreshRegistry: () => Promise<void>;
   refreshWorktrees: () => Promise<void>;
   refreshWorkerNodes: () => Promise<void>;
@@ -148,31 +132,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     });
   }, []);
 
-  // --- PRs ---
-  const [prsState, setPrsState] = useState<PrsState>({
-    prs: [],
-    loading: true,
-    error: "",
-    lastRefreshedAt: null,
-  });
-  const lastPrsFilter = useRef<PrsFilter>({ state: "open", limit: 20 });
-
-  const refreshPrs = useCallback(async (filter?: PrsFilter) => {
-    if (filter) lastPrsFilter.current = filter;
-    const f = lastPrsFilter.current;
-    setPrsState((prev) => ({ ...prev, loading: prev.prs.length === 0, error: "" }));
-    try {
-      const res = await listPrs({ state: f.state, limit: f.limit });
-      setPrsState({ prs: res.prs, loading: false, error: "", lastRefreshedAt: Date.now() });
-    } catch (err: unknown) {
-      setPrsState((prev) => ({
-        ...prev,
-        loading: false,
-        error: err instanceof Error ? (err as Error).message : String(err),
-      }));
-    }
-  }, []);
-
   // --- Registry ---
   const [registryState, setRegistryState] = useState<RegistryState>({
     registry: null,
@@ -246,7 +205,6 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     if (initialized.current) return;
     initialized.current = true;
     refreshJobs();
-    refreshPrs();
     refreshRegistry();
     refreshWorktrees();
     refreshWorkerNodes();
@@ -255,40 +213,29 @@ export function AppDataProvider({ children }: { children: React.ReactNode }) {
     getIdentity()
       .then((res) => setJobOwner(res.jobOwner))
       .catch(() => {});
-  }, [
-    refreshJobs,
-    refreshPrs,
-    refreshRegistry,
-    refreshWorktrees,
-    refreshWorkerNodes,
-    refreshJobPrStats,
-  ]);
+  }, [refreshJobs, refreshRegistry, refreshWorktrees, refreshWorkerNodes, refreshJobPrStats]);
 
   // --- Polling: refresh jobs every 3s, worktrees every 5s, PRs + PR stats every 120s ---
   useEffect(() => {
     const jobsTimer = setInterval(() => refreshJobs(), 3_000);
     const worktreeTimer = setInterval(() => refreshWorktrees(), 5_000);
     const workerNodesTimer = setInterval(() => refreshWorkerNodes(), 5_000);
-    const prsTimer = setInterval(() => refreshPrs(), 600_000);
     const prStatsTimer = setInterval(() => refreshJobPrStats(), 600_000);
     return () => {
       clearInterval(jobsTimer);
       clearInterval(worktreeTimer);
       clearInterval(workerNodesTimer);
-      clearInterval(prsTimer);
       clearInterval(prStatsTimer);
     };
-  }, [refreshJobs, refreshPrs, refreshWorktrees, refreshWorkerNodes, refreshJobPrStats]);
+  }, [refreshJobs, refreshWorktrees, refreshWorkerNodes, refreshJobPrStats]);
 
   const value: AppDataContextValue = {
     jobs: jobsState,
-    prs: prsState,
     registry: registryState,
     worktrees,
     workerNodes: workerNodesState,
     jobOwner,
     refreshJobs,
-    refreshPrs,
     refreshRegistry,
     refreshWorktrees,
     refreshWorkerNodes,

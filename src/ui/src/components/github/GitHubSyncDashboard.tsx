@@ -16,7 +16,12 @@ import {
   triggerGitHubSync,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { relativeTime } from "../../utils/format.js";
+import {
+  formatCountdown,
+  formatDuration,
+  relativeTime,
+  toErrorMessage,
+} from "../../utils/format.js";
 
 const TASK_LABELS: Record<string, string> = {
   "hot-prs": "Open PRs",
@@ -24,21 +29,6 @@ const TASK_LABELS: Record<string, string> = {
   "org-sync": "Teams & Members",
   contributions: "Contributions",
 };
-
-function formatElapsed(ms: number): string {
-  const s = Math.max(0, Math.floor(ms / 1000));
-  if (s < 60) return `${s}s`;
-  const m = Math.floor(s / 60);
-  return `${m}m ${s % 60}s`;
-}
-
-function formatCountdown(ms: number): string {
-  const total = Math.max(0, Math.ceil(ms / 1000));
-  const m = Math.floor(total / 60);
-  const s = total % 60;
-  if (m > 0) return `${m}:${String(s).padStart(2, "0")}`;
-  return `${s}s`;
-}
 
 export function GitHubSyncDashboard() {
   const [status, setStatus] = useState<SyncStatusResponse | null>(null);
@@ -68,7 +58,7 @@ export function GitHubSyncDashboard() {
       setChunks(c.chunks);
       setLogEntries(l.entries.reverse());
     } catch (err: unknown) {
-      setError(err instanceof Error ? err.message : String(err));
+      setError(toErrorMessage(err));
     } finally {
       setLoading(false);
     }
@@ -141,7 +131,7 @@ export function GitHubSyncDashboard() {
         </span>
         {activeTask && (
           <span style={{ fontSize: 11, color: "var(--fg3)" }}>
-            {formatElapsed(now - new Date(activeTask.started_at).getTime())}
+            {formatDuration(now - new Date(activeTask.started_at).getTime())}
           </span>
         )}
         <button

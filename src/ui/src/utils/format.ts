@@ -54,3 +54,30 @@ export function formatUserShort(
   }
   return userId;
 }
+
+/**
+ * Compact number formatting: 1234 → "1.2K", 1234567 → "1.2M".
+ */
+export function formatCompactNumber(n: number): string {
+  if (n >= 1_000_000) return `${(n / 1_000_000).toFixed(1)}M`;
+  if (n >= 1_000) return `${(n / 1_000).toFixed(1)}K`;
+  return String(n);
+}
+
+/**
+ * Countdown string from milliseconds: "2:05" or "45s".
+ */
+export function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m > 0) return `${m}:${String(s).padStart(2, "0")}`;
+  return `${s}s`;
+}
+
+/**
+ * Safely extract an error message from an unknown catch value.
+ */
+export function toErrorMessage(err: unknown): string {
+  return err instanceof Error ? err.message : String(err);
+}

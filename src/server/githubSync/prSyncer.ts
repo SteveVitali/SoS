@@ -6,10 +6,11 @@
  * 2. Chunk backfill: process a deterministic 4-week date-range chunk (Tier 3)
  */
 
-import type { GitHubPrDoc } from "../../shared/githubTypes.js";
+import type { GitHubPrCommentStats, GitHubPrDoc } from "../../shared/githubTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import { buildChunkDocId, MS_PER_DAY, toDateStr } from "./chunks.js";
-import { getSyncChunk, upsertPrsBatch, upsertSyncChunk } from "./githubRepo.js";
+import { resolveGitHubConfig } from "./githubConfig.js";
+import { getPrsCollection, getSyncChunk, upsertPrsBatch, upsertSyncChunk } from "./githubRepo.js";
 import { getOctokit, getRateLimitBudget, updateBudgetFromResponse } from "./octokitClient.js";
 import { writeSyncLog } from "./syncEventLog.js";
 
@@ -82,7 +83,19 @@ export async function syncOpenPrs(token: string, org: string, lastRunAt?: Date):
     }
 
     if (prs.length > 0) {
-      await upsertPrsBatch(prs);
+      await upsertPrsBatch(prs, { preserveDetailFields: true });
+    }
+
+    // Enrich PRs that haven't been enriched yet (detail_synced_at missing)
+    const orgLower = org.toLowerCase();
+    const unenriched = await getPrsCollection()
+      .find({ org: orgLower, state: "open", detail_synced_at: { $exists: false } } as any)
+      .sort({ updated_at: -1 })
+      .limit(200)
+      .toArray();
+    let enrichedCount = 0;
+    if (unenriched.length > 0) {
+      enrichedCount = await enrichPrDetails(token, unenriched, budget);
     }
 
     const duration = Date.now() - startTime;
@@ -90,7 +103,7 @@ export async function syncOpenPrs(token: string, org: string, lastRunAt?: Date):
     await writeSyncLog(
       "info",
       "hot_sync",
-      `Hot sync (${mode}): ${prs.length} PRs in ${duration}ms`,
+      `Hot sync (${mode}): ${prs.length} PRs, ${enrichedCount} enriched in ${duration}ms`,
       {
         items_fetched: prs.length,
         duration_ms: duration,
@@ -198,9 +211,9 @@ export async function syncChunk(
       chunk_id: chunkId,
     }));
 
-    // Batch upsert
+    // Batch upsert (preserve any existing enriched detail fields)
     if (prsArray.length > 0) {
-      await upsertPrsBatch(prsArray);
+      await upsertPrsBatch(prsArray, { preserveDetailFields: true });
     }
 
     // Enrich with detail (additions, deletions, reviews) — limited by budget
@@ -536,7 +549,8 @@ function parseSearchItem(item: SearchIssueItem): GitHubPrDoc | null {
  * Enrich PRs with detail fields not available from search:
  * additions, deletions, head_ref, base_ref, changed_files, reviews, review requests.
  *
- * Uses per-PR REST calls (2 per PR: pulls.get + pulls.listReviews).
+ * Uses per-PR REST calls (3+ per PR: pulls.get + pulls.listReviews + pulls.listReviewComments).
+ * Comment fetching may paginate, consuming additional budget.
  * Limited by budget — stops if budget is exhausted.
  */
 async function enrichPrDetails(
@@ -547,11 +561,25 @@ async function enrichPrDetails(
   const octokit = getOctokit(token);
   let enriched = 0;
 
+  // Resolve username for unaddressed_threads computation
+  let currentUser = "";
+  try {
+    const cfg = await resolveGitHubConfig();
+    currentUser = cfg.username?.toLowerCase() || "";
+  } catch {
+    // non-critical
+  }
+
   for (const pr of prs) {
-    // Check budget — need at least 2 requests per PR
-    if (!budget.canSpendRest(2)) {
+    // Skip PRs that have already been enriched
+    if (pr.detail_synced_at) {
+      continue;
+    }
+
+    // Check budget — need at least 3 requests per PR (detail + reviews + comments)
+    if (!budget.canSpendRest(3)) {
       log.debug("Budget exhausted, stopping PR enrichment", {
-        remaining: enriched,
+        enriched,
         total: prs.length,
       });
       break;
@@ -606,6 +634,16 @@ async function enrichPrDetails(
         pr.review_decision = "APPROVED";
       }
 
+      // Fetch review comments for thread stats (total, unresolved, unaddressed)
+      pr.comment_stats = await fetchCommentStats(
+        octokit,
+        owner,
+        repo,
+        pr.number,
+        currentUser,
+        budget,
+      );
+
       await upsertPrsBatch([pr]);
       enriched++;
     } catch (err: unknown) {
@@ -617,4 +655,108 @@ async function enrichPrDetails(
   }
 
   return enriched;
+}
+
+/**
+ * Fetch review comments via REST and compute thread-level stats.
+ *
+ * Review comments have an `in_reply_to_id` field that links replies to a
+ * root comment, forming threads.  We group by root, count totals, and
+ * determine "unresolved" (threads with no associated APPROVED/DISMISSED
+ * review on the same path) and "unaddressed" (unresolved threads where
+ * the last commenter is NOT the current user — i.e. awaiting your reply).
+ */
+async function fetchCommentStats(
+  octokit: ReturnType<typeof getOctokit>,
+  owner: string,
+  repo: string,
+  pullNumber: number,
+  currentUser: string,
+  budget: ReturnType<typeof getRateLimitBudget>,
+): Promise<GitHubPrCommentStats> {
+  const empty: GitHubPrCommentStats = {
+    total_threads: 0,
+    total_comments: 0,
+    unresolved_threads: 0,
+    unaddressed_threads: 0,
+  };
+
+  try {
+    // Paginate all review comments (capped at 10 pages = 1000 comments)
+    const MAX_COMMENT_PAGES = 10;
+    const allComments: any[] = [];
+    let page = 1;
+    while (page <= MAX_COMMENT_PAGES) {
+      if (!budget.canSpendRest(1)) break;
+      const resp = await octokit.pulls.listReviewComments({
+        owner,
+        repo,
+        pull_number: pullNumber,
+        per_page: 100,
+        page,
+      });
+      updateBudgetFromResponse(resp as any, budget);
+      budget.consumeRest(1);
+
+      allComments.push(...resp.data);
+      if (resp.data.length < 100) break;
+      page++;
+    }
+
+    if (allComments.length === 0) return empty;
+
+    // Group into threads: root comment id → list of comments
+    // A root comment has no in_reply_to_id; replies point to their root.
+    const threads = new Map<number, any[]>();
+    for (const c of allComments) {
+      const rootId = c.in_reply_to_id || c.id;
+      if (!threads.has(rootId)) threads.set(rootId, []);
+      threads.get(rootId)!.push(c);
+    }
+
+    // Determine resolved status: GitHub REST doesn't expose isResolved
+    // for review threads.  We approximate: a thread's root comment has a
+    // `path` field.  If the root comment's `position` is null, the thread
+    // is outdated (resolved by code change).  Otherwise we treat it as
+    // unresolved.  This isn't perfect but is the best REST can do.
+    let unresolvedThreads = 0;
+    let unaddressedThreads = 0;
+
+    for (const [, comments] of threads) {
+      // Sort by created_at to find last commenter
+      comments.sort(
+        (a: any, b: any) => new Date(a.created_at).getTime() - new Date(b.created_at).getTime(),
+      );
+
+      // The root comment (first in thread, or the one without in_reply_to_id)
+      const root = comments.find((c: any) => !c.in_reply_to_id) || comments[0];
+
+      // If position is null AND original_position exists, thread is on outdated diff
+      // We consider these "resolved" (no longer relevant to current code)
+      const isOutdated = root.position === null && root.original_position !== null;
+
+      if (!isOutdated) {
+        unresolvedThreads++;
+        // Unaddressed = last comment not from the current user
+        const lastComment = comments[comments.length - 1];
+        const lastAuthor = lastComment?.user?.login?.toLowerCase() || "";
+        if (currentUser && lastAuthor !== currentUser) {
+          unaddressedThreads++;
+        }
+      }
+    }
+
+    return {
+      total_threads: threads.size,
+      total_comments: allComments.length,
+      unresolved_threads: unresolvedThreads,
+      unaddressed_threads: unaddressedThreads,
+    };
+  } catch (err: unknown) {
+    log.debug("Failed to fetch comment stats", {
+      pr: `${owner}/${repo}#${pullNumber}`,
+      error: (err as Error).message,
+    });
+    return empty;
+  }
 }

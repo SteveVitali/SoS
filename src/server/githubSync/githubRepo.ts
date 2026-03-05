@@ -107,15 +107,57 @@ export async function saveGitHubSettings(settings: Partial<GitHubSettings>): Pro
 
 // --- PR CRUD helpers ---
 
-export async function upsertPrsBatch(prs: GitHubPrDoc[]): Promise<number> {
+/** Fields only available from the PR detail endpoint, not the search API. */
+const DETAIL_ONLY_FIELDS = new Set([
+  "additions",
+  "deletions",
+  "changed_files",
+  "head_ref",
+  "base_ref",
+  "reviews",
+  "requested_reviewers",
+  "review_decision",
+  "comment_stats",
+  "detail_synced_at",
+]);
+
+export async function upsertPrsBatch(
+  prs: GitHubPrDoc[],
+  options?: { preserveDetailFields?: boolean },
+): Promise<number> {
   if (prs.length === 0) return 0;
-  const ops = prs.map((pr) => ({
-    updateOne: {
-      filter: { _id: pr._id },
-      update: { $set: pr },
-      upsert: true,
-    },
-  }));
+
+  const ops = prs.map((pr) => {
+    if (options?.preserveDetailFields) {
+      // Split fields: search-sourced fields → $set, detail fields → $setOnInsert
+      // so enriched data is never overwritten by search defaults (0 / empty)
+      const searchFields: Record<string, unknown> = {};
+      const detailDefaults: Record<string, unknown> = {};
+      for (const [key, value] of Object.entries(pr)) {
+        if (key === "_id") continue;
+        if (DETAIL_ONLY_FIELDS.has(key)) {
+          detailDefaults[key] = value;
+        } else {
+          searchFields[key] = value;
+        }
+      }
+      return {
+        updateOne: {
+          filter: { _id: pr._id },
+          update: { $set: searchFields, $setOnInsert: detailDefaults },
+          upsert: true,
+        },
+      };
+    }
+    return {
+      updateOne: {
+        filter: { _id: pr._id },
+        update: { $set: pr },
+        upsert: true,
+      },
+    };
+  });
+
   const result = await getPrsCollection().bulkWrite(ops, { ordered: false });
   return result.upsertedCount + result.modifiedCount;
 }

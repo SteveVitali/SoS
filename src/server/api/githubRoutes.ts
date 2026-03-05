@@ -16,6 +16,7 @@ import type {
   SyncStatusResponse,
 } from "../../shared/githubTypes.js";
 import { createLogger } from "../../shared/logger.js";
+import type { JobDoc } from "../../shared/types.js";
 import type { ServerConfig } from "../config.js";
 import {
   getChunkStats,
@@ -34,6 +35,7 @@ import {
   saveGitHubSettings,
   subscribeSyncLog,
 } from "../githubSync/index.js";
+import * as jobService from "../jobs/jobService.js";
 
 const log = createLogger("server:api:github");
 
@@ -81,9 +83,8 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
           .project({ _id: 1 })
           .toArray();
         const logins = members.map((m) => m._id);
-        if (logins.length > 0) {
-          filter.author = { $in: logins };
-        }
+        // Always set author filter for team scope — empty list → no results
+        filter.author = logins.length > 0 ? { $in: logins } : { $in: [] };
       }
       // scope === "org" → no author filter (show all)
 
@@ -135,6 +136,33 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
       const prs = await getPrsCollection().aggregate(pipeline).toArray();
 
       const total = await getPrsCollection().countDocuments(filter as any);
+
+      // Cross-link with jobs: find jobs whose pr_urls match any of these PRs.
+      // Note: fetches up to 200 recent jobs — sufficient for active cross-linking.
+      const prUrls = prs.map((p: any) => `https://github.com/${p.repo}/pull/${p.number}`);
+      if (prUrls.length > 0) {
+        try {
+          const { jobs } = await jobService.queryJobs({ limit: 200, offset: 0 });
+          const urlToTaskId = new Map<string, string>();
+          for (const job of jobs as JobDoc[]) {
+            for (const url of job.pr_urls || []) {
+              if (!urlToTaskId.has(url)) {
+                urlToTaskId.set(url, job.task_id);
+              }
+            }
+          }
+          for (let i = 0; i < prs.length; i++) {
+            const url = prUrls[i];
+            if (urlToTaskId.has(url)) {
+              (prs[i] as any).linked_job_task_id = urlToTaskId.get(url);
+            }
+          }
+        } catch (linkErr: unknown) {
+          log.warn("Failed to cross-link PRs with jobs", {
+            error: (linkErr as Error).message,
+          });
+        }
+      }
 
       // Check chunk coverage
       const stats = await getChunkStats(org, "prs");
@@ -203,9 +231,8 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
           .project({ _id: 1 })
           .toArray();
         const logins = members.map((m) => m._id);
-        if (logins.length > 0) {
-          matchFilter.login = { $in: logins };
-        }
+        // Always set login filter for team scope — empty list → no results
+        matchFilter.login = logins.length > 0 ? { $in: logins } : { $in: [] };
       }
 
       const contribCol = getContributionsCollection();
