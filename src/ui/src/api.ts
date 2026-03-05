@@ -307,6 +307,7 @@ export async function reloadModelConfig(): Promise<{
 
 export interface AvailableModelsResponse {
   models: string[];
+  imageModels?: string[];
   provider: string;
   message?: string;
   error?: string;

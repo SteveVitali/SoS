@@ -15,7 +15,14 @@ import { PageHeader } from "../shared/PageHeader.js";
 import { Spinner } from "../shared/Spinner.js";
 import { ModelAutocomplete } from "./ModelAutocomplete.js";
 
-const ROLE_ORDER = ["routing", "titleGeneration", "research", "raptorSummarization", "embedding"];
+const ROLE_ORDER = [
+  "routing",
+  "titleGeneration",
+  "research",
+  "raptorSummarization",
+  "embedding",
+  "imageGeneration",
+];
 
 const SOURCE_BADGE: Record<string, { color: string; label: string }> = {
   default: { color: "var(--fg3)", label: "default" },
@@ -194,6 +201,7 @@ export function ModelsPage() {
   const [saveMsg, setSaveMsg] = useState("");
   const [dirty, setDirty] = useState(false);
   const [availableModels, setAvailableModels] = useState<string[]>([]);
+  const [imageModels, setImageModels] = useState<string[]>([]);
   const [modelsLoading, setModelsLoading] = useState(false);
   const [provider, setProvider] = useState<ProviderSettings>({});
   const [providerResolved, setProviderResolved] = useState<ProviderResolved | null>(null);
@@ -219,8 +227,14 @@ export function ModelsPage() {
   const refreshAvailableModels = useCallback(() => {
     setModelsLoading(true);
     fetchAvailableModels()
-      .then((res) => setAvailableModels(res.models || []))
-      .catch(() => setAvailableModels([]))
+      .then((res) => {
+        setAvailableModels(res.models || []);
+        setImageModels(res.imageModels || []);
+      })
+      .catch(() => {
+        setAvailableModels([]);
+        setImageModels([]);
+      })
       .finally(() => setModelsLoading(false));
   }, []);
 
@@ -448,7 +462,7 @@ export function ModelsPage() {
             role={models[roleName]}
             overrideValue={overrides[roleName] || ""}
             onOverrideChange={(value) => handleOverrideChange(roleName, value)}
-            availableModels={availableModels}
+            availableModels={roleName === "imageGeneration" ? imageModels : availableModels}
             modelsLoading={modelsLoading}
           />
         ))}

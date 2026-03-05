@@ -630,7 +630,12 @@ export function createWebRoutes(config: ServerConfig): Router {
   // Uses /model/info (fast) for the model group list, and /health (slow, ~30-60s)
   // as a best-effort background filter. Health data is cached separately and used
   // to filter out unhealthy groups when available.
-  let cachedModelList: { models: string[]; provider: string; fetchedAt: number } | null = null;
+  let cachedModelList: {
+    models: string[];
+    imageModels: string[];
+    provider: string;
+    fetchedAt: number;
+  } | null = null;
   let cachedHealthyDeployments: { deployments: Set<string>; fetchedAt: number } | null = null;
   let healthFetchInFlight = false;
   const MODEL_LIST_CACHE_TTL_MS = 60_000;
@@ -642,23 +647,30 @@ export function createWebRoutes(config: ServerConfig): Router {
     model_info?: { mode?: string };
   }
 
-  /** Extract chat-mode model groups from /model/info data, optionally filtered by health. */
+  /** Extract model groups from /model/info data, split by capability. */
   function extractModelGroups(
     entries: ModelInfoEntry[],
     healthyDeployments: Set<string> | null,
-  ): string[] {
-    const groups = new Set<string>();
+  ): { chatModels: string[]; imageModels: string[] } {
+    const chatGroups = new Set<string>();
+    const imageGroups = new Set<string>();
     for (const entry of entries) {
       const group = entry.model_name;
       const deployment = entry.litellm_params?.model;
       const mode = entry.model_info?.mode;
       if (!group || !deployment) continue;
-      if (mode && mode !== "chat" && mode !== "completion") continue;
       // If we have health data, only include groups with ≥1 healthy deployment
       if (healthyDeployments && !healthyDeployments.has(deployment)) continue;
-      groups.add(group);
+      if (mode === "image_generation") {
+        imageGroups.add(group);
+      } else if (!mode || mode === "chat" || mode === "completion") {
+        chatGroups.add(group);
+      }
     }
-    return [...groups].sort();
+    return {
+      chatModels: [...chatGroups].sort(),
+      imageModels: [...imageGroups].sort(),
+    };
   }
 
   /** Fire-and-forget background fetch of /health to populate the health cache. */
@@ -704,6 +716,7 @@ export function createWebRoutes(config: ServerConfig): Router {
       if (provider !== "openai_compatible" || !baseUrl) {
         res.json({
           models: [],
+          imageModels: [],
           provider,
           message:
             "Dynamic model list only available with openai_compatible provider (e.g. LiteLLM)",
@@ -745,20 +758,22 @@ export function createWebRoutes(config: ServerConfig): Router {
 
       const modelInfoData = (await modelInfoRes.json()) as { data?: ModelInfoEntry[] };
       const healthyDeps = cachedHealthyDeployments?.deployments ?? null;
-      const models = extractModelGroups(modelInfoData.data || [], healthyDeps);
+      const { chatModels, imageModels } = extractModelGroups(modelInfoData.data || [], healthyDeps);
 
       log.info("Fetched available models from LLM provider", {
         total_deployments: (modelInfoData.data || []).length,
         health_filter_active: !!healthyDeps,
-        result_count: models.length,
+        chat_models: chatModels.length,
+        image_models: imageModels.length,
       });
 
-      cachedModelList = { models, provider, fetchedAt: Date.now() };
-      res.json({ models, provider });
+      cachedModelList = { models: chatModels, imageModels, provider, fetchedAt: Date.now() };
+      res.json({ models: chatModels, imageModels, provider });
     } catch (err: unknown) {
       log.warn("Error fetching available models", { error: (err as Error).message });
       res.json({
         models: cachedModelList?.models || [],
+        imageModels: cachedModelList?.imageModels || [],
         provider: getResolvedProviderSettings().provider,
         error: (err as Error).message,
       });
