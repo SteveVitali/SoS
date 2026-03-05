@@ -137,6 +137,7 @@ export function createChatRoutes(config: ServerConfig): Router {
           : action.command !== "chat" && action.command !== "no_op"
             ? { command: action.command }
             : undefined,
+        images: result.images,
       };
       await appendMessage(conversation.conversation_id, assistantMessage);
 

@@ -13,6 +13,7 @@ export interface ConversationMessage {
   text: string;
   at: Date;
   action?: { command: string; task_id?: string };
+  images?: Array<{ url: string; alt?: string }>;
 }
 
 export interface ConversationDoc {

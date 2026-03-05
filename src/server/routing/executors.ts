@@ -8,8 +8,10 @@
 
 import { execFile } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
+import { getModelForRole } from "../../shared/modelConfig.js";
 import type { GithubQueryType } from "../../shared/types.js";
 import { GITHUB_INSTANT_QUERIES, GITHUB_SUMMARY_QUERIES } from "../../shared/types.js";
+import { storeGeneratedImage } from "../chat/imageStore.js";
 import { formatInstantQueryFromMongo } from "../github/mongoFormatting.js";
 import { executeInstantQueryFromMongo } from "../github/mongoQueries.js";
 import { executeRecapInline } from "../github/recapService.js";
@@ -34,6 +36,7 @@ import type {
   CreateRespondJobExecution,
   DispatchExecution,
   ExecutionDef,
+  GenerateImageExecution,
   GithubQueryExecution,
   JobActionExecution,
   JobListExecution,
@@ -50,10 +53,12 @@ const log = createLogger("server:routing:executors");
 // --- LLM provider for inline recaps ---
 
 let recapLlmProvider: LLMProvider | null = null;
+let imageGenProvider: LLMProvider | null = null;
 
 export function initExecutorLLM(provider: LLMProvider): void {
   recapLlmProvider = provider;
-  log.info("Executor LLM provider initialized (inline recaps enabled)");
+  imageGenProvider = provider;
+  log.info("Executor LLM provider initialized (inline recaps + image gen enabled)");
 }
 
 // --- Shared helpers ---
@@ -756,6 +761,81 @@ async function executeLeaveChannel(
   }
 }
 
+// --- Executor: generate_image ---
+
+async function executeGenerateImage(
+  action: RoutedAction,
+  ctx: CommandContext,
+  execDef: GenerateImageExecution,
+): Promise<CommandResult> {
+  if (!imageGenProvider?.generateImage) {
+    const reply = renderTemplate(
+      execDef.reply_unsupported ||
+        "⚠️ Image generation isn't available with the current model provider.",
+      tplCtx(action, ctx),
+    );
+    return { reply: appendReply(action.reply, reply), actionTaken: "generate_image: unsupported" };
+  }
+
+  try {
+    const model = getModelForRole("imageGeneration");
+    const prompt = action.args.prompt || "";
+    if (!prompt.trim()) {
+      return {
+        reply: appendReply(action.reply, "⚠️ I need a description of what to generate."),
+        actionTaken: "generate_image: missing prompt",
+      };
+    }
+
+    const size = action.args.size || execDef.default_size || undefined;
+    const quality = action.args.quality || execDef.default_quality || undefined;
+
+    log.info("Generating image", { model, prompt: prompt.slice(0, 100), size, quality });
+
+    const images = await imageGenProvider.generateImage({
+      model,
+      prompt,
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic param from YAML config
+      size: size as any,
+      // biome-ignore lint/suspicious/noExplicitAny: dynamic param from YAML config
+      quality: quality as any,
+    });
+
+    if (!images.length || !images[0].base64) {
+      return {
+        reply: appendReply(action.reply, "⚠️ Image generation returned no results."),
+        actionTaken: "generate_image: empty",
+      };
+    }
+
+    const img = images[0];
+    const conversationId = ctx.web?.conversationId;
+    const imageRef = await storeGeneratedImage({
+      base64: img.base64,
+      mediaType: img.mediaType,
+      prompt,
+      revisedPrompt: img.revisedPrompt,
+      model,
+      createdBy: ctx.ownerId,
+      conversationId,
+    });
+
+    const replyText = action.reply || img.revisedPrompt || "Here you go.";
+    return {
+      reply: replyText,
+      actionTaken: "generate_image",
+      images: [imageRef],
+    };
+  } catch (err: unknown) {
+    log.error("Image generation failed", { error: (err as Error).message });
+    const reply = renderTemplate(
+      execDef.reply_error || "⚠️ Image generation failed: {{error}}",
+      tplCtx(action, ctx, { error: (err as Error).message }),
+    );
+    return { reply: appendReply(action.reply, reply), actionTaken: "generate_image: failed" };
+  }
+}
+
 // --- Executor: dispatch ---
 
 async function executeDispatch(
@@ -820,6 +900,8 @@ export async function executeAction(
       return executeLeaveChannel(action, ctx, execDef);
     case "dispatch":
       return executeDispatch(action, ctx, execDef);
+    case "generate_image":
+      return executeGenerateImage(action, ctx, execDef);
     case "research":
       return executeResearch(action, ctx, execDef);
     default:

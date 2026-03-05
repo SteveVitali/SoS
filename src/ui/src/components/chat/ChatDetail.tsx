@@ -117,6 +117,26 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
           }}
         >
           {isUser ? msg.text : <div className="chat-markdown">{renderMarkdown(msg.text)}</div>}
+          {msg.images?.map((img, i) => (
+            <a
+              key={`img-${i}`}
+              href={img.url}
+              target="_blank"
+              rel="noopener noreferrer"
+              style={{ display: "block", marginTop: 8 }}
+            >
+              <img
+                src={img.url}
+                alt={img.alt || "Generated image"}
+                style={{
+                  maxWidth: "100%",
+                  borderRadius: 8,
+                  cursor: "pointer",
+                  display: "block",
+                }}
+              />
+            </a>
+          ))}
           {msg.action?.task_id && (
             <div style={{ marginTop: 8 }}>
               <Link

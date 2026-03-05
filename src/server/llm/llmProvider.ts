@@ -28,6 +28,19 @@ export interface ChatMessage {
   content: string | ContentBlock[];
 }
 
+export interface ImageGenerationParams {
+  model: string;
+  prompt: string;
+  size?: "1024x1024" | "1024x1536" | "1536x1024" | "auto";
+  quality?: "low" | "medium" | "high" | "auto";
+}
+
+export interface GeneratedImage {
+  base64: string;
+  mediaType: string;
+  revisedPrompt?: string;
+}
+
 export interface LLMProvider {
   chat(params: {
     system: string;
@@ -36,4 +49,5 @@ export interface LLMProvider {
     maxTokens: number;
     model: string;
   }): Promise<LLMResponse>;
+  generateImage?(params: ImageGenerationParams): Promise<GeneratedImage[]>;
 }

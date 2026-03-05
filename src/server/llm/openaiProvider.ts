@@ -1,6 +1,13 @@
 import OpenAI from "openai";
 import { createLogger } from "../../shared/logger.js";
-import type { ChatMessage, LLMProvider, LLMResponse, ToolDefinition } from "./llmProvider.js";
+import type {
+  ChatMessage,
+  GeneratedImage,
+  ImageGenerationParams,
+  LLMProvider,
+  LLMResponse,
+  ToolDefinition,
+} from "./llmProvider.js";
 
 const log = createLogger("server:llm:openai");
 
@@ -86,5 +93,36 @@ export class OpenAICompatibleProvider implements LLMProvider {
     }
 
     return { text, toolCalls };
+  }
+
+  async generateImage(params: ImageGenerationParams): Promise<GeneratedImage[]> {
+    log.info("Generating image", {
+      model: params.model,
+      size: params.size,
+      quality: params.quality,
+    });
+
+    // biome-ignore lint/suspicious/noExplicitAny: OpenAI images API params vary by model
+    const requestParams: any = {
+      model: params.model,
+      prompt: params.prompt,
+      n: 1,
+    };
+
+    // gpt-image-1 and dall-e-3 support different param sets
+    if (params.size && params.size !== "auto") {
+      requestParams.size = params.size;
+    }
+    if (params.quality && params.quality !== "auto") {
+      requestParams.quality = params.quality;
+    }
+
+    const response = await this.client.images.generate(requestParams);
+
+    return (response.data || []).map((img) => ({
+      base64: img.b64_json || "",
+      mediaType: "image/png",
+      revisedPrompt: img.revised_prompt || undefined,
+    }));
   }
 }

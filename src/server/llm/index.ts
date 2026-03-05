@@ -38,6 +38,8 @@ export function createLLMProvider(config: LLMConfig): LLMProvider {
 export type {
   ChatMessage,
   ContentBlock,
+  GeneratedImage,
+  ImageGenerationParams,
   LLMProvider,
   LLMResponse,
   ToolCall,

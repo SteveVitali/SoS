@@ -1,6 +1,7 @@
 import { Router } from "express";
 import { internalAuth, optionalBasicAuth } from "../auth/internalAuth.js";
 import { createChatRoutes } from "../chat/chatRoutes.js";
+import { createImageRoutes } from "../chat/imageStore.js";
 import type { ServerConfig } from "../config.js";
 import { createKBWebRoutes, createKBWorkerRoutes } from "../kb/index.js";
 import type { SlackPoster } from "../slack/slackClient.js";
@@ -23,6 +24,7 @@ export function createRouter(config: ServerConfig, slackPoster?: SlackPoster): R
   router.use("/api/web", webAuth, createWebRoutes(config));
   router.use("/api/web/chats", webAuth, createChatRoutes(config));
   router.use("/api/web/kb", webAuth, createKBWebRoutes());
+  router.use("/api/web/images", webAuth, createImageRoutes());
   router.use("/api/web/github", webAuth, createGitHubRoutes(config));
 
   return router;

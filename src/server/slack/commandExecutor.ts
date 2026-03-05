@@ -10,6 +10,7 @@ export interface CommandResult {
   reply: string;
   actionTaken: string;
   taskId?: string;
+  images?: Array<{ url: string; alt?: string }>;
 }
 
 export interface CommandContext {

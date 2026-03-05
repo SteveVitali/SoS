@@ -270,4 +270,29 @@ describe("getModelRegistry", () => {
     expect(registry.raptorSummarization.model).toBe("custom-research");
     expect(registry.raptorSummarization.source).toBe("default");
   });
+
+  it("imageGeneration defaults to gpt-image-1", () => {
+    initModelConfig(configPath);
+    const registry = getModelRegistry();
+    expect(registry.imageGeneration.model).toBe("gpt-image-1");
+    expect(registry.imageGeneration.source).toBe("default");
+    expect(registry.imageGeneration.envVar).toBe("SOS_IMAGE_MODEL");
+  });
+
+  it("imageGeneration respects env override", () => {
+    vi.stubEnv("SOS_IMAGE_MODEL", "dall-e-3");
+    initModelConfig(configPath);
+    const registry = getModelRegistry();
+    expect(registry.imageGeneration.model).toBe("dall-e-3");
+    expect(registry.imageGeneration.source).toBe("env");
+  });
+
+  it("imageGeneration respects file override", () => {
+    vi.stubEnv("SOS_IMAGE_MODEL", "dall-e-3");
+    writeFileSync(configPath, "imageGeneration: custom-image-model\n", "utf-8");
+    initModelConfig(configPath);
+    const registry = getModelRegistry();
+    expect(registry.imageGeneration.model).toBe("custom-image-model");
+    expect(registry.imageGeneration.source).toBe("file");
+  });
 });
