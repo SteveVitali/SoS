@@ -4,7 +4,7 @@
  * live SSE activity feed, and manual trigger buttons.
  */
 
-import { useCallback, useEffect, useRef, useState } from "react";
+import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
   getGitHubSyncChunks,
   getGitHubSyncLog,
@@ -25,6 +25,13 @@ export function GitHubSyncDashboard() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const logEndRef = useRef<HTMLDivElement>(null);
+  const [now, setNow] = useState(Date.now());
+
+  // 1-second tick for live countdowns
+  useEffect(() => {
+    const tick = setInterval(() => setNow(Date.now()), 1000);
+    return () => clearInterval(tick);
+  }, []);
 
   const refresh = useCallback(async () => {
     setLoading(true);
@@ -179,26 +186,22 @@ export function GitHubSyncDashboard() {
 
       {/* Sync Timing */}
       <div style={{ display: "grid", gridTemplateColumns: "1fr 1fr", gap: 12, marginBottom: 16 }}>
-        <div style={css.card}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Hot Sync (Open PRs)</div>
-          <div style={{ fontSize: 12, color: "var(--fg3)" }}>
-            <div>
-              Last:{" "}
-              {status?.hot_sync.last_run_at ? relativeTime(status.hot_sync.last_run_at) : "never"}
-            </div>
-            <div>Interval: {status?.hot_sync.interval_seconds || 120}s</div>
-          </div>
-        </div>
-        <div style={css.card}>
-          <div style={{ fontSize: 13, fontWeight: 600, marginBottom: 8 }}>Warm Sync (Teams)</div>
-          <div style={{ fontSize: 12, color: "var(--fg3)" }}>
-            <div>
-              Last:{" "}
-              {status?.warm_sync.last_run_at ? relativeTime(status.warm_sync.last_run_at) : "never"}
-            </div>
-            <div>Interval: {status?.warm_sync.interval_seconds || 900}s</div>
-          </div>
-        </div>
+        <SyncTimerCard
+          label="Hot Sync"
+          description="Open PRs"
+          lastRunAt={status?.hot_sync.last_run_at}
+          intervalSeconds={status?.hot_sync.interval_seconds || 120}
+          now={now}
+          onTrigger={() => handleTrigger("prs")}
+        />
+        <SyncTimerCard
+          label="Warm Sync"
+          description="Teams & Members"
+          lastRunAt={status?.warm_sync.last_run_at}
+          intervalSeconds={status?.warm_sync.interval_seconds || 900}
+          now={now}
+          onTrigger={() => handleTrigger("teams")}
+        />
       </div>
 
       {/* Chunk Timeline */}
@@ -270,12 +273,6 @@ export function GitHubSyncDashboard() {
         <span style={{ fontSize: 13, fontWeight: 500, color: "var(--fg2)", padding: "6px 0" }}>
           Trigger:
         </span>
-        <button type="button" style={css.btnSmall} onClick={() => handleTrigger("prs")}>
-          Hot Sync PRs
-        </button>
-        <button type="button" style={css.btnSmall} onClick={() => handleTrigger("teams")}>
-          Sync Teams
-        </button>
         <button type="button" style={css.btnSmall} onClick={() => handleTrigger("backfill")}>
           Resume Backfill
         </button>
@@ -320,6 +317,95 @@ export function GitHubSyncDashboard() {
             );
           })}
           <div ref={logEndRef} />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function SyncTimerCard({
+  label,
+  description,
+  lastRunAt,
+  intervalSeconds,
+  now,
+  onTrigger,
+}: {
+  label: string;
+  description: string;
+  lastRunAt?: string;
+  intervalSeconds: number;
+  now: number;
+  onTrigger: () => void;
+}) {
+  const { remaining, pct } = useMemo(() => {
+    if (!lastRunAt) return { remaining: -1, pct: 0 };
+    const elapsed = (now - new Date(lastRunAt).getTime()) / 1000;
+    const rem = Math.max(0, intervalSeconds - elapsed);
+    return { remaining: Math.round(rem), pct: (rem / intervalSeconds) * 100 };
+  }, [lastRunAt, intervalSeconds, now]);
+
+  const countdown =
+    remaining < 0
+      ? "—"
+      : remaining >= 60
+        ? `${Math.floor(remaining / 60)}:${String(remaining % 60).padStart(2, "0")}`
+        : `${remaining}s`;
+
+  const barColor = remaining <= 10 && remaining >= 0 ? "var(--accent)" : "var(--fg3)";
+
+  return (
+    <div style={{ ...css.card, padding: 14, marginBottom: 0 }}>
+      <div
+        style={{
+          display: "flex",
+          justifyContent: "space-between",
+          alignItems: "center",
+          marginBottom: 10,
+        }}
+      >
+        <div>
+          <div style={{ fontSize: 13, fontWeight: 600 }}>{label}</div>
+          <div style={{ fontSize: 11, color: "var(--fg3)" }}>{description}</div>
+        </div>
+        <button type="button" style={css.btnSmall} onClick={onTrigger}>
+          Run Now
+        </button>
+      </div>
+      {/* Progress bar (depletes as countdown approaches 0) */}
+      <div
+        style={{
+          height: 4,
+          background: "var(--bg3)",
+          borderRadius: 2,
+          overflow: "hidden",
+          marginBottom: 8,
+        }}
+      >
+        <div
+          style={{
+            height: "100%",
+            width: `${pct}%`,
+            background: barColor,
+            borderRadius: 2,
+            transition: "width 1s linear",
+            opacity: 0.6,
+          }}
+        />
+      </div>
+      <div style={{ display: "flex", justifyContent: "space-between", alignItems: "baseline" }}>
+        <div style={{ fontSize: 11, color: "var(--fg3)" }}>
+          {lastRunAt ? `Last: ${relativeTime(lastRunAt)}` : "Never run"}
+        </div>
+        <div
+          style={{
+            fontSize: 18,
+            fontWeight: 700,
+            fontVariantNumeric: "tabular-nums",
+            color: remaining <= 10 && remaining >= 0 ? "var(--accent)" : "var(--fg2)",
+          }}
+        >
+          {countdown}
         </div>
       </div>
     </div>
