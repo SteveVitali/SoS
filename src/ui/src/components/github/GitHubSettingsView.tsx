@@ -129,7 +129,7 @@ export function GitHubSettingsView() {
             style={css.input}
             value={org}
             onChange={(e) => setOrg(e.target.value)}
-            placeholder="e.g. Foursquare"
+            placeholder="e.g. MyOrganization"
           />
         </div>
 
@@ -139,7 +139,7 @@ export function GitHubSettingsView() {
             style={css.input}
             value={teamSlug}
             onChange={(e) => setTeamSlug(e.target.value)}
-            placeholder="e.g. places-engineering"
+            placeholder="e.g. my-team"
           />
         </div>
 
@@ -211,11 +211,8 @@ export function GitHubSettingsView() {
           <tbody>
             {[
               ["SOS_GITHUB_TOKEN", "GitHub PAT (Classic, repo + read:org)"],
-              ["SOS_GITHUB_ORG", `Default: ${settings?.resolved.org || "Foursquare"}`],
-              [
-                "SOS_GITHUB_TEAM_SLUG",
-                `Default: ${settings?.resolved.team_slug || "places-engineering"}`,
-              ],
+              ["SOS_GITHUB_ORG", `Default: ${settings?.resolved.org || "MyOrganization"}`],
+              ["SOS_GITHUB_TEAM_SLUG", `Default: ${settings?.resolved.team_slug || "my-team"}`],
               ["SOS_GITHUB_USERNAME", "Auto-detected from token"],
               ["SOS_GITHUB_HISTORY_DAYS", `Default: ${settings?.resolved.history_days || 365}`],
               ["SOS_GITHUB_SYNC_ENABLED", "true / false"],

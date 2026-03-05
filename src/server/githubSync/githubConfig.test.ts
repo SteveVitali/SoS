@@ -34,8 +34,8 @@ describe("githubConfig", () => {
   describe("resolveGitHubConfig", () => {
     it("returns hardcoded defaults when no env vars or DB settings", async () => {
       const config = await resolveGitHubConfig();
-      expect(config.org).toBe("Foursquare");
-      expect(config.teamSlug).toBe("places-engineering");
+      expect(config.org).toBe("MyOrganization");
+      expect(config.teamSlug).toBe("my-team");
       expect(config.username).toBe("");
       expect(config.token).toBe("");
       expect(config.historyDays).toBe(365);
@@ -127,8 +127,8 @@ describe("githubConfig", () => {
 
     it("returns defaults when no env vars and no cache", () => {
       const config = getGitHubConfigSync();
-      expect(config.org).toBe("Foursquare");
-      expect(config.teamSlug).toBe("places-engineering");
+      expect(config.org).toBe("MyOrganization");
+      expect(config.teamSlug).toBe("my-team");
     });
   });
 

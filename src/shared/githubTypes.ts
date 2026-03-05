@@ -85,7 +85,7 @@ export interface GitHubContribution {
 export type SyncChunkStatus = "pending" | "in_progress" | "complete" | "failed";
 
 export interface GitHubSyncChunk {
-  _id: string; // "prs:Foursquare:2025-07-07..2025-08-04"
+  _id: string; // "prs:MyOrganization:2025-07-07..2025-08-04"
   org: string;
   data_type: "prs" | "reviews" | "contributions";
   chunk_start: Date;

@@ -218,7 +218,7 @@ Tracks the state of every deterministic backfill chunk (see §4 for full explana
 
 ```typescript
 interface GitHubSyncChunk {
-  _id: string;                // e.g. "prs:Foursquare:2025-07-07..2025-08-04"
+  _id: string;                // e.g. "prs:MyOrganization:2025-07-07..2025-08-04"
   org: string;
   data_type: "prs" | "reviews" | "contributions";
   chunk_start: Date;          // inclusive
@@ -363,20 +363,20 @@ Server starts
 
 Because we can't use GraphQL, each chunk requires multiple REST Search API calls with date-range qualifiers.
 
-For a chunk `2025-09-22..2025-10-20` in org `Foursquare`:
+For a chunk `2025-09-22..2025-10-20` in org `MyOrganization`:
 
 ```
 Step 1: Search for PRs created in this date range
-  GET /search/issues?q=org:Foursquare+type:pr+created:2025-09-22..2025-10-19
+  GET /search/issues?q=org:MyOrganization+type:pr+created:2025-09-22..2025-10-19
     &sort=created&order=asc&per_page=100&page=1
   (paginate through all pages, up to 1000 results)
 
 Step 2: Search for PRs merged in this date range (catches PRs created earlier but merged in this window)
-  GET /search/issues?q=org:Foursquare+type:pr+merged:2025-09-22..2025-10-19
+  GET /search/issues?q=org:MyOrganization+type:pr+merged:2025-09-22..2025-10-19
     &sort=updated&order=asc&per_page=100&page=1
 
 Step 3: Search for PRs closed (not merged) in this date range
-  GET /search/issues?q=org:Foursquare+type:pr+is:unmerged+closed:2025-09-22..2025-10-19
+  GET /search/issues?q=org:MyOrganization+type:pr+is:unmerged+closed:2025-09-22..2025-10-19
     &sort=updated&order=asc&per_page=100&page=1
 
 Step 4: For each new/updated PR, fetch detail (additions, deletions, reviews)
@@ -546,12 +546,12 @@ The token is **never exposed to the UI** — it's server-side only.
 
 ```bash
 # Required
-SOS_GITHUB_ORG=Foursquare                 # The org to sync
+SOS_GITHUB_ORG=MyOrganization                 # The org to sync
 SOS_GITHUB_TOKEN=ghp_xxx                  # Classic PAT with repo + read:org scopes
 
 # Optional — defaults can be overridden in UI
-SOS_GITHUB_TEAM_SLUG=places-engineering   # Default "my team"
-SOS_GITHUB_USERNAME=svitali               # Override auto-detected user
+SOS_GITHUB_TEAM_SLUG=my-team   # Default "my team"
+SOS_GITHUB_USERNAME=jdoe               # Override auto-detected user
 
 # Backfill
 SOS_GITHUB_HISTORY_DAYS=365              # Max age to backfill (default: 365 = 1 year)
@@ -713,19 +713,19 @@ The route changes from `/prs` to `/github`, with sub-routes:
 │                                                             │
 │ ┌──────────────────┐  ┌──────────────┐  ┌───────────────┐  │
 │ │  ● Me            │  │  My Team     │  │  My Org       │  │
-│ │  (svitali)       │  │ (places-e…)  │  │ (Foursquare)  │  │
+│ │  (jdoe)          │  │ (my-team)    │  │ (MyOrganization)  │  │
 │ └──────────────────┘  └──────────────┘  └───────────────┘  │
 │                                                             │
 │ State: [Open ▾]   Repo: [All repos ▾]   Author: [All ▾]   │
 │                                                             │
 │ ┌─────────────────────────────────────────────────────────┐ │
 │ │ OPEN  Fix cache invalidation bug                        │ │
-│ │       foursquare/pilgrim#4521 · svitali · feat/cache    │ │
+│ │       my-org/service#4521 · jdoe · feat/cache    │ │
 │ │       Updated 2h ago · +34/-12 · 3 threads (1 unresol.) │ │
 │ │                                [Self Review ▾] [Trigger] │ │
 │ ├─────────────────────────────────────────────────────────┤ │
 │ │ OPEN  Add TypeScript strict mode                        │ │
-│ │       foursquare/web-app#891 · jdoe · feat/strict-ts   │ │
+│ │       my-org/web-app#891 · jdoe · feat/strict-ts   │ │
 │ │       Updated 5h ago · +892/-340 · Awaiting review      │ │
 │ │                                           [Trigger ▾]   │ │
 │ └─────────────────────────────────────────────────────────┘ │
@@ -776,8 +776,8 @@ The route changes from `/prs` to `/github`, with sub-routes:
 │                                                             │
 │ ┌─ Leaderboard (Team/Org scope) ────────────────────────┐  │
 │ │  #  Author     PRs   Reviews  +/-        Repos        │  │
-│ │  1  svitali     8      12     +2.1k/-400  pilgrim,web │  │
-│ │  2  jdoe        6      18     +1.8k/-900  web-app     │  │
+│ │  1  jdoe        8      12     +2.1k/-400  service,web │  │
+│ │  2  alee        6      18     +1.8k/-900  web-app     │  │
 │ │  3  asmith      4       8     +900/-200   api,infra   │  │
 │ └───────────────────────────────────────────────────────┘  │
 │                                                             │
@@ -871,16 +871,16 @@ This is the transparency panel. It gives full real-time visibility into the sync
 │ └──────┘└──────────────┘└──────┘└──────────────┘            │
 │                                                             │
 │ ┌─ Organization ────────────────────────────────────────┐  │
-│ │  Org:           [Foursquare        ]  (env: Foursquare)│  │
-│ │  My Team:       [places-engineering▾]                   │  │
-│ │  My Username:   [svitali           ]  (auto-detected)  │  │
+│ │  Org:           [MyOrganization        ]  (env: MyOrganization)│  │
+│ │  My Team:       [my-team▾]                   │  │
+│ │  My Username:   [jdoe           ]  (auto-detected)  │  │
 │ └───────────────────────────────────────────────────────┘  │
 │                                                             │
 │ ┌─ Defaults ────────────────────────────────────────────┐  │
 │ │  Default scope:        (●) Me  ( ) Team  ( ) Org      │  │
 │ │  Contribution range:   [30 days ▾]                     │  │
-│ │  Pinned repos:         [foursquare/pilgrim      ] [x]  │  │
-│ │                        [foursquare/web-app      ] [x]  │  │
+│ │  Pinned repos:         [my-org/service      ] [x]  │  │
+│ │                        [my-org/web-app      ] [x]  │  │
 │ │                        [+ Add repo]                    │  │
 │ └───────────────────────────────────────────────────────┘  │
 │                                                             │
@@ -890,7 +890,7 @@ This is the transparency panel. It gives full real-time visibility into the sync
 │ │  Hot sync interval:    [120 ] seconds                  │  │
 │ │  Warm sync interval:   [900 ] seconds                  │  │
 │ │                                                        │  │
-│ │  Token status:  ✓ Valid (Foursquare SSO authorized)    │  │
+│ │  Token status:  ✓ Valid (MyOrganization SSO authorized)    │  │
 │ │  Token scopes:  repo, read:org                         │  │
 │ │                                                        │  │
 │ │  [Save Settings]   [Reset to Defaults]                 │  │
