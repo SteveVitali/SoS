@@ -1246,6 +1246,15 @@ export interface BackfillProgress {
 
 export interface SyncStatusResponse {
   enabled: boolean;
+  active_task?: {
+    type: string;
+    started_at: string;
+  };
+  rate_limit_blocked?: {
+    blocked: boolean;
+    reason: string;
+    unblocks_at?: string;
+  };
   backfill: BackfillProgress;
   rate_limit: {
     rest: { remaining: number; limit: number; resets_at: string };

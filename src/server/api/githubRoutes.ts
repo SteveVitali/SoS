@@ -425,8 +425,27 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
       const hotTask = serviceStatus.tasks.find((t) => t.type === "hot-prs");
       const warmTask = serviceStatus.tasks.find((t) => t.type === "org-sync");
 
+      // Determine if rate-limited
+      const restExhausted = rateLimitStatus.backfill_budget_available <= 0;
+      const searchExhausted = rateLimitStatus.search.tokens_available <= 0;
+      const isBlocked = restExhausted || searchExhausted;
+
+      let rateLimitBlocked: SyncStatusResponse["rate_limit_blocked"];
+      if (isBlocked) {
+        const reasons: string[] = [];
+        if (restExhausted) reasons.push("REST API budget exhausted");
+        if (searchExhausted) reasons.push("Search API tokens depleted");
+        rateLimitBlocked = {
+          blocked: true,
+          reason: reasons.join("; "),
+          unblocks_at: restExhausted ? rateLimitStatus.rest.resets_at : undefined,
+        };
+      }
+
       const response: SyncStatusResponse = {
         enabled: serviceStatus.enabled,
+        active_task: serviceStatus.active_task ?? undefined,
+        rate_limit_blocked: rateLimitBlocked,
         backfill,
         rate_limit: rateLimitStatus,
         hot_sync: {

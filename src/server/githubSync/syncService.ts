@@ -42,6 +42,7 @@ export class GitHubSyncService {
   private running = false;
   private loopHandle: ReturnType<typeof setTimeout> | null = null;
   private tasks: SyncTask[] = [];
+  private activeTask: { type: string; started_at: Date } | null = null;
 
   async start(): Promise<void> {
     const config = await resolveGitHubConfig();
@@ -132,6 +133,7 @@ export class GitHubSyncService {
   async getStatus(): Promise<{
     enabled: boolean;
     running: boolean;
+    active_task: { type: string; started_at: string } | null;
     tasks: Array<{
       id: string;
       type: string;
@@ -144,6 +146,9 @@ export class GitHubSyncService {
     return {
       enabled: config.syncEnabled && !!config.token,
       running: this.running,
+      active_task: this.activeTask
+        ? { type: this.activeTask.type, started_at: this.activeTask.started_at.toISOString() }
+        : null,
       tasks: this.tasks.map((t) => ({
         id: t.id,
         type: t.type,
@@ -189,6 +194,8 @@ export class GitHubSyncService {
   private async runTask(task: SyncTask): Promise<void> {
     if (!this.running) return;
 
+    this.activeTask = { type: task.type, started_at: new Date() };
+
     try {
       const config = await resolveGitHubConfig();
 
@@ -217,6 +224,8 @@ export class GitHubSyncService {
         error: (err as Error).message,
       });
       // Don't crash the loop — just log and continue
+    } finally {
+      this.activeTask = null;
     }
 
     // Reschedule this task

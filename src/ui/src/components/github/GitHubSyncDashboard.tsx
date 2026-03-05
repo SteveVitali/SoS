@@ -18,6 +18,28 @@ import {
 import { css } from "../../styles/theme.js";
 import { relativeTime } from "../../utils/format.js";
 
+const TASK_LABELS: Record<string, string> = {
+  "hot-prs": "Open PRs",
+  "backfill-chunk": "Backfill",
+  "org-sync": "Teams & Members",
+  contributions: "Contributions",
+};
+
+function formatElapsed(ms: number): string {
+  const s = Math.max(0, Math.floor(ms / 1000));
+  if (s < 60) return `${s}s`;
+  const m = Math.floor(s / 60);
+  return `${m}m ${s % 60}s`;
+}
+
+function formatCountdown(ms: number): string {
+  const total = Math.max(0, Math.ceil(ms / 1000));
+  const m = Math.floor(total / 60);
+  const s = total % 60;
+  if (m > 0) return `${m}:${String(s).padStart(2, "0")}`;
+  return `${s}s`;
+}
+
 export function GitHubSyncDashboard() {
   const [status, setStatus] = useState<SyncStatusResponse | null>(null);
   const [chunks, setChunks] = useState<SyncChunkInfo[]>([]);
@@ -94,6 +116,9 @@ export function GitHubSyncDashboard() {
   const completedPct =
     bf && bf.total_chunks > 0 ? Math.round((bf.completed_chunks / bf.total_chunks) * 100) : 0;
 
+  const activeTask = status?.active_task;
+  const blocked = status?.rate_limit_blocked;
+
   return (
     <div>
       {/* Status indicator */}
@@ -103,12 +128,22 @@ export function GitHubSyncDashboard() {
             width: 8,
             height: 8,
             borderRadius: "50%",
-            background: status?.enabled ? "#22c55e" : "#ef4444",
+            background: status?.enabled ? (activeTask ? "var(--accent)" : "#22c55e") : "#ef4444",
+            animation: activeTask ? "pulse 1.5s ease-in-out infinite" : "none",
           }}
         />
         <span style={{ fontSize: 13, fontWeight: 500 }}>
-          {status?.enabled ? "Sync Engine Active" : "Sync Engine Disabled"}
+          {!status?.enabled
+            ? "Sync Engine Disabled"
+            : activeTask
+              ? `Syncing: ${TASK_LABELS[activeTask.type] || activeTask.type}`
+              : "Sync Engine Active"}
         </span>
+        {activeTask && (
+          <span style={{ fontSize: 11, color: "var(--fg3)" }}>
+            {formatElapsed(now - new Date(activeTask.started_at).getTime())}
+          </span>
+        )}
         <button
           type="button"
           onClick={refresh}
@@ -118,6 +153,45 @@ export function GitHubSyncDashboard() {
           Refresh
         </button>
       </div>
+
+      {/* Rate-limit blocked banner */}
+      {blocked?.blocked && (
+        <div
+          style={{
+            display: "flex",
+            alignItems: "center",
+            gap: 10,
+            padding: "10px 14px",
+            marginBottom: 16,
+            borderRadius: "var(--radius)",
+            background: "#eab30811",
+            border: "1px solid #eab30844",
+          }}
+        >
+          <span style={{ fontSize: 16 }}>&#9888;</span>
+          <div style={{ flex: 1 }}>
+            <div style={{ fontSize: 13, fontWeight: 600, color: "#eab308" }}>Rate Limited</div>
+            <div style={{ fontSize: 11, color: "var(--fg3)" }}>{blocked.reason}</div>
+          </div>
+          {blocked.unblocks_at && (
+            <div style={{ textAlign: "right" }}>
+              <div style={{ fontSize: 11, color: "var(--fg3)" }}>Resets in</div>
+              <div
+                style={{
+                  fontSize: 16,
+                  fontWeight: 700,
+                  fontVariantNumeric: "tabular-nums",
+                  color: "#eab308",
+                }}
+              >
+                {formatCountdown(new Date(blocked.unblocks_at).getTime() - now)}
+              </div>
+            </div>
+          )}
+        </div>
+      )}
+
+      <style>{`@keyframes pulse { 0%, 100% { opacity: 1; } 50% { opacity: 0.3; } }`}</style>
 
       {/* Backfill Progress */}
       <div style={css.card}>
