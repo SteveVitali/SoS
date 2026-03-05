@@ -194,6 +194,17 @@ async function main() {
     }
   }
 
+  // Start GitHub Hub sync service (non-fatal if it fails)
+  try {
+    const { getGitHubSyncService } = await import("./githubSync/index.js");
+    const syncService = getGitHubSyncService();
+    await syncService.start();
+  } catch (err: unknown) {
+    log.warn("Failed to start GitHub sync service (non-fatal)", {
+      error: (err as Error).message,
+    });
+  }
+
   // Graceful shutdown
   const { shutdownAllWorkers } = await import("./workers/spawnWorker.js");
   const shutdown = async () => {
@@ -203,6 +214,12 @@ async function main() {
       await slackPoster.setPresenceAway();
     }
     stopLeaseReaper();
+    try {
+      const { getGitHubSyncService } = await import("./githubSync/index.js");
+      getGitHubSyncService().stop();
+    } catch {
+      /* best effort */
+    }
     await closeVectorStore();
     await closeMongo();
     process.exit(0);
