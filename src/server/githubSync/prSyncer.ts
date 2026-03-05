@@ -320,21 +320,26 @@ async function searchPrs(
       },
     );
 
-    // Check if there are more pages
-    if (items.length < perPage || allPrs.length >= response.data.total_count) {
-      break;
-    }
-
-    // GitHub search caps at 1000 results
-    if (page * perPage >= 1000) {
+    // Early cap detection: if page 1 already shows total > 1000, bail
+    // immediately instead of wasting 9 more API calls
+    if (response.data.total_count > 1000) {
       hitCap = true;
-      log.warn("Search hit 1000-result cap", { query, total: response.data.total_count });
+      log.warn("Search will exceed 1000-result cap", {
+        query,
+        total: response.data.total_count,
+        fetched: allPrs.length,
+      });
       await writeSyncLog(
         "warn",
         logCategory,
-        `Search hit 1000-result cap (${allPrs.length}/${response.data.total_count}) for: ${query.slice(0, 80)}`,
+        `Search exceeds 1000-result cap (${allPrs.length} fetched, ${response.data.total_count} total) for: ${query.slice(0, 80)}`,
         { items_fetched: allPrs.length },
       );
+      break;
+    }
+
+    // Check if there are more pages
+    if (items.length < perPage || allPrs.length >= response.data.total_count) {
       break;
     }
 
@@ -369,10 +374,9 @@ async function searchOpenPrsSubdivided(
   }
 
   // Adaptive subdivision: search a window, and if it hits the 1000-result
-  // cap, bisect it into two halves and recurse.  Stops bisecting at a
-  // minimum window width of 7 days (at that point we accept the cap).
-  const MIN_WINDOW_DAYS = 7;
-  const MAX_DEPTH = 6; // safety valve: 2^6 = 64 max leaf windows
+  // cap, bisect it into two halves and recurse.  Never silently drops PRs
+  // — keeps bisecting until the window resolves or reaches a single day.
+  const MAX_DEPTH = 10; // safety valve: 2^10 = 1024 max leaf windows
   let windowCount = 0;
 
   async function searchWindow(
@@ -418,13 +422,18 @@ async function searchOpenPrsSubdivided(
       startDate && endDate ? endDate.getTime() - startDate.getTime() : Number.MAX_SAFE_INTEGER;
     const spanDays = spanMs / MS_PER_DAY;
 
-    if (spanDays <= MIN_WINDOW_DAYS || depth >= MAX_DEPTH) {
-      log.warn("Window hit cap but cannot subdivide further", {
+    if (spanDays <= 1 || depth >= MAX_DEPTH) {
+      log.error("Window hit cap and cannot subdivide further — some PRs will be missing", {
         window: windowLabel,
         fetched: result.prs.length,
         spanDays: Math.round(spanDays),
         depth,
       });
+      await writeSyncLog(
+        "error",
+        "hot_sync",
+        `CANNOT SUBDIVIDE: ${windowLabel} has >1000 PRs in ${Math.round(spanDays)}d window (depth ${depth}). ${result.prs.length} fetched, remainder lost.`,
+      );
       return;
     }
 
