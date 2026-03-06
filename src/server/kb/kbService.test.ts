@@ -354,7 +354,7 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
     });
 
     expect(results).toHaveLength(3);
-    // Scores should be descending (RRF scores)
+    // Scores should be descending (similarity scores)
     for (let i = 1; i < results.length; i++) {
       expect(results[i].score).toBeLessThanOrEqual(results[i - 1].score);
     }

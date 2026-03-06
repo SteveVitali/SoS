@@ -210,14 +210,22 @@ async function embedAndStoreFile(
 
   await addToKBTable(kbId, records);
 
-  // Index chunk text in SQLite FTS5 for keyword search (hybrid retrieval)
-  const ftsRecords: FTSRecord[] = records.map((r) => ({
-    chunk_id: r.id,
-    kb_id: r.kb_id,
-    source_file: r.source_file,
-    content: r.content,
-  }));
-  addToFTSIndex(kbId, ftsRecords);
+  // Index chunk text in SQLite FTS5 for keyword search (hybrid retrieval).
+  // Wrapped in try-catch: FTS is supplemental — its failure shouldn't block ingestion.
+  try {
+    const ftsRecords: FTSRecord[] = records.map((r) => ({
+      chunk_id: r.id,
+      kb_id: r.kb_id,
+      source_file: r.source_file,
+      content: r.content,
+    }));
+    addToFTSIndex(kbId, ftsRecords);
+  } catch (err) {
+    log.warn("FTS indexing failed, keyword search will be unavailable for these chunks", {
+      kbId,
+      error: (err as Error).message,
+    });
+  }
 
   await addDocumentRecord(kbId, {
     name: ingestedFile.name,

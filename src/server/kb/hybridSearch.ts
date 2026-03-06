@@ -114,18 +114,21 @@ export async function hybridSearch(
   const candidates = new Map<string, RankedCandidate>();
 
   // Process vector results (already sorted by distance)
+  // Use passedCount for rank assignment so minScore filtering doesn't create rank gaps
+  let passedCount = 0;
   for (let i = 0; i < vectorResults.length; i++) {
     const r = vectorResults[i];
     const similarity = distanceToSimilarity(r._distance);
     if (similarity < minScore) continue;
 
+    passedCount++;
     const kbResult = vectorToKBResult(r, kbName);
     const key = r.id; // LanceDB records have stable IDs
 
     candidates.set(key, {
       key,
       result: kbResult,
-      vectorRank: i + 1,
+      vectorRank: passedCount,
       keywordRank: undefined,
       rrfScore: 0, // computed below
     });
@@ -142,6 +145,9 @@ export async function hybridSearch(
       existing.keywordRank = i + 1;
     } else {
       // Chunk found only in keyword index — create new candidate
+      // NOTE: keyword-only hits get empty metadata because FTS doesn't store
+      // section/page/file_path/parent_dir. This is an acceptable tradeoff;
+      // a follow-up could enrich these by batch-querying LanceDB by chunk_id.
       candidates.set(key, {
         key,
         result: {
@@ -149,7 +155,7 @@ export async function hybridSearch(
           source_file: fts.source_file,
           kb_name: kbName,
           kb_id: fts.kb_id,
-          score: 0, // no vector similarity available
+          score: fts.bm25_score, // BM25 score as primary score
           metadata: {},
         },
         vectorRank: undefined,
@@ -162,8 +168,9 @@ export async function hybridSearch(
   // --- Compute RRF scores ---
   for (const candidate of candidates.values()) {
     candidate.rrfScore = computeRRFScore(candidate.vectorRank, candidate.keywordRank);
-    // Use RRF score as the result score for downstream consumers
-    candidate.result.score = candidate.rrfScore;
+    // Store RRF score separately — preserve original score (similarity or BM25)
+    // so downstream consumers that compare against thresholds still work correctly
+    candidate.result.rrf_score = candidate.rrfScore;
   }
 
   // --- Sort by RRF score descending and return top N ---

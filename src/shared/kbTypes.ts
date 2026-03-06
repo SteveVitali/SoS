@@ -58,7 +58,10 @@ export interface KBSearchResult {
   source_file: string;
   kb_name: string;
   kb_id: string;
+  /** Similarity score (0–1) for vector results, or BM25 score for keyword-only results. */
   score: number;
+  /** Reciprocal Rank Fusion score when returned from hybrid search. */
+  rrf_score?: number;
   metadata: {
     section?: string;
     page?: number;

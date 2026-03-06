@@ -398,12 +398,20 @@ export async function listAllChunksForFTS(
   if (!existing.includes(name)) return [];
 
   const table = await conn.openTable(name);
+  const MAX_CHUNKS = 1_000_000;
   const rows = await table
     .query()
     .select(["id", "kb_id", "source_file", "content"])
     .where("level = 0") // Only raw chunks, not RAPTOR summaries
-    .limit(1_000_000)
+    .limit(MAX_CHUNKS)
     .toArray();
+
+  if (rows.length === MAX_CHUNKS) {
+    log.warn("listAllChunksForFTS hit row limit — FTS rebuild may be incomplete", {
+      kbId,
+      limit: MAX_CHUNKS,
+    });
+  }
 
   return rows.map((r: any) => ({
     id: r.id,

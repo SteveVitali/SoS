@@ -80,9 +80,10 @@ describe("hybridSearch", () => {
 
     const results = await hybridSearch("kb1", [1, 2, 3], "test", 10);
     expect(results.length).toBe(2);
-    // All results should have positive RRF scores
+    // score preserves original similarity, rrf_score has the RRF value
     for (const r of results) {
-      expect(r.score).toBeGreaterThan(0);
+      expect(r.score).toBeGreaterThan(0); // similarity score
+      expect(r.rrf_score).toBeGreaterThan(0); // RRF score
     }
   });
 
@@ -96,7 +97,8 @@ describe("hybridSearch", () => {
     const results = await hybridSearch("kb1", [1, 2, 3], "test", 10);
     expect(results.length).toBe(2);
     for (const r of results) {
-      expect(r.score).toBeGreaterThan(0);
+      expect(r.score).toBeGreaterThan(0); // BM25 score preserved
+      expect(r.rrf_score).toBeGreaterThan(0);
     }
   });
 
@@ -118,7 +120,7 @@ describe("hybridSearch", () => {
 
     // "shared" should rank highest (appears in both → gets double RRF contribution)
     expect(results[0].content).toBe("shared content");
-    expect(results[0].score).toBeGreaterThan(results[1].score);
+    expect(results[0].rrf_score).toBeGreaterThan(results[1].rrf_score!);
   });
 
   it("applies RRF scoring correctly", async () => {
@@ -133,7 +135,9 @@ describe("hybridSearch", () => {
 
     // Expected RRF: 1/(60+1) + 1/(60+1) = 2/61
     const expectedRRF = 2 / (RRF_K + 1);
-    expect(results[0].score).toBeCloseTo(expectedRRF, 6);
+    expect(results[0].rrf_score).toBeCloseTo(expectedRRF, 6);
+    // score preserves original similarity: 1/(1+0.1) ≈ 0.909
+    expect(results[0].score).toBeCloseTo(1 / (1 + 0.1), 3);
   });
 
   it("respects the limit parameter", async () => {
@@ -196,7 +200,7 @@ describe("hybridSearch", () => {
     expect(results.length).toBe(3);
     expect(results[2].content).toBe("content 3"); // lowest RRF (single source)
     // c1 and c2 should have equal RRF (rank 1 in one + rank 2 in other)
-    expect(results[0].score).toBeCloseTo(results[1].score, 6);
+    expect(results[0].rrf_score).toBeCloseTo(results[1].rrf_score!, 6);
   });
 
   it("passes perIndexLimit to both search functions", async () => {
