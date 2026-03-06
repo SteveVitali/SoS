@@ -379,7 +379,8 @@ actions:
     routing_hint: >
       The user wants you to generate an image. Extract the image description as the prompt. Be detailed — expand terse
       requests into rich, descriptive prompts that will produce better results. If they specify a size or quality
-      preference, extract those too.
+      preference, extract those too. When writing the prompt, incorporate any relevant details from the Knowledge Base
+      Context above, so the generated image is consistent with existing materials.
     parameters:
       prompt:
         type: string
@@ -405,6 +406,10 @@ actions:
       type: generate_image
       default_size: auto
       default_quality: auto
+      kb_scopes:
+        - chat
+        - all
+      kb_min_score: 0.5
       reply_error: "⚠️ Image generation failed: {{error}}"
       reply_unsupported: "⚠️ The current model provider doesn't support image generation."
   chat:
