@@ -8,6 +8,36 @@ function getHeaders(): HeadersInit {
   };
 }
 
+async function readNDJSONStream<T>(res: Response, onEvent?: (event: T) => void): Promise<T[]> {
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  const events: T[] = [];
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    for (;;) {
+      const newlineIdx = buffer.indexOf("\n");
+      if (newlineIdx === -1) break;
+      const line = buffer.slice(0, newlineIdx).trim();
+      buffer = buffer.slice(newlineIdx + 1);
+      if (!line) continue;
+      try {
+        const event: T = JSON.parse(line);
+        events.push(event);
+        onEvent?.(event);
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+
+  return events;
+}
+
 // biome-ignore lint/suspicious/noExplicitAny: dynamic API type
 async function request<T>(method: string, path: string, body?: any): Promise<T> {
   const res = await fetch(`${BASE}${path}`, {
@@ -671,34 +701,14 @@ export async function ingestKBFiles(
   }
 
   // Read the NDJSON stream line by line
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let completeEvent: Extract<IngestProgressEvent, { type: "complete" }> | null = null;
   let jobId = "";
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    // Process complete lines
-    for (;;) {
-      const newlineIdx = buffer.indexOf("\n");
-      if (newlineIdx === -1) break;
-      const line = buffer.slice(0, newlineIdx).trim();
-      buffer = buffer.slice(newlineIdx + 1);
-      if (!line) continue;
-      try {
-        const event: IngestProgressEvent = JSON.parse(line);
-        if (event.type === "job_created") jobId = event.job_id;
-        if (event.type === "complete") completeEvent = event;
-        onProgress?.(event);
-      } catch {
-        // skip malformed lines
-      }
-    }
-  }
+  await readNDJSONStream<IngestProgressEvent>(res, (event) => {
+    if (event.type === "job_created") jobId = event.job_id;
+    if (event.type === "complete") completeEvent = event;
+    onProgress?.(event);
+  });
 
   return { job_id: jobId, complete: completeEvent };
 }
@@ -820,31 +830,12 @@ export async function rebuildFtsIndex(
     throw new Error(`${res.status}: ${text}`);
   }
 
-  const reader = res.body!.getReader();
-  const decoder = new TextDecoder();
-  let buffer = "";
   let chunksIndexed = 0;
 
-  for (;;) {
-    const { done, value } = await reader.read();
-    if (done) break;
-    buffer += decoder.decode(value, { stream: true });
-
-    for (;;) {
-      const newlineIdx = buffer.indexOf("\n");
-      if (newlineIdx === -1) break;
-      const line = buffer.slice(0, newlineIdx).trim();
-      buffer = buffer.slice(newlineIdx + 1);
-      if (!line) continue;
-      try {
-        const event: FtsRebuildEvent = JSON.parse(line);
-        if (event.type === "complete") chunksIndexed = event.chunks_indexed;
-        onProgress?.(event);
-      } catch {
-        // skip malformed lines
-      }
-    }
-  }
+  await readNDJSONStream<FtsRebuildEvent>(res, (event) => {
+    if (event.type === "complete") chunksIndexed = event.chunks_indexed;
+    onProgress?.(event);
+  });
 
   return { chunks_indexed: chunksIndexed };
 }

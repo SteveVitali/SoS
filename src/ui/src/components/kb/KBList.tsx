@@ -19,6 +19,7 @@ import { KBPlayground } from "./KBPlayground.js";
 import {
   DropOverlay,
   formatBytes,
+  MiniProgressBar,
   ScopeBadge,
   ScopeToggleButtons,
   UploadDropdown,
@@ -77,27 +78,7 @@ function RaptorBadge({
           {status?.current_level != null && ` L${status.current_level}`}
           {pct != null && ` — ${pct}%`}
         </span>
-        {pct != null && (
-          <div
-            style={{
-              width: 60,
-              height: 4,
-              borderRadius: 2,
-              background: "var(--border)",
-              overflow: "hidden",
-            }}
-          >
-            <div
-              style={{
-                height: "100%",
-                width: `${pct}%`,
-                background: "var(--accent)",
-                borderRadius: 2,
-                transition: "width 0.3s ease",
-              }}
-            />
-          </div>
-        )}
+        {pct != null && <MiniProgressBar pct={pct} />}
       </div>
     );
   }
