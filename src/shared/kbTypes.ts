@@ -53,6 +53,9 @@ export interface KBChunk {
   };
 }
 
+/** How this chunk was retrieved during hybrid search. */
+export type RetrievalSource = "vector" | "keyword" | "both";
+
 export interface KBSearchResult {
   content: string;
   source_file: string;
@@ -62,12 +65,26 @@ export interface KBSearchResult {
   score: number;
   /** Reciprocal Rank Fusion score when returned from hybrid search. */
   rrf_score?: number;
+  /** How this chunk was found: vector search, keyword search, or both. */
+  retrieval_source?: RetrievalSource;
+  /** 1-based rank in vector search results (if found via vector). */
+  vector_rank?: number;
+  /** 1-based rank in keyword search results (if found via keyword). */
+  keyword_rank?: number;
   metadata: {
     section?: string;
     page?: number;
     file_path?: string;
     parent_dir?: string;
   };
+}
+
+/** Aggregate stats from a hybrid search run. */
+export interface HybridSearchStats {
+  vector_only: number;
+  keyword_only: number;
+  both: number;
+  total: number;
 }
 
 export interface KBSearchRequest {
@@ -91,6 +108,8 @@ export interface KBSearchWithRoutingResult {
     relevant_kbs: number;
     probes: KBProbeResult[];
   };
+  /** Aggregate retrieval source stats across all returned results. */
+  retrieval_stats?: HybridSearchStats;
 }
 
 // ---------------------------------------------------------------------------

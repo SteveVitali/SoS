@@ -160,6 +160,21 @@ function StepDetail({ step }: { step: ResearchStep }) {
                     {call.results_count} results · top score: {(call.top_score * 100).toFixed(1)}%
                     {call.kb_ids_searched.length > 0 && ` · ${call.kb_ids_searched.length} KBs`}
                   </div>
+                  {(call.vector_hits != null ||
+                    call.keyword_hits != null ||
+                    call.both_hits != null) && (
+                    <div style={{ color: "var(--fg2)", marginTop: 2 }}>
+                      {call.vector_hits != null && call.vector_hits > 0 && (
+                        <span style={{ color: "#a855f7" }}>🧠 {call.vector_hits} vector </span>
+                      )}
+                      {call.keyword_hits != null && call.keyword_hits > 0 && (
+                        <span style={{ color: "#3b82f6" }}>🔍 {call.keyword_hits} keyword </span>
+                      )}
+                      {call.both_hits != null && call.both_hits > 0 && (
+                        <span style={{ color: "#22c55e" }}>⚡ {call.both_hits} both</span>
+                      )}
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

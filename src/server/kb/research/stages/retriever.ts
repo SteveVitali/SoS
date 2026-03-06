@@ -71,6 +71,9 @@ export async function runRetriever(
     const kbIdsSearched: string[] = [];
     let queryResultCount = 0;
     let queryTopScore = 0;
+    let queryVectorHits = 0;
+    let queryKeywordHits = 0;
+    let queryBothHits = 0;
 
     for (const kb of kbs) {
       const minScore = config.min_similarity_score;
@@ -86,10 +89,14 @@ export async function runRetriever(
 
         // Hybrid search (vector + keyword)
         kbIdsSearched.push(kb.kb_id);
-        const results = await hybridSearch(kb.kb_id, eq.vector, eq.text, perKBLimit, {
+        const { results, stats } = await hybridSearch(kb.kb_id, eq.vector, eq.text, perKBLimit, {
           minSimilarityScore: minScore,
           kbName: kb.name,
         });
+
+        queryVectorHits += stats.vector_only;
+        queryKeywordHits += stats.keyword_only;
+        queryBothHits += stats.both;
 
         for (const r of results) {
           allChunks.push(r);
@@ -113,6 +120,9 @@ export async function runRetriever(
       results_count: queryResultCount,
       top_score: queryTopScore,
       duration_ms: Date.now() - start,
+      vector_hits: queryVectorHits,
+      keyword_hits: queryKeywordHits,
+      both_hits: queryBothHits,
     });
 
     // Record each retrieval in the audit

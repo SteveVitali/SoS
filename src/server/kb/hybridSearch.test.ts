@@ -76,8 +76,9 @@ describe("hybridSearch", () => {
     mockSearchKBTable.mockResolvedValue([]);
     mockSearchFTS.mockReturnValue([]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test query", 10);
+    const { results, stats } = await hybridSearch("kb1", [1, 2, 3], "test query", 10);
     expect(results).toEqual([]);
+    expect(stats).toEqual({ vector_only: 0, keyword_only: 0, both: 0, total: 0 });
   });
 
   it("returns vector-only results when FTS has no matches", async () => {
@@ -87,13 +88,17 @@ describe("hybridSearch", () => {
     ]);
     mockSearchFTS.mockReturnValue([]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 10);
+    const { results, stats } = await hybridSearch("kb1", [1, 2, 3], "test", 10);
     expect(results.length).toBe(2);
     // score preserves original similarity, rrf_score has the RRF value
     for (const r of results) {
       expect(r.score).toBeGreaterThan(0); // similarity score
       expect(r.rrf_score).toBeGreaterThan(0); // RRF score
+      expect(r.retrieval_source).toBe("vector");
+      expect(r.vector_rank).toBeDefined();
+      expect(r.keyword_rank).toBeUndefined();
     }
+    expect(stats).toEqual({ vector_only: 2, keyword_only: 0, both: 0, total: 2 });
   });
 
   it("returns FTS-only results when vector search returns nothing", async () => {
@@ -103,12 +108,16 @@ describe("hybridSearch", () => {
       makeFTSResult("c2", "keyword result 2", 3.0),
     ]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 10);
+    const { results, stats } = await hybridSearch("kb1", [1, 2, 3], "test", 10);
     expect(results.length).toBe(2);
     for (const r of results) {
       expect(r.score).toBeGreaterThan(0); // BM25 score preserved
       expect(r.rrf_score).toBeGreaterThan(0);
+      expect(r.retrieval_source).toBe("keyword");
+      expect(r.keyword_rank).toBeDefined();
+      expect(r.vector_rank).toBeUndefined();
     }
+    expect(stats).toEqual({ vector_only: 0, keyword_only: 2, both: 0, total: 2 });
   });
 
   it("merges and deduplicates results found in both indexes", async () => {
@@ -122,7 +131,7 @@ describe("hybridSearch", () => {
       makeFTSResult("fts-only", "fts only", 3.0),
     ]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 10);
+    const { results, stats } = await hybridSearch("kb1", [1, 2, 3], "test", 10);
 
     // Should have 3 unique chunks, not 4
     expect(results.length).toBe(3);
@@ -130,6 +139,8 @@ describe("hybridSearch", () => {
     // "shared" should rank highest (appears in both → gets double RRF contribution)
     expect(results[0].content).toBe("shared content");
     expect(results[0].rrf_score).toBeGreaterThan(results[1].rrf_score!);
+    expect(results[0].retrieval_source).toBe("both");
+    expect(stats).toEqual({ vector_only: 1, keyword_only: 1, both: 1, total: 3 });
   });
 
   it("applies RRF scoring correctly", async () => {
@@ -139,7 +150,7 @@ describe("hybridSearch", () => {
     mockSearchKBTable.mockResolvedValue([makeVectorResult("both", "both indexes", 0.1)]);
     mockSearchFTS.mockReturnValue([makeFTSResult("both", "both indexes", 5.0)]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 10);
+    const { results } = await hybridSearch("kb1", [1, 2, 3], "test", 10);
     expect(results.length).toBe(1);
 
     // Expected RRF: 1/(60+1) + 1/(60+1) = 2/61
@@ -147,6 +158,9 @@ describe("hybridSearch", () => {
     expect(results[0].rrf_score).toBeCloseTo(expectedRRF, 6);
     // score preserves original similarity: 1/(1+0.1) ≈ 0.909
     expect(results[0].score).toBeCloseTo(1 / (1 + 0.1), 3);
+    expect(results[0].retrieval_source).toBe("both");
+    expect(results[0].vector_rank).toBe(1);
+    expect(results[0].keyword_rank).toBe(1);
   });
 
   it("respects the limit parameter", async () => {
@@ -157,7 +171,7 @@ describe("hybridSearch", () => {
     ]);
     mockSearchFTS.mockReturnValue([]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 2);
+    const { results } = await hybridSearch("kb1", [1, 2, 3], "test", 2);
     expect(results.length).toBe(2);
   });
 
@@ -169,7 +183,7 @@ describe("hybridSearch", () => {
     ]);
     mockSearchFTS.mockReturnValue([]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 10, {
+    const { results } = await hybridSearch("kb1", [1, 2, 3], "test", 10, {
       minSimilarityScore: 0.3,
     });
 
@@ -181,7 +195,7 @@ describe("hybridSearch", () => {
     mockSearchKBTable.mockResolvedValue([makeVectorResult("c1", "content", 0.1)]);
     mockSearchFTS.mockReturnValue([]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 10, {
+    const { results } = await hybridSearch("kb1", [1, 2, 3], "test", 10, {
       kbName: "My Knowledge Base",
     });
 
@@ -203,7 +217,7 @@ describe("hybridSearch", () => {
       makeFTSResult("c1", "content 1", 3.0),
     ]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "test", 10);
+    const { results } = await hybridSearch("kb1", [1, 2, 3], "test", 10);
 
     // c1 and c2 both appear in both indexes, so they should rank above c3
     expect(results.length).toBe(3);
@@ -223,7 +237,7 @@ describe("hybridSearch", () => {
       }),
     ]);
 
-    const results = await hybridSearch("kb1", [1, 2, 3], "keyword", 10);
+    const { results } = await hybridSearch("kb1", [1, 2, 3], "keyword", 10);
     expect(results.length).toBe(1);
     expect(results[0].metadata.section).toBe("Introduction");
     expect(results[0].metadata.page).toBe(2);

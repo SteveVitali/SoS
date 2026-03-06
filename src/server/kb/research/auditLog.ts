@@ -71,6 +71,9 @@ export class StepRecorder {
       kb: call.kb_ids_searched.join(", "),
       results: call.results_count,
       top_score: call.top_score,
+      vector_hits: call.vector_hits,
+      keyword_hits: call.keyword_hits,
+      both_hits: call.both_hits,
     });
   }
 

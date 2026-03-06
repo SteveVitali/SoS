@@ -1,5 +1,11 @@
 import { type RefObject, useCallback, useState } from "react";
-import type { KBScope, KBSearchResult, UploadJob } from "../../api.js";
+import type {
+  HybridSearchStats,
+  KBScope,
+  KBSearchResult,
+  RetrievalSource,
+  UploadJob,
+} from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { MiniProgressBar } from "../shared/IndexCard.js";
 
@@ -232,6 +238,71 @@ export function UploadProgressBadge({ job }: { job: UploadJob }) {
   );
 }
 
+const SOURCE_STYLES: Record<RetrievalSource, { icon: string; label: string; color: string }> = {
+  vector: { icon: "🧠", label: "vector", color: "#a855f7" },
+  keyword: { icon: "🔍", label: "keyword", color: "#3b82f6" },
+  both: { icon: "⚡", label: "both", color: "#22c55e" },
+};
+
+function RetrievalSourceBadge({
+  source,
+  vectorRank,
+  keywordRank,
+}: {
+  source: RetrievalSource;
+  vectorRank?: number;
+  keywordRank?: number;
+}) {
+  const s = SOURCE_STYLES[source];
+  const rankLabel =
+    source === "both"
+      ? `#${vectorRank}/#${keywordRank}`
+      : source === "vector"
+        ? `#${vectorRank}`
+        : `#${keywordRank}`;
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        padding: "1px 5px",
+        borderRadius: 3,
+        background: `${s.color}18`,
+        color: s.color,
+        whiteSpace: "nowrap",
+      }}
+      title={`Found via ${s.label} search (rank ${rankLabel})`}
+    >
+      {s.icon} {s.label} {rankLabel}
+    </span>
+  );
+}
+
+export function RetrievalSummary({ stats }: { stats: HybridSearchStats }) {
+  if (stats.total === 0) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        fontSize: 12,
+        color: "var(--fg2)",
+        padding: "6px 0",
+      }}
+    >
+      <span style={{ fontWeight: 600, color: "var(--fg)" }}>{stats.total} results:</span>
+      {stats.vector_only > 0 && (
+        <span style={{ color: "#a855f7" }}>🧠 {stats.vector_only} vector</span>
+      )}
+      {stats.keyword_only > 0 && (
+        <span style={{ color: "#3b82f6" }}>🔍 {stats.keyword_only} keyword</span>
+      )}
+      {stats.both > 0 && <span style={{ color: "#22c55e" }}>⚡ {stats.both} both</span>}
+    </div>
+  );
+}
+
 export function SearchResultCard({
   result,
   showKBName,
@@ -282,9 +353,18 @@ export function SearchResultCard({
             {result.metadata.section ? ` > ${result.metadata.section}` : ""}
           </span>
         </div>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
-          {(result.score * 100).toFixed(1)}%
-        </span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {result.retrieval_source && (
+            <RetrievalSourceBadge
+              source={result.retrieval_source}
+              vectorRank={result.vector_rank}
+              keywordRank={result.keyword_rank}
+            />
+          )}
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
+            {(result.score * 100).toFixed(1)}%
+          </span>
+        </div>
       </div>
       <pre
         style={{

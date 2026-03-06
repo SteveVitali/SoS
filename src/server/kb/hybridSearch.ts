@@ -11,7 +11,7 @@
  * Chunks appearing in only one list receive a single RRF contribution.
  */
 
-import type { KBSearchResult } from "../../shared/kbTypes.js";
+import type { HybridSearchStats, KBSearchResult, RetrievalSource } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import { searchFTS } from "./ftsStore.js";
 import { distanceToSimilarity } from "./kbService.js";
@@ -90,13 +90,18 @@ function vectorToKBResult(r: VectorSearchResult, kbName: string): KBSearchResult
  * @param config - Optional configuration overrides
  * @returns Merged, deduplicated, RRF-ranked search results
  */
+export interface HybridSearchReturn {
+  results: KBSearchResult[];
+  stats: HybridSearchStats;
+}
+
 export async function hybridSearch(
   kbId: string,
   queryVector: number[],
   queryText: string,
   limit: number,
   config?: HybridSearchConfig,
-): Promise<KBSearchResult[]> {
+): Promise<HybridSearchReturn> {
   const perIndexLimit = config?.perIndexLimit ?? DEFAULT_PER_INDEX_LIMIT;
   const minScore = config?.minSimilarityScore ?? 0;
   const kbName = config?.kbName ?? "";
@@ -107,7 +112,7 @@ export async function hybridSearch(
 
   // If both are empty, short-circuit
   if (vectorResults.length === 0 && keywordResults.length === 0) {
-    return [];
+    return { results: [], stats: { vector_only: 0, keyword_only: 0, both: 0, total: 0 } };
   }
 
   // --- Build candidate map keyed by chunk ID ---
@@ -167,12 +172,23 @@ export async function hybridSearch(
     }
   }
 
-  // --- Compute RRF scores ---
+  // --- Compute RRF scores and tag retrieval source ---
   for (const candidate of candidates.values()) {
     candidate.rrfScore = computeRRFScore(candidate.vectorRank, candidate.keywordRank);
     // Store RRF score separately — preserve original score (similarity or BM25)
     // so downstream consumers that compare against thresholds still work correctly
     candidate.result.rrf_score = candidate.rrfScore;
+
+    // Tag how this chunk was found
+    const hasVector = candidate.vectorRank !== undefined;
+    const hasKeyword = candidate.keywordRank !== undefined;
+    let source: RetrievalSource;
+    if (hasVector && hasKeyword) source = "both";
+    else if (hasVector) source = "vector";
+    else source = "keyword";
+    candidate.result.retrieval_source = source;
+    candidate.result.vector_rank = candidate.vectorRank;
+    candidate.result.keyword_rank = candidate.keywordRank;
   }
 
   // --- Sort by RRF score descending and return top N ---
@@ -187,5 +203,25 @@ export async function hybridSearch(
     topRRF: sorted[0]?.rrfScore.toFixed(4),
   });
 
-  return sorted.slice(0, limit).map((c) => c.result);
+  const finalResults = sorted.slice(0, limit).map((c) => c.result);
+
+  // Compute aggregate stats over the returned (trimmed) results
+  let vectorOnly = 0;
+  let keywordOnly = 0;
+  let bothCount = 0;
+  for (const r of finalResults) {
+    if (r.retrieval_source === "both") bothCount++;
+    else if (r.retrieval_source === "vector") vectorOnly++;
+    else keywordOnly++;
+  }
+
+  return {
+    results: finalResults,
+    stats: {
+      vector_only: vectorOnly,
+      keyword_only: keywordOnly,
+      both: bothCount,
+      total: finalResults.length,
+    },
+  };
 }
