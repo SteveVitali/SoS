@@ -54,8 +54,17 @@ function getDb(kbId: string): InstanceType<typeof Database> {
   // WAL mode for better concurrent read performance
   db.pragma("journal_mode = WAL");
 
+  // Schema version tracking — bump when columns change so old DBs auto-migrate.
+  const SCHEMA_VERSION = 2; // v1 = 4 cols, v2 = 8 cols (added metadata)
+  const currentVersion = (db.pragma("user_version", { simple: true }) as number) ?? 0;
+
+  if (currentVersion < SCHEMA_VERSION) {
+    // Drop old table if it exists (schema can't be ALTERed for FTS5 virtual tables)
+    db.exec("DROP TABLE IF EXISTS chunks_fts");
+  }
+
   // Create the FTS5 virtual table if it doesn't exist.
-  // chunk_id, kb_id, and source_file are UNINDEXED — stored but not searchable.
+  // chunk_id, kb_id, source_file, and metadata fields are UNINDEXED — stored but not searchable.
   // Only the `content` column is indexed for full-text search.
   db.exec(`
     CREATE VIRTUAL TABLE IF NOT EXISTS chunks_fts USING fts5(
@@ -63,9 +72,17 @@ function getDb(kbId: string): InstanceType<typeof Database> {
       kb_id UNINDEXED,
       source_file UNINDEXED,
       content,
+      section UNINDEXED,
+      page UNINDEXED,
+      file_path UNINDEXED,
+      parent_dir UNINDEXED,
       tokenize='porter unicode61'
     );
   `);
+
+  if (currentVersion < SCHEMA_VERSION) {
+    db.pragma(`user_version = ${SCHEMA_VERSION}`);
+  }
 
   openDbs.set(kbId, db);
   return db;
@@ -103,6 +120,10 @@ export interface FTSRecord {
   kb_id: string;
   source_file: string;
   content: string;
+  section?: string;
+  page?: number;
+  file_path?: string;
+  parent_dir?: string;
 }
 
 export interface FTSSearchResult {
@@ -111,6 +132,10 @@ export interface FTSSearchResult {
   source_file: string;
   content: string;
   bm25_score: number;
+  section?: string;
+  page?: number;
+  file_path?: string;
+  parent_dir?: string;
 }
 
 // ---------------------------------------------------------------------------
@@ -125,12 +150,21 @@ export function addToFTSIndex(kbId: string, records: FTSRecord[]): void {
 
   const db = getDb(kbId);
   const insert = db.prepare(
-    "INSERT INTO chunks_fts (chunk_id, kb_id, source_file, content) VALUES (?, ?, ?, ?)",
+    "INSERT INTO chunks_fts (chunk_id, kb_id, source_file, content, section, page, file_path, parent_dir) VALUES (?, ?, ?, ?, ?, ?, ?, ?)",
   );
 
   const insertMany = db.transaction((rows: FTSRecord[]) => {
     for (const row of rows) {
-      insert.run(row.chunk_id, row.kb_id, row.source_file, row.content);
+      insert.run(
+        row.chunk_id,
+        row.kb_id,
+        row.source_file,
+        row.content,
+        row.section ?? "",
+        row.page ?? 0,
+        row.file_path ?? "",
+        row.parent_dir ?? "",
+      );
     }
   });
 
@@ -216,7 +250,7 @@ export function searchFTS(kbId: string, query: string, limit: number): FTSSearch
   try {
     const rows = db
       .prepare(
-        `SELECT chunk_id, kb_id, source_file, content, bm25(chunks_fts) AS score
+        `SELECT chunk_id, kb_id, source_file, content, section, page, file_path, parent_dir, bm25(chunks_fts) AS score
          FROM chunks_fts
          WHERE chunks_fts MATCH ?
          ORDER BY score ASC
@@ -227,6 +261,10 @@ export function searchFTS(kbId: string, query: string, limit: number): FTSSearch
       kb_id: string;
       source_file: string;
       content: string;
+      section: string;
+      page: number;
+      file_path: string;
+      parent_dir: string;
       score: number;
     }>;
 
@@ -237,6 +275,10 @@ export function searchFTS(kbId: string, query: string, limit: number): FTSSearch
       source_file: row.source_file,
       content: row.content,
       bm25_score: -row.score,
+      section: row.section || undefined,
+      page: row.page || undefined,
+      file_path: row.file_path || undefined,
+      parent_dir: row.parent_dir || undefined,
     }));
   } catch (err: unknown) {
     log.warn("FTS search failed, returning empty results", {

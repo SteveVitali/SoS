@@ -212,6 +212,47 @@ describe("searchFTS", () => {
     const results = searchFTS(KB_ID, "server running", 10);
     expect(results.length).toBe(1);
   });
+
+  it("returns metadata fields (section, page, file_path, parent_dir)", () => {
+    addToFTSIndex(KB_ID, [
+      {
+        chunk_id: "meta1",
+        kb_id: KB_ID,
+        source_file: "guide.md",
+        content: "Deployment instructions for kubernetes clusters.",
+        section: "Getting Started",
+        page: 3,
+        file_path: "docs/guide.md",
+        parent_dir: "docs",
+      },
+    ]);
+
+    const results = searchFTS(KB_ID, "kubernetes", 10);
+    expect(results.length).toBe(1);
+    expect(results[0].section).toBe("Getting Started");
+    expect(results[0].page).toBe(3);
+    expect(results[0].file_path).toBe("docs/guide.md");
+    expect(results[0].parent_dir).toBe("docs");
+  });
+
+  it("returns undefined metadata when fields are empty", () => {
+    addToFTSIndex(KB_ID, [
+      {
+        chunk_id: "nometa",
+        kb_id: KB_ID,
+        source_file: "plain.md",
+        content: "Content without metadata fields.",
+      },
+    ]);
+
+    const results = searchFTS(KB_ID, "metadata", 10);
+    expect(results.length).toBe(1);
+    // Empty strings/zero stored → returned as undefined
+    expect(results[0].section).toBeUndefined();
+    expect(results[0].page).toBeUndefined();
+    expect(results[0].file_path).toBeUndefined();
+    expect(results[0].parent_dir).toBeUndefined();
+  });
 });
 
 // ─── Query Sanitization ─────────────────────────────────────

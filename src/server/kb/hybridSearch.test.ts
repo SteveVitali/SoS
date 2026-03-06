@@ -46,13 +46,22 @@ function makeVectorResult(id: string, content: string, distance: number): Vector
   };
 }
 
-function makeFTSResult(chunkId: string, content: string, bm25Score: number): FTSSearchResult {
+function makeFTSResult(
+  chunkId: string,
+  content: string,
+  bm25Score: number,
+  metadata?: { section?: string; page?: number; file_path?: string; parent_dir?: string },
+): FTSSearchResult {
   return {
     chunk_id: chunkId,
     kb_id: "kb1",
     source_file: "test.md",
     content,
     bm25_score: bm25Score,
+    section: metadata?.section,
+    page: metadata?.page,
+    file_path: metadata?.file_path,
+    parent_dir: metadata?.parent_dir,
   };
 }
 
@@ -201,6 +210,25 @@ describe("hybridSearch", () => {
     expect(results[2].content).toBe("content 3"); // lowest RRF (single source)
     // c1 and c2 should have equal RRF (rank 1 in one + rank 2 in other)
     expect(results[0].rrf_score).toBeCloseTo(results[1].rrf_score!, 6);
+  });
+
+  it("keyword-only hits carry FTS metadata through to results", async () => {
+    mockSearchKBTable.mockResolvedValue([]);
+    mockSearchFTS.mockReturnValue([
+      makeFTSResult("fts1", "keyword content", 5.0, {
+        section: "Introduction",
+        page: 2,
+        file_path: "docs/intro.md",
+        parent_dir: "docs",
+      }),
+    ]);
+
+    const results = await hybridSearch("kb1", [1, 2, 3], "keyword", 10);
+    expect(results.length).toBe(1);
+    expect(results[0].metadata.section).toBe("Introduction");
+    expect(results[0].metadata.page).toBe(2);
+    expect(results[0].metadata.file_path).toBe("docs/intro.md");
+    expect(results[0].metadata.parent_dir).toBe("docs");
   });
 
   it("passes perIndexLimit to both search functions", async () => {

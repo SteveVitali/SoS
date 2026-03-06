@@ -304,7 +304,12 @@ async function executeKeywordSearch(
           kb_name: kb.name,
           kb_id: fts.kb_id,
           score: fts.bm25_score,
-          metadata: {},
+          metadata: {
+            section: fts.section,
+            page: fts.page,
+            file_path: fts.file_path,
+            parent_dir: fts.parent_dir,
+          },
         });
       }
     } catch (err) {

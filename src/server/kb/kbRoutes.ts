@@ -532,6 +532,10 @@ export function createKBWebRoutes(): Router {
         kb_id: c.kb_id,
         source_file: c.source_file,
         content: c.content,
+        section: c.section || undefined,
+        page: c.page || undefined,
+        file_path: c.file_path || undefined,
+        parent_dir: c.parent_dir || undefined,
       }));
 
       // Rebuild the index (drops + re-creates)

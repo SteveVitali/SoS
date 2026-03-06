@@ -144,10 +144,7 @@ export async function hybridSearch(
       // Chunk found in both indexes — add keyword rank
       existing.keywordRank = i + 1;
     } else {
-      // Chunk found only in keyword index — create new candidate
-      // NOTE: keyword-only hits get empty metadata because FTS doesn't store
-      // section/page/file_path/parent_dir. This is an acceptable tradeoff;
-      // a follow-up could enrich these by batch-querying LanceDB by chunk_id.
+      // Chunk found only in keyword index — create new candidate with FTS metadata
       candidates.set(key, {
         key,
         result: {
@@ -156,7 +153,12 @@ export async function hybridSearch(
           kb_name: kbName,
           kb_id: fts.kb_id,
           score: fts.bm25_score, // BM25 score as primary score
-          metadata: {},
+          metadata: {
+            section: fts.section,
+            page: fts.page,
+            file_path: fts.file_path,
+            parent_dir: fts.parent_dir,
+          },
         },
         vectorRank: undefined,
         keywordRank: i + 1,

@@ -218,6 +218,10 @@ async function embedAndStoreFile(
       kb_id: r.kb_id,
       source_file: r.source_file,
       content: r.content,
+      section: r.section || undefined,
+      page: r.page || undefined,
+      file_path: r.file_path || undefined,
+      parent_dir: r.parent_dir || undefined,
     }));
     addToFTSIndex(kbId, ftsRecords);
   } catch (err) {
