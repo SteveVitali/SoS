@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import {
   type ResearchResult,
   type ResearchStrategy,
@@ -8,6 +8,40 @@ import {
 import { css } from "../../styles/theme.js";
 import { ScopeToggleButtons, SearchResultCard, useToggleScopes } from "./kbShared.js";
 import { MetricsSummary, ResearchTimeline } from "./ResearchTimeline.js";
+
+function CollapsibleSection({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h4
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          margin: "0 0 8px",
+          color: "var(--fg)",
+          cursor: "pointer",
+          userSelect: "none",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+        onClick={() => setOpen(!open)}
+      >
+        <span style={{ fontSize: 11, color: "var(--fg2)" }}>{open ? "▼" : "▶"}</span>
+        {title}
+      </h4>
+      {open && children}
+    </div>
+  );
+}
 
 const STRATEGY_DESCRIPTIONS: Record<ResearchStrategy, string> = {
   simple: "Fast — HyDE + reranking (2-4s, ~3 LLM calls)",
@@ -197,26 +231,23 @@ export function ResearchPlayground() {
             <ResearchTimeline session={result.audit} metrics={result.metrics} />
           </div>
 
-          {/* Retrieved chunks */}
+          {/* Retrieved chunks (collapsible) */}
           {result.chunks.length > 0 && (
-            <div>
-              <h4 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px", color: "var(--fg)" }}>
-                Retrieved Chunks ({result.chunks.length})
-              </h4>
+            <CollapsibleSection
+              title={`Retrieved Chunks (${result.chunks.length})`}
+              defaultOpen={false}
+            >
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {result.chunks.map((c, i) => (
                   <SearchResultCard key={i} result={c} showKBName />
                 ))}
               </div>
-            </div>
+            </CollapsibleSection>
           )}
 
-          {/* Reasoning trace */}
+          {/* Reasoning trace (collapsible) */}
           {result.reasoning_trace && (
-            <div style={{ marginTop: 12 }}>
-              <h4 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px", color: "var(--fg)" }}>
-                Reasoning Trace
-              </h4>
+            <CollapsibleSection title="Reasoning Trace" defaultOpen={false}>
               <pre
                 style={{
                   background: "var(--bg)",
@@ -231,6 +262,42 @@ export function ResearchPlayground() {
                 }}
               >
                 {result.reasoning_trace}
+              </pre>
+            </CollapsibleSection>
+          )}
+
+          {/* Final answer */}
+          {result.context && (
+            <div
+              style={{
+                marginTop: 12,
+                background: "var(--bg)",
+                border: "1px solid var(--accent)44",
+                borderRadius: "var(--radius)",
+                padding: 12,
+              }}
+            >
+              <h4
+                style={{
+                  fontSize: 13,
+                  fontWeight: 600,
+                  margin: "0 0 8px",
+                  color: "var(--accent)",
+                }}
+              >
+                📋 Synthesized Answer
+              </h4>
+              <pre
+                style={{
+                  fontSize: 12,
+                  whiteSpace: "pre-wrap",
+                  wordBreak: "break-word",
+                  margin: 0,
+                  color: "var(--fg)",
+                  lineHeight: 1.5,
+                }}
+              >
+                {result.context}
               </pre>
             </div>
           )}
