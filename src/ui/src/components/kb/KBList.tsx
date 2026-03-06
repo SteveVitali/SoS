@@ -14,18 +14,12 @@ import {
   updateKB,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { formatBytes } from "../../utils/format.js";
+import { DropOverlay, useDropZone } from "../shared/DropZone.js";
+import { MiniProgressBar } from "../shared/IndexCard.js";
 import { PageHeader } from "../shared/PageHeader.js";
 import { KBPlayground } from "./KBPlayground.js";
-import {
-  DropOverlay,
-  formatBytes,
-  MiniProgressBar,
-  ScopeBadge,
-  ScopeToggleButtons,
-  UploadDropdown,
-  UploadProgressBadge,
-  useDropZone,
-} from "./kbShared.js";
+import { ScopeBadge, ScopeToggleButtons, UploadDropdown, UploadProgressBadge } from "./kbShared.js";
 
 const raptorActionBtnStyle: React.CSSProperties = {
   background: "none",

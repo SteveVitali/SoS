@@ -5,7 +5,12 @@ import {
   type RaptorStatus as RaptorStatusType,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { BuildProgressBox, ErrorBanner, IndexStatusCard, ProgressBar } from "./kbShared.js";
+import {
+  BuildProgressBox,
+  ErrorBanner,
+  IndexStatusCard,
+  ProgressBar,
+} from "../shared/IndexCard.js";
 
 export function RaptorStatus({ kbId }: { kbId: string }) {
   const [status, setStatus] = useState<RaptorStatusType | null>(null);

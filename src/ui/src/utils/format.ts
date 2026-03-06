@@ -81,3 +81,11 @@ export function formatCountdown(ms: number): string {
 export function toErrorMessage(err: unknown): string {
   return err instanceof Error ? err.message : String(err);
 }
+
+export function formatBytes(bytes: number): string {
+  if (bytes === 0) return "0 B";
+  const k = 1024;
+  const sizes = ["B", "KB", "MB", "GB"];
+  const i = Math.floor(Math.log(bytes) / Math.log(k));
+  return `${(bytes / k ** i).toFixed(1)} ${sizes[i]}`;
+}

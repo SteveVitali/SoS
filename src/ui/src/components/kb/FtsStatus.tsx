@@ -6,7 +6,7 @@ import {
   rebuildFtsIndex,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { BuildProgressBox, IndexStatusCard, ProgressBar } from "./kbShared.js";
+import { BuildProgressBox, IndexStatusCard, ProgressBar } from "../shared/IndexCard.js";
 
 export function FtsStatus({ kbId }: { kbId: string }) {
   const [status, setStatus] = useState<FtsStatusType | null>(null);
