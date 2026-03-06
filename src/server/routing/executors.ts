@@ -828,26 +828,24 @@ async function enrichImagePromptWithKB(
         recorder,
       );
 
-      // Keep only "correct" chunks (stricter than research pipeline's "not incorrect")
-      const correctChunks = evaluation.evaluations
-        .filter((e) => e.relevance === "correct")
+      // Keep chunks not classified as "incorrect" (same criteria as research pipeline)
+      const relevantEvals = evaluation.evaluations
+        .filter((e) => e.relevance !== "incorrect")
         .map((e) => e.chunk);
 
-      if (!correctChunks.length) {
-        log.info("Evaluator found no correct chunks for image enrichment", {
+      if (!relevantEvals.length) {
+        log.info("Evaluator found no relevant chunks for image enrichment", {
           total: aboveThreshold.length,
           incorrect: evaluation.incorrect_count,
-          ambiguous: evaluation.ambiguous_count,
         });
         return prompt;
       }
 
-      relevantChunks = correctChunks;
+      relevantChunks = relevantEvals;
       log.info("Evaluator filtered KB chunks for image enrichment", {
         input: aboveThreshold.length,
-        correct: correctChunks.length,
+        kept: relevantEvals.length,
         incorrect: evaluation.incorrect_count,
-        ambiguous: evaluation.ambiguous_count,
       });
     } catch (evalErr: unknown) {
       log.warn("Evaluator failed, using score-filtered chunks for enrichment", {

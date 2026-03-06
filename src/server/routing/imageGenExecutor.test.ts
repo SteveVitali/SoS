@@ -430,7 +430,7 @@ describe("KB-enriched image prompt", () => {
     await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
 
     expect(mockRunEvaluator).toHaveBeenCalled();
-    // Enrichment LLM should NOT be called — no correct chunks
+    // Enrichment LLM should NOT be called — all chunks incorrect
     expect(mockProvider.chat).not.toHaveBeenCalled();
     // Image generated with original prompt
     expect(mockProvider.generateImage).toHaveBeenCalledWith(
@@ -438,8 +438,8 @@ describe("KB-enriched image prompt", () => {
     );
   });
 
-  it("skips enrichment when evaluator classifies all as ambiguous", async () => {
-    const mockProvider = setupProvider();
+  it("enriches prompt when evaluator classifies chunks as ambiguous (same as research pipeline)", async () => {
+    const mockProvider = setupProvider("a cat with maybe-relevant context");
     const kbChunk = {
       content: "Maybe relevant",
       score: 0.6,
@@ -461,8 +461,11 @@ describe("KB-enriched image prompt", () => {
 
     await executeAction(makeAction({ prompt: "a cat" }), makeCtx(), kbExecDef);
 
-    // Enrichment LLM should NOT be called — no correct chunks (stricter than research pipeline)
-    expect(mockProvider.chat).not.toHaveBeenCalled();
+    // Ambiguous chunks ARE kept (same criteria as research pipeline — only incorrect is discarded)
+    expect(mockProvider.chat).toHaveBeenCalled();
+    expect(mockProvider.generateImage).toHaveBeenCalledWith(
+      expect.objectContaining({ prompt: "a cat with maybe-relevant context" }),
+    );
   });
 
   it("falls back to score-filtered chunks when evaluator fails", async () => {
