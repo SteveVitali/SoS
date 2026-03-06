@@ -34,6 +34,7 @@
     "@octokit/rest": "^22.0.1",
     "@slack/bolt": "^4.1.0",
     "adm-zip": "^0.5.16",
+    "better-sqlite3": "^12.6.2",
     "dotenv": "^17.3.1",
     "express": "^5.0.0",
     "mongodb": "^7.1.0",
@@ -51,6 +52,7 @@
   "devDependencies": {
     "@biomejs/biome": "^2.4.4",
     "@types/adm-zip": "^0.5.7",
+    "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.0",
     "@types/multer": "^2.0.0",
     "@types/node": "^25.3.2",

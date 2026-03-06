@@ -8,6 +8,7 @@ import multer from "multer";
 import type { KBScope } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import type { ResearchStrategy } from "../../shared/researchTypes.js";
+import { countFTSRows, type FTSRecord, hasFTSIndex, rebuildFTSIndex } from "./ftsStore.js";
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
@@ -32,7 +33,7 @@ import {
   getRecentUploadsForKB,
   getUploadJob,
 } from "./uploadRepo.js";
-import { listRaptorNodes } from "./vectorStore.js";
+import { listAllChunksForFTS, listRaptorNodes } from "./vectorStore.js";
 
 const log = createLogger("server:kb:routes");
 
@@ -482,6 +483,64 @@ export function createKBWebRoutes(): Router {
       res.json({ session });
     } catch (err: any) {
       log.error("Get research session error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── FTS (Keyword Index) Routes ─────────────────────────────
+
+  // GET /api/web/kb/:id/fts/status — get FTS index status for a KB
+  router.get("/:id/fts/status", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const kb = await getKnowledgeBase(kbId);
+      if (!kb) {
+        res.status(404).json({ error: "Knowledge base not found" });
+        return;
+      }
+
+      const indexed = hasFTSIndex(kbId);
+      const ftsRows = indexed ? countFTSRows(kbId) : 0;
+      res.json({
+        indexed,
+        fts_chunk_count: ftsRows,
+        vector_chunk_count: kb.chunk_count,
+        needs_rebuild: indexed ? ftsRows < kb.chunk_count : kb.chunk_count > 0,
+      });
+    } catch (err: any) {
+      log.error("FTS status error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/web/kb/:id/fts/rebuild — rebuild FTS index from LanceDB chunks
+  router.post("/:id/fts/rebuild", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const kb = await getKnowledgeBase(kbId);
+      if (!kb) {
+        res.status(404).json({ error: "Knowledge base not found" });
+        return;
+      }
+
+      // Read all L0 chunks from LanceDB
+      const chunks = await listAllChunksForFTS(kbId);
+
+      // Build FTS records
+      const ftsRecords: FTSRecord[] = chunks.map((c) => ({
+        chunk_id: c.id,
+        kb_id: c.kb_id,
+        source_file: c.source_file,
+        content: c.content,
+      }));
+
+      // Rebuild the index (drops + re-creates)
+      rebuildFTSIndex(kbId, ftsRecords);
+
+      log.info("FTS index rebuilt via API", { kbId, chunks: ftsRecords.length });
+      res.json({ ok: true, chunks_indexed: ftsRecords.length });
+    } catch (err: any) {
+      log.error("FTS rebuild error", { error: err.message });
       res.status(500).json({ error: err.message });
     }
   });

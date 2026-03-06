@@ -1,6 +1,6 @@
 /**
- * Retriever stage — searches knowledge bases using pre-embedded expanded queries.
- * Wraps the existing vectorStore search with multi-query support and deduplication.
+ * Retriever stage — searches knowledge bases using hybrid retrieval (vector + keyword).
+ * Wraps hybridSearch with multi-query support and deduplication.
  */
 
 import { v4 as uuidv4 } from "uuid";
@@ -11,6 +11,7 @@ import type {
   ResearchConfig,
   RetrievalRecord,
 } from "../../../../shared/researchTypes.js";
+import { hybridSearch } from "../../hybridSearch.js";
 import { listEnabledKBsByScope } from "../../kbRepo.js";
 import { distanceToSimilarity } from "../../kbService.js";
 import { searchKBTable } from "../../vectorStore.js";
@@ -76,36 +77,24 @@ export async function runRetriever(
       const perKBLimit = config.max_chunks_per_query;
 
       try {
-        // Probe first (limit=1) to check relevance
+        // Probe first (limit=1, vector-only) to check relevance
         const probe = await searchKBTable(kb.kb_id, eq.vector, 1);
         if (probe.length === 0) continue;
 
         const probeScore = distanceToSimilarity(probe[0]._distance);
         if (probeScore < minScore) continue;
 
-        // Full search
+        // Hybrid search (vector + keyword)
         kbIdsSearched.push(kb.kb_id);
-        const results = await searchKBTable(kb.kb_id, eq.vector, perKBLimit);
+        const results = await hybridSearch(kb.kb_id, eq.vector, eq.text, perKBLimit, {
+          minSimilarityScore: minScore,
+          kbName: kb.name,
+        });
 
         for (const r of results) {
-          const similarity = distanceToSimilarity(r._distance);
-          if (similarity >= minScore) {
-            allChunks.push({
-              content: r.content,
-              source_file: r.source_file,
-              kb_name: kb.name,
-              kb_id: kb.kb_id,
-              score: similarity,
-              metadata: {
-                section: r.section || undefined,
-                page: r.page || undefined,
-                file_path: r.file_path || undefined,
-                parent_dir: r.parent_dir || undefined,
-              },
-            });
-            queryResultCount++;
-            if (similarity > queryTopScore) queryTopScore = similarity;
-          }
+          allChunks.push(r);
+          queryResultCount++;
+          if (r.score > queryTopScore) queryTopScore = r.score;
         }
       } catch (err: unknown) {
         log.warn("Retrieval failed for KB, skipping", {

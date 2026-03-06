@@ -24,6 +24,8 @@ import type {
   ResearchStreamEvent,
 } from "../../shared/researchTypes.js";
 import { getEmbeddingProvider } from "./embeddings.js";
+import { addToFTSIndex, deleteDocumentFromFTS, dropFTSIndex, type FTSRecord } from "./ftsStore.js";
+import { hybridSearch } from "./hybridSearch.js";
 import { type IngestedFile, ingestFiles } from "./ingestion.js";
 import {
   addDocumentRecord,
@@ -207,6 +209,15 @@ async function embedAndStoreFile(
   }));
 
   await addToKBTable(kbId, records);
+
+  // Index chunk text in SQLite FTS5 for keyword search (hybrid retrieval)
+  const ftsRecords: FTSRecord[] = records.map((r) => ({
+    chunk_id: r.id,
+    kb_id: r.kb_id,
+    source_file: r.source_file,
+    content: r.content,
+  }));
+  addToFTSIndex(kbId, ftsRecords);
 
   await addDocumentRecord(kbId, {
     name: ingestedFile.name,
@@ -512,6 +523,9 @@ export async function removeDocument(kbId: string, docName: string): Promise<boo
   // Remove from vector store
   await deleteDocumentFromKBTable(kbId, docName);
 
+  // Remove from FTS keyword index
+  deleteDocumentFromFTS(kbId, docName);
+
   // Remove from MongoDB
   const removed = await removeDocumentRecord(kbId, docName);
   if (!removed) return false;
@@ -532,6 +546,9 @@ export async function removeDocument(kbId: string, docName: string): Promise<boo
 export async function deleteKnowledgeBase(kbId: string): Promise<boolean> {
   // Drop the vector table
   await dropKBTable(kbId);
+
+  // Drop the FTS keyword index
+  dropFTSIndex(kbId);
 
   // Clean up upload jobs
   await deleteUploadJobsForKB(kbId);
@@ -607,7 +624,7 @@ async function twoStageSearch(
 
   if (passedKBs.length === 0) return { results: [], routing };
 
-  // --- Stage 2: Full search on relevant KBs only ---
+  // --- Stage 2: Hybrid search (vector + keyword) on relevant KBs ---
   const allResults: KBSearchResult[] = [];
 
   for (const kb of passedKBs) {
@@ -615,28 +632,13 @@ async function twoStageSearch(
     const minScore_ = min_score ?? kb.min_similarity_score;
 
     try {
-      const results = await searchKBTable(kb.kb_id, queryVector, perKBLimit);
-
-      for (const r of results) {
-        const similarity = distanceToSimilarity(r._distance);
-        if (similarity >= minScore_) {
-          allResults.push({
-            content: r.content,
-            source_file: r.source_file,
-            kb_name: kb.name,
-            kb_id: kb.kb_id,
-            score: similarity,
-            metadata: {
-              section: r.section || undefined,
-              page: r.page || undefined,
-              file_path: r.file_path || undefined,
-              parent_dir: r.parent_dir || undefined,
-            },
-          });
-        }
-      }
+      const results = await hybridSearch(kb.kb_id, queryVector, query, perKBLimit, {
+        minSimilarityScore: minScore_,
+        kbName: kb.name,
+      });
+      allResults.push(...results);
     } catch (err: any) {
-      log.warn("KB search failed in stage 2, skipping", {
+      log.warn("KB hybrid search failed in stage 2, skipping", {
         kbId: kb.kb_id,
         name: kb.name,
         error: err.message,
@@ -702,21 +704,10 @@ export async function searchSingleKB(
 
   const embeddingProvider = getEmbeddingProvider();
   const [queryVector] = await embeddingProvider.embed([query]);
-  const results = await searchKBTable(kbId, queryVector, limit ?? kb.max_chunks_per_query);
 
-  return results.map((r) => ({
-    content: r.content,
-    source_file: r.source_file,
-    kb_name: kb.name,
-    kb_id: kb.kb_id,
-    score: distanceToSimilarity(r._distance),
-    metadata: {
-      section: r.section || undefined,
-      page: r.page || undefined,
-      file_path: r.file_path || undefined,
-      parent_dir: r.parent_dir || undefined,
-    },
-  }));
+  return hybridSearch(kbId, queryVector, query, limit ?? kb.max_chunks_per_query, {
+    kbName: kb.name,
+  });
 }
 
 /**

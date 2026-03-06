@@ -385,6 +385,35 @@ export async function listRaptorNodes(kbId: string): Promise<
 }
 
 /**
+ * List all chunks from a KB table with fields needed for FTS indexing.
+ * Used during FTS index rebuild for existing KBs that predate hybrid search.
+ */
+export async function listAllChunksForFTS(
+  kbId: string,
+): Promise<Array<{ id: string; kb_id: string; source_file: string; content: string }>> {
+  const conn = getDb();
+  const name = tableName(kbId);
+
+  const existing = await conn.tableNames();
+  if (!existing.includes(name)) return [];
+
+  const table = await conn.openTable(name);
+  const rows = await table
+    .query()
+    .select(["id", "kb_id", "source_file", "content"])
+    .where("level = 0") // Only raw chunks, not RAPTOR summaries
+    .limit(1_000_000)
+    .toArray();
+
+  return rows.map((r: any) => ({
+    id: r.id,
+    kb_id: r.kb_id,
+    source_file: r.source_file,
+    content: r.content,
+  }));
+}
+
+/**
  * Get the storage path for the vector store.
  */
 export function getVectorStorePath(): string | null {
