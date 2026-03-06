@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](.nvmrc)
 
-Son of Steve is a **self-hosted AI engineering platform**. It combines autonomous coding (Claude Code → PR → CI), persistent knowledge bases with advanced hybrid retrieval and RAG research, GitHub analytics, image generation, and LLM-powered conversational interfaces — all running locally on your infrastructure. Your code and data never leave your machine.
+Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your repos, mention it in Slack (or use the web UI), and it autonomously writes code, runs tests, opens PRs, monitors CI, and fixes failures — all on your own machine. It also provides persistent knowledge bases with advanced hybrid retrieval and multi-strategy RAG research, a GitHub analytics hub, and LLM-powered conversational interfaces. Your code and data never leave your infrastructure.
 
 ### Why Son of Steve?
 
