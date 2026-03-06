@@ -12,6 +12,7 @@ import type {
   GitHubPrDoc,
   GitHubScope,
   LeaderboardEntry,
+  LeaderboardTotals,
   SyncLogCategory,
   SyncStatusResponse,
 } from "../../shared/githubTypes.js";
@@ -324,7 +325,6 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
               },
             },
             { $sort: { prs_merged: -1 } },
-            ...(scope === "org" ? [] : [{ $limit: 50 }]),
           ])
           .toArray();
 
@@ -348,6 +348,31 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
         }
       }
 
+      // Compute leaderboard totals
+      let leaderboardTotals: LeaderboardTotals | undefined;
+      if (leaderboard.length > 0) {
+        const allRepos = new Set<string>();
+        let totalMerged = 0;
+        let totalReviews = 0;
+        let totalAdds = 0;
+        let totalDels = 0;
+        for (const e of leaderboard) {
+          totalMerged += e.prs_merged;
+          totalReviews += e.reviews_submitted;
+          totalAdds += e.additions;
+          totalDels += e.deletions;
+          for (const r of e.repos_touched) allRepos.add(r);
+        }
+        leaderboardTotals = {
+          prs_merged: totalMerged,
+          reviews_submitted: totalReviews,
+          additions: totalAdds,
+          deletions: totalDels,
+          unique_repos: allRepos.size,
+          member_count: leaderboard.length,
+        };
+      }
+
       const stats = await getChunkStats(org, "prs");
       const dataSource =
         stats.total > 0 && stats.completed === stats.total ? "cache" : "partial-cache";
@@ -356,6 +381,7 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
         summary,
         data_points: dataPointsAgg,
         leaderboard,
+        leaderboard_totals: leaderboardTotals,
         data_source: dataSource as any,
       };
 

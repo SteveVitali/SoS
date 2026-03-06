@@ -232,6 +232,31 @@ export function GitHubContributionsView() {
                 </tr>
               ))}
             </tbody>
+            {data.leaderboard_totals && (
+              <tfoot>
+                <tr style={{ borderTop: "2px solid var(--border)" }}>
+                  <td style={{ ...css.td, fontWeight: 700 }} />
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    Total ({data.leaderboard_totals.member_count} members)
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    {data.leaderboard_totals.prs_merged}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    {data.leaderboard_totals.reviews_submitted}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700, color: "#22c55e" }}>
+                    +{data.leaderboard_totals.additions}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700, color: "#ef4444" }}>
+                    −{data.leaderboard_totals.deletions}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    {data.leaderboard_totals.unique_repos}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
