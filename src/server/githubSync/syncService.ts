@@ -145,8 +145,7 @@ export class GitHubSyncService {
     });
 
     // Recover any chunks left stuck as "in_progress" from a previous crash/restart
-    const org2 = config.org.toLowerCase();
-    const recovered = await resetStaleInProgressChunks(org2, "prs");
+    const recovered = await resetStaleInProgressChunks(org, "prs");
     if (recovered > 0) {
       log.info("Recovered stale in_progress chunks", { recovered });
       await writeSyncLog(

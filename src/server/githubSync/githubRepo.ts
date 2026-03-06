@@ -210,7 +210,7 @@ export async function resetStaleInProgressChunks(
       org,
       data_type: dataType,
       status: "in_progress",
-      started_at: { $lt: cutoff },
+      $or: [{ started_at: { $lt: cutoff } }, { started_at: { $exists: false } }],
     } as any,
     { $set: { status: "pending" }, $unset: { error: 1 } } as any,
   );
