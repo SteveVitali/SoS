@@ -550,7 +550,7 @@ export function createKBWebRoutes(): Router {
         };
 
         try {
-          emit({ type: "reading", message: "Reading chunks from vector store..." });
+          emit({ type: "reading", message: "Reading chunks from knowledge base..." });
 
           const chunks = await listAllChunksForFTS(kbId);
           const total = chunks.length;

@@ -49,7 +49,7 @@ export function FtsStatus({ kbId }: { kbId: string }) {
       const result = await rebuildFtsIndex(kbId, (event: FtsRebuildEvent) => {
         switch (event.type) {
           case "reading":
-            setPhase("Reading vector store...");
+            setPhase("Reading chunks...");
             break;
           case "read_complete":
             setTotal(event.total);
@@ -113,8 +113,8 @@ export function FtsStatus({ kbId }: { kbId: string }) {
             </span>
             {" · "}
             <span>
-              <strong style={{ color: "var(--fg)" }}>{status.vector_chunk_count}</strong> in vector
-              store
+              <strong style={{ color: "var(--fg)" }}>{status.vector_chunk_count}</strong> total in
+              KB
             </span>
             {status.needs_rebuild && (
               <>
