@@ -9,6 +9,11 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 
 ### Added
 
+- **Hybrid search (FTS5 + vector + RRF)** — each knowledge base now has a parallel SQLite FTS5 keyword index alongside its LanceDB vector store; `hybridSearch()` merges vector similarity and BM25 keyword results via Reciprocal Rank Fusion (k=60); the ReAct research agent gains a `keyword_search` tool; FTS indexes are auto-created on ingestion and support lazy schema migration via `user_version` pragma; new API endpoints `GET /api/web/kb/:id/fts/status` and `POST /api/web/kb/:id/fts/rebuild`
+- **FTS metadata columns** — FTS5 index stores `section`, `page`, `file_path`, and `parent_dir` as `UNINDEXED` columns so keyword-only hits carry the same rich metadata as vector results; `FTSSearchResult` and `FTSRecord` interfaces expanded; schema version migration auto-rebuilds old indexes
+- **Image generation** — new `generate_image` execution type with text-to-image via OpenAI-compatible APIs (gpt-image-1 default); images stored in MongoDB `generated_images` collection with 90-day TTL; optional KB-enriched prompts (vector search → evaluator filtering → LLM rewriting); new `imageGeneration` model role; inline image rendering in chat UI
+- **GitHub Hub** — MongoDB-cached view of org-wide GitHub activity with background sync engine: Octokit with dual rate limiters (REST 5K/hr + Search 30/min token bucket), deterministic epoch-anchored 28-day chunked backfill, hot sync for open PRs, warm sync for org/team membership, contribution aggregation; 7 new MongoDB collections; full UI with PR filtering, contribution charts and leaderboards, team/member browser, sync dashboard (backfill progress, chunk timeline, rate limit gauges, live SSE activity feed, manual triggers), and settings editor
+- **GitHub action unification** — all GitHub data access now reads from the MongoDB sync cache; instant queries via `mongoQueries.ts`, inline recaps via `recapService.ts` + LLM provider (no `gh` CLI, no background `github_summary` jobs); PR body caching in sync engine; deleted `queries.ts`, `teamCache.ts`, `formatting.ts`, `ghPrs.ts`, `runGithubSummaryJob.ts`; removed `github_summary` job type
 - **KB hierarchical path metadata & contextual chunking** — vector records now store `file_path` and `parent_dir` for each chunk; chunk content is enriched with breadcrumb paths (e.g., `Source: docs > api > auth.md`) before embedding, improving retrieval for queries referencing document structure
 - **Streaming ingestion progress** — `POST /api/web/kb/:id/ingest` now supports `Accept: text/x-ndjson` for real-time per-file progress events; new `ingestIntoKBStreaming` async generator yields `file_start`, `file_done`, `file_skip`, `file_error`, and `complete` events as NDJSON
 - **Real-time ingestion progress UI** — KBDetail upload section shows all files upfront with per-file status indicators (pending ◦, processing ⟳, done ✓, skipped –, error ✗) that update in real time as streaming events arrive; summary line shows final counts
@@ -64,7 +69,10 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
 - Expanded `.gitignore` with common Node/TS/macOS patterns
 - Auto-formatted entire codebase with Biome
 - Decoupled PR stats fetching from job polling to avoid GitHub API rate limit exhaustion
-- Web UI expanded from single-page to tabbed layout (Chats, Jobs, PRs, Workers, Repos, Routing)
+- Web UI expanded from single-page to tabbed layout (Chats, Jobs, GitHub, Workers, Repos, Knowledge, Research, Routing, Models)
+- `KBSearchResult.score` now preserves original similarity/BM25 score; new `rrf_score` field stores the RRF score when returned from hybrid search
+- GitHub queries no longer shell out to `gh` CLI; all data reads from the MongoDB sync cache
+- Recaps execute inline on the server using the LLM provider instead of spawning background `github_summary` worker jobs
 
 ### Fixed
 

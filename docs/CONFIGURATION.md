@@ -61,7 +61,7 @@ The GitHub Hub feature provides a MongoDB-cached view of your org's GitHub activ
 | `SOS_EMBEDDING_MODEL` | No (default: `text-embedding-3-small`) | Embedding model name |
 | `SOS_EMBEDDING_API_KEY` | Only if KB is used | API key for the embedding provider. Falls back to `OPENAI_API_KEY` if not set. |
 | `SOS_EMBEDDING_BASE_URL` | No | Custom base URL for the embedding API (e.g., a LiteLLM proxy). Defaults to `https://api.openai.com/v1`. |
-| `SOS_KB_STORAGE_DIR` | No | Directory for LanceDB vector data. Defaults to `$SOS_WORKSPACE_ROOT/kb` or `.sos-kb` in the project root. |
+| `SOS_KB_STORAGE_DIR` | No | Directory for LanceDB vector data and SQLite FTS5 keyword indexes. Defaults to `$SOS_WORKSPACE_ROOT/kb` or `.sos-kb` in the project root. Each KB gets a LanceDB table and a `fts_{kb_id}.sqlite` file in this directory. |
 
 ## Research Pipeline (LLM)
 
@@ -87,6 +87,7 @@ Model assignments are centralized in `src/shared/modelConfig.ts`. Each role can 
 | `SOS_TITLE_MODEL` | (inherits `SOS_LLM_MODEL`) | Job and chat conversation title generation |
 | `SOS_RESEARCH_LLM_MODEL` | `claude-opus-4.5` | Research pipeline reasoning calls |
 | `SOS_RAPTOR_MODEL` | (inherits `SOS_RESEARCH_LLM_MODEL`) | RAPTOR tree cluster summarization |
+| `SOS_IMAGE_MODEL` | `gpt-image-1` | Image generation model |
 | `SOS_EMBEDDING_MODEL` | `text-embedding-3-small` | Vector embeddings for KB indexing and search |
 
 You can also override model assignments via `model-config.yaml` in the project root. **File overrides take highest precedence** (YAML file > env var > hardcoded default):
@@ -96,6 +97,7 @@ routing: claude-opus-4.5
 titleGeneration: claude-opus-4.5
 research: claude-opus-4.5
 raptorSummarization: claude-opus-4.5
+imageGeneration: gpt-image-1
 embedding: text-embedding-3-small
 ```
 
