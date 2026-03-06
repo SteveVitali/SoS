@@ -101,11 +101,9 @@ export async function hybridSearch(
   const minScore = config?.minSimilarityScore ?? 0;
   const kbName = config?.kbName ?? "";
 
-  // --- Run both searches in parallel ---
-  const [vectorResults, keywordResults] = await Promise.all([
-    searchKBTable(kbId, queryVector, perIndexLimit),
-    Promise.resolve(searchFTS(kbId, queryText, perIndexLimit)),
-  ]);
+  // --- Run both searches in parallel (FTS is synchronous, vector is async) ---
+  const keywordResults = searchFTS(kbId, queryText, perIndexLimit);
+  const vectorResults = await searchKBTable(kbId, queryVector, perIndexLimit);
 
   // If both are empty, short-circuit
   if (vectorResults.length === 0 && keywordResults.length === 0) {

@@ -94,13 +94,6 @@ export function initFTSStore(path: string): void {
   log.info("FTS store initialized", { path });
 }
 
-/**
- * Get the storage path for the FTS store.
- */
-export function getFTSStorePath(): string | null {
-  return storagePath;
-}
-
 // ---------------------------------------------------------------------------
 // Records
 // ---------------------------------------------------------------------------
@@ -297,5 +290,6 @@ export function closeFTSStore(): void {
     }
   }
   openDbs.clear();
+  storagePath = null;
   log.info("FTS store closed");
 }
