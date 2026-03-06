@@ -188,10 +188,33 @@ export async function getIncompleteChunks(
     .find({
       org,
       data_type: dataType as any,
-      status: { $in: ["pending", "failed"] } as any,
+      status: { $in: ["pending", "in_progress", "failed"] } as any,
     })
     .sort({ chunk_start: -1 })
     .toArray();
+}
+
+/**
+ * Reset chunks stuck in "in_progress" back to "pending".
+ * This recovers from server crashes/restarts that left chunks orphaned.
+ * Only resets chunks whose started_at is older than `staleThresholdMs` (default 5 min).
+ */
+export async function resetStaleInProgressChunks(
+  org: string,
+  dataType: string,
+  staleThresholdMs = 5 * 60 * 1000,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - staleThresholdMs);
+  const result = await getSyncChunksCollection().updateMany(
+    {
+      org,
+      data_type: dataType,
+      status: "in_progress",
+      $or: [{ started_at: { $lt: cutoff } }, { started_at: { $exists: false } }],
+    } as any,
+    { $set: { status: "pending" }, $unset: { error: 1 } } as any,
+  );
+  return result.modifiedCount;
 }
 
 // --- Sync cursor (persists across reboots) ---
@@ -199,6 +222,7 @@ export async function getIncompleteChunks(
 interface SyncCursorDoc {
   _id: string;
   last_hot_sync_at?: Date;
+  task_last_run?: Record<string, Date>;
 }
 
 function getSyncStateCollection(): Collection<SyncCursorDoc> {
@@ -214,6 +238,19 @@ export async function setSyncCursor(org: string, lastHotSyncAt: Date): Promise<v
   await getSyncStateCollection().updateOne(
     { _id: org },
     { $set: { last_hot_sync_at: lastHotSyncAt } },
+    { upsert: true },
+  );
+}
+
+export async function getTaskLastRunTimestamps(org: string): Promise<Record<string, Date>> {
+  const doc = await getSyncStateCollection().findOne({ _id: org });
+  return doc?.task_last_run ?? {};
+}
+
+export async function setTaskLastRun(org: string, taskType: string, ts: Date): Promise<void> {
+  await getSyncStateCollection().updateOne(
+    { _id: org },
+    { $set: { [`task_last_run.${taskType}`]: ts } },
     { upsert: true },
   );
 }

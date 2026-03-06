@@ -29,8 +29,10 @@ export {
   getSettingsCollection,
   getSyncChunksCollection,
   getSyncLogCollection,
+  getTaskLastRunTimestamps,
   getTeamsCollection,
   saveGitHubSettings,
+  setTaskLastRun,
 } from "./githubRepo.js";
 export { getOctokit, getRateLimitBudget, resetOctokitClient } from "./octokitClient.js";
 export { syncOrg, syncOrgMembers, syncOrgTeams, syncTeamMembers } from "./orgSyncer.js";

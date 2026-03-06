@@ -63,6 +63,8 @@ async function ensureIndexes(db: Db) {
 
   await col.createIndex({ status: 1, lease_expires_at: 1 }, { name: "idx_status_lease" });
 
+  await col.createIndex({ status: 1, created_at: -1 }, { name: "idx_status_created" });
+
   log.info("Indexes ensured");
 }
 
