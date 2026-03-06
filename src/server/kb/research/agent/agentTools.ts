@@ -6,6 +6,8 @@ import type { KBScope, KBSearchResult } from "../../../../shared/kbTypes.js";
 import { createLogger } from "../../../../shared/logger.js";
 import type { ResearchConfig } from "../../../../shared/researchTypes.js";
 import { getEmbeddingProvider } from "../../embeddings.js";
+import { searchFTS } from "../../ftsStore.js";
+import { hybridSearch } from "../../hybridSearch.js";
 import { listEnabledKBsByScope } from "../../kbRepo.js";
 import { distanceToSimilarity, searchSingleKB } from "../../kbService.js";
 import { searchKBTable } from "../../vectorStore.js";
@@ -106,6 +108,24 @@ export const AGENT_TOOL_DEFINITIONS: ToolDefinition[] = [
   {
     type: "function",
     function: {
+      name: "keyword_search",
+      description:
+        "Search knowledge bases using exact keyword/text matching (BM25). Use this when looking for specific terms, code symbols, config flags, error messages, IDs, or exact strings that semantic search might miss.",
+      parameters: {
+        type: "object",
+        properties: {
+          query: {
+            type: "string",
+            description: "The exact text or keywords to search for",
+          },
+        },
+        required: ["query"],
+      },
+    },
+  },
+  {
+    type: "function",
+    function: {
       name: "synthesize_answer",
       description:
         "Synthesize a final context from all accumulated research. Call this when you have enough information to answer the question. This terminates the research session.",
@@ -144,6 +164,8 @@ export async function executeAgentTool(
       return executeSearchKB(args, ctx);
     case "search_specific_kb":
       return executeSearchSpecificKB(args, ctx);
+    case "keyword_search":
+      return executeKeywordSearch(args, ctx);
     case "list_knowledge_bases":
       return executeListKBs(ctx);
     case "evaluate_relevance":
@@ -179,30 +201,24 @@ async function executeSearchKB(
 
   for (const kb of kbs) {
     try {
+      // Probe first (vector-only) to check relevance
       const probe = await searchKBTable(kb.kb_id, queryVector, 1);
       if (probe.length === 0) continue;
       const probeScore = distanceToSimilarity(probe[0]._distance);
       if (probeScore < ctx.config.min_similarity_score) continue;
 
-      const results = await searchKBTable(kb.kb_id, queryVector, ctx.config.max_chunks_per_query);
-      for (const r of results) {
-        const similarity = distanceToSimilarity(r._distance);
-        if (similarity >= ctx.config.min_similarity_score) {
-          allResults.push({
-            content: r.content,
-            source_file: r.source_file,
-            kb_name: kb.name,
-            kb_id: kb.kb_id,
-            score: similarity,
-            metadata: {
-              section: r.section || undefined,
-              page: r.page || undefined,
-              file_path: r.file_path || undefined,
-              parent_dir: r.parent_dir || undefined,
-            },
-          });
-        }
-      }
+      // Hybrid search (vector + keyword)
+      const results = await hybridSearch(
+        kb.kb_id,
+        queryVector,
+        query,
+        ctx.config.max_chunks_per_query,
+        {
+          minSimilarityScore: ctx.config.min_similarity_score,
+          kbName: kb.name,
+        },
+      );
+      allResults.push(...results);
     } catch (err) {
       log.warn("Agent search_kb failed for KB", { kbId: kb.kb_id, error: (err as Error).message });
     }
@@ -264,6 +280,64 @@ async function executeSearchSpecificKB(
   } catch (err) {
     return { result: `Search failed: ${(err as Error).message}` };
   }
+}
+
+async function executeKeywordSearch(
+  args: Record<string, unknown>,
+  ctx: AgentToolContext,
+): Promise<{ result: string; chunks?: KBSearchResult[] }> {
+  const query = String(args.query || "");
+  if (!query) return { result: "Error: query is required" };
+
+  const kbs = await listEnabledKBsByScope(ctx.scopes, ctx.owner);
+  if (kbs.length === 0) return { result: "No knowledge bases available for the current scopes." };
+
+  const allResults: KBSearchResult[] = [];
+
+  for (const kb of kbs) {
+    try {
+      const ftsResults = searchFTS(kb.kb_id, query, ctx.config.max_chunks_per_query);
+      for (const fts of ftsResults) {
+        allResults.push({
+          content: fts.content,
+          source_file: fts.source_file,
+          kb_name: kb.name,
+          kb_id: fts.kb_id,
+          score: fts.bm25_score,
+          metadata: {
+            section: fts.section,
+            page: fts.page,
+            file_path: fts.file_path,
+            parent_dir: fts.parent_dir,
+          },
+        });
+      }
+    } catch (err) {
+      log.warn("Agent keyword_search failed for KB", {
+        kbId: kb.kb_id,
+        error: (err as Error).message,
+      });
+    }
+  }
+
+  allResults.sort((a, b) => b.score - a.score);
+  const topResults = allResults.slice(0, ctx.config.max_chunks_per_query);
+
+  if (topResults.length === 0) {
+    return { result: `No keyword matches found for: "${query}"` };
+  }
+
+  const formatted = topResults
+    .map(
+      (r, i) =>
+        `[${i + 1}] (${r.kb_name}: ${r.source_file}, bm25: ${r.score.toFixed(2)})\n${r.content.slice(0, 400)}`,
+    )
+    .join("\n\n");
+
+  return {
+    result: `Found ${topResults.length} keyword matches:\n\n${formatted}`,
+    chunks: topResults,
+  };
 }
 
 async function executeListKBs(ctx: AgentToolContext): Promise<{ result: string }> {
@@ -384,30 +458,24 @@ async function executeGenerateHyde(
 
     for (const kb of kbs) {
       try {
+        // Probe first (vector-only) to check relevance
         const probe = await searchKBTable(kb.kb_id, hydeVector, 1);
         if (probe.length === 0) continue;
         const probeScore = distanceToSimilarity(probe[0]._distance);
         if (probeScore < ctx.config.min_similarity_score) continue;
 
-        const results = await searchKBTable(kb.kb_id, hydeVector, ctx.config.max_chunks_per_query);
-        for (const r of results) {
-          const similarity = distanceToSimilarity(r._distance);
-          if (similarity >= ctx.config.min_similarity_score) {
-            allResults.push({
-              content: r.content,
-              source_file: r.source_file,
-              kb_name: kb.name,
-              kb_id: kb.kb_id,
-              score: similarity,
-              metadata: {
-                section: r.section || undefined,
-                page: r.page || undefined,
-                file_path: r.file_path || undefined,
-                parent_dir: r.parent_dir || undefined,
-              },
-            });
-          }
-        }
+        // Hybrid search — use HyDE vector + original question text for keyword
+        const results = await hybridSearch(
+          kb.kb_id,
+          hydeVector,
+          question,
+          ctx.config.max_chunks_per_query,
+          {
+            minSimilarityScore: ctx.config.min_similarity_score,
+            kbName: kb.name,
+          },
+        );
+        allResults.push(...results);
       } catch (err) {
         log.warn("Agent generate_hyde search failed for KB", {
           kbId: kb.kb_id,

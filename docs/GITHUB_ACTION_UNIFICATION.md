@@ -1,6 +1,6 @@
 # GitHub Action Unification — Design Document
 
-> **Status:** Proposed (awaiting approval)
+> **Status:** ✅ Implemented
 > **Author:** Steve + Cascade
 > **Date:** 2026-03-05
 > **Revised:** 2026-03-05 — Inline recaps only, no gh CLI fallback, PR body caching

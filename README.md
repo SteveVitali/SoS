@@ -4,7 +4,7 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](.nvmrc)
 
-Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your repos, mention it in Slack (or use the web UI), and it autonomously writes code, runs tests, opens PRs, monitors CI, and fixes failures — all on your own machine. Your code never leaves your infrastructure.
+Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your repos, mention it in Slack (or use the web UI), and it autonomously writes code, runs tests, opens PRs, monitors CI, and fixes failures — all on your own machine. It also provides persistent knowledge bases with advanced hybrid retrieval and multi-strategy RAG research, a GitHub analytics hub, and LLM-powered conversational interfaces. Your code and data never leave your infrastructure.
 
 ### Why Son of Steve?
 
@@ -12,13 +12,15 @@ Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your re
 - **Full pipeline** — not just code generation: lint → test → self-review → commit → PR → CI → auto-fix CI failures
 - **PR comment review** — point it at any PR and it reads unresolved review threads, fixes each one, pushes, and replies
 - **Slack-native** — LLM-powered intent routing turns @-mentions into jobs, status checks, cancellations, or conversation
-- **Chat interface** — conversational web UI with the same LLM routing as Slack, including job creation and status checks
+- **Chat interface** — conversational web UI with the same LLM routing as Slack, including job creation, status checks, and inline image generation
 - **Multi-repo** — a repo registry with per-repo commands, CI providers, and keyword-based detection
 - **Enterprise-ready** — worktree pooling with build cache preservation for large monorepos (Bazel, etc.)
 - **Worker management** — spawn, monitor, and shut down worker processes from the web UI with live log streaming
-- **Knowledge bases** — upload documents (text, PDF, archives) or entire folders, chunk and embed them locally with hierarchical path metadata, and inject relevant context into LLM calls via semantic search; real-time per-file ingestion progress
-- **Advanced research pipeline** — multi-stage RAG with three strategy profiles (simple/deep/agent): LLM-driven query analysis and decomposition, HyDE expansion, CRAG evaluation, IRCoT iterative reasoning, and a ReAct research agent — all with full audit logging, NDJSON streaming, and a Research Playground UI
+- **Knowledge bases** — upload documents (text, PDF, archives) or entire folders, chunk and embed them locally with hierarchical path metadata, and inject relevant context into LLM calls; real-time per-file ingestion progress
+- **Hybrid search** — vector similarity (LanceDB) + keyword search (SQLite FTS5) merged via Reciprocal Rank Fusion; keyword-only hits get full metadata for rich results even without vector matches
+- **Advanced research pipeline** — multi-stage RAG with three strategy profiles (simple/deep/agent): LLM-driven query analysis and decomposition, HyDE expansion, CRAG evaluation, IRCoT iterative reasoning, and a ReAct research agent with keyword search tool — all with full audit logging, NDJSON streaming, and a Research Playground UI
 - **RAPTOR tree indexing** — recursive clustering and LLM summarization of KB chunks for hierarchical retrieval at multiple abstraction levels; interactive tree visualization in the UI
+- **Image generation** — text-to-image via OpenAI-compatible APIs with optional KB-enriched prompts (vector search → evaluator filtering → LLM rewriting)
 - **GitHub Hub** — MongoDB-cached view of your org's GitHub activity with background sync: deterministic chunked backfill, contribution charts and leaderboards, team/member browser, sync dashboard with rate limit gauges and live activity feed, all configurable from the UI
 - **Observable** — web dashboard with job timeline, PR stats, worker health, live Claude output, and Slack thread updates
 - **Crash-safe** — lease-based job claims with automatic recovery when workers crash
@@ -33,7 +35,9 @@ Slack ──Socket Mode──▶ sos-server ◀──HTTP+WS──▶ sos-worker
                            │                        │
                            ▼                        ▼
                         MongoDB               Claude Code CLI
-                           ▲                    git / gh
+                       LanceDB (vectors)        git / gh
+                       SQLite FTS5 (keywords)
+                           ▲
                            │
                      Web UI (React)
 ```
@@ -58,17 +62,18 @@ The AI coding agent space is crowded. Here's where Son of Steve fits:
 | | Son of Steve | GitHub Copilot Coding Agent | Devin / Factory | OpenHands | Aider |
 |---|---|---|---|---|---|
 | **Hosting** | Self-hosted, local | GitHub cloud | Cloud SaaS | Self-hosted (Docker) | Local CLI |
-| **Interface** | Slack + Web UI | GitHub Issues / Slack | Web IDE / Slack | Web UI | Terminal (interactive) |
+| **Interface** | Slack + Web UI + Chat | GitHub Issues / Slack | Web IDE / Slack | Web UI | Terminal (interactive) |
 | **Full pipeline** (test → PR → CI → fix) | ✅ | Partial | ✅ | ❌ | ❌ |
 | **Self-review pass** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **CI fix loop** | ✅ (bounded, configurable) | ❌ | Varies | ❌ | ❌ |
+| **Knowledge bases + RAG** | ✅ (hybrid search, RAPTOR, research agent) | ❌ | ❌ | ❌ | ❌ |
 | **Worktree pooling / build cache** | ✅ | ❌ (ephemeral runners) | ❌ | ❌ | ❌ |
 | **Custom CI providers** | Pluggable (GH Actions, Jenkins, …) | GitHub Actions only | Proprietary | N/A | N/A |
 | **Multi-repo registry** | ✅ | One repo per task | Varies | ❌ | One repo at a time |
 | **Code leaves your machine** | Never | Yes | Yes | Optional | Never |
-| **Cost model** | Your compute + Claude API | Per-seat + Actions minutes | Per-seat SaaS | Your compute | Your compute + LLM API |
+| **Cost model** | Your compute + LLM API | Per-seat + Actions minutes | Per-seat SaaS | Your compute | Your compute + LLM API |
 
-**In short:** Son of Steve is for teams that want autonomous AI coding with full CI integration, but need their code to stay on their own infrastructure — especially teams with monorepos, custom CI pipelines, and Slack-centric workflows.
+**In short:** Son of Steve is for teams that want an all-in-one AI engineering platform — autonomous coding with full CI integration, persistent knowledge bases with advanced retrieval, GitHub analytics, and conversational interfaces — running entirely on their own infrastructure.
 
 ---
 
@@ -143,7 +148,7 @@ Mention the bot in any channel. Messages are routed through an LLM ("Steve" pers
 @SonOfSteve hey what can you do?
 ```
 
-GitHub queries (requires `gh` CLI auth; team queries need `SOS_GITHUB_ORG` and `SOS_GITHUB_TEAM_SLUG`):
+GitHub queries (reads from the MongoDB sync cache; configure `SOS_GITHUB_ORG` and `SOS_GITHUB_TEAM_SLUG`):
 
 ```
 @SonOfSteve what PRs need my review?
@@ -151,8 +156,8 @@ GitHub queries (requires `gh` CLI auth; team queries need `SOS_GITHUB_ORG` and `
 @SonOfSteve what did I merge this week?
 @SonOfSteve what's the team working on?
 @SonOfSteve who has outstanding reviews on the team?
-@SonOfSteve give me my weekly recap          (async — queues an LLM summary job)
-@SonOfSteve team recap for the last 2 weeks  (async — queues an LLM summary job)
+@SonOfSteve give me my weekly recap          (inline LLM recap from cached data)
+@SonOfSteve team recap for the last 2 weeks  (inline LLM recap from cached data)
 ```
 
 Optional modifiers (for job creation):
@@ -177,7 +182,6 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack app creation, LLM routi
    - **Chats** — conversational interface with the same LLM routing as Slack
    - **Jobs** — create, view, cancel, retry, or delete jobs; full event timeline with cost metrics
    - **GitHub** — GitHub Hub dashboard: cached PRs with filtering, contribution charts and leaderboards, team/member browser, sync dashboard (backfill progress, chunk timeline, rate limit gauges, SSE activity feed, manual triggers), and settings editor
-   - **PRs** — view open PRs across registered repos with comment/review thread stats
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
    - **Repos** — edit the repo registry (YAML) directly from the browser
    - **Knowledge** — create knowledge bases, upload documents or folders (with real-time progress), test semantic search in the playground, configure scopes and chunking, RAPTOR tree visualization and build management
@@ -224,7 +228,6 @@ The worker resolves which repo to use based on:
 | `respond_to_pr_comments` | Read unresolved PR review threads → Claude fixes each → commit → push → reply to threads |
 | `self_review_pr` | Check out an existing PR branch → Claude self-review pass → fix issues → push |
 | `add_pr_review_comments` | Review a PR → post inline review comments on GitHub as the bot |
-| `github_summary` | Fetch GitHub activity data (merged PRs, reviews, stats) → Claude generates a narrative recap → post to Slack |
 
 ## Job Lifecycle
 

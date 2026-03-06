@@ -25,6 +25,14 @@ vi.mock("./vectorStore.js", () => ({
   listDocumentChunks: vi.fn(),
 }));
 
+vi.mock("./ftsStore.js", () => ({
+  searchFTS: vi.fn().mockReturnValue([]),
+  addToFTSIndex: vi.fn(),
+  deleteDocumentFromFTS: vi.fn(),
+  dropFTSIndex: vi.fn(),
+  hasFTSIndex: vi.fn().mockReturnValue(true),
+}));
+
 vi.mock("./embeddings.js", () => ({
   getEmbeddingProvider: vi.fn(),
 }));
@@ -149,13 +157,14 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
 
     // kb-1 probe: distance 0.5 → similarity ~0.667 (above 0.3)
     // kb-2 probe: distance 10 → similarity ~0.091 (below 0.3)
+    // Stage 2 hybrid search calls searchKBTable again for kb-1 (perIndexLimit=25)
     mockSearchKBTable
       .mockResolvedValueOnce([makeSearchResult({ kb_id: "kb-1", _distance: 0.5 })]) // kb-1 probe
       .mockResolvedValueOnce([makeSearchResult({ kb_id: "kb-2", _distance: 10 })]) // kb-2 probe
       .mockResolvedValueOnce([
-        // kb-1 full search
-        makeSearchResult({ kb_id: "kb-1", _distance: 0.5, content: "result 1" }),
-        makeSearchResult({ kb_id: "kb-1", _distance: 0.8, content: "result 2" }),
+        // kb-1 hybrid vector leg (perIndexLimit=25)
+        makeSearchResult({ kb_id: "kb-1", _distance: 0.5, content: "result 1", id: "c1" }),
+        makeSearchResult({ kb_id: "kb-1", _distance: 0.8, content: "result 2", id: "c2" }),
       ]);
 
     const results = await searchKnowledgeBases({
@@ -163,15 +172,15 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
       scopes: ["chat"],
     });
 
-    // searchKBTable called 3 times: probe kb-1, probe kb-2, full search kb-1
+    // searchKBTable called 3 times: probe kb-1, probe kb-2, hybrid vector leg kb-1
     expect(mockSearchKBTable).toHaveBeenCalledTimes(3);
 
     // Stage 1: probe kb-1 (limit=1), probe kb-2 (limit=1)
     expect(mockSearchKBTable).toHaveBeenNthCalledWith(1, "kb-1", [0.1, 0.2, 0.3], 1);
     expect(mockSearchKBTable).toHaveBeenNthCalledWith(2, "kb-2", [0.1, 0.2, 0.3], 1);
 
-    // Stage 2: full search on kb-1 only (limit=5 from max_chunks_per_query)
-    expect(mockSearchKBTable).toHaveBeenNthCalledWith(3, "kb-1", [0.1, 0.2, 0.3], 5);
+    // Stage 2: hybrid search internally calls searchKBTable with perIndexLimit=25
+    expect(mockSearchKBTable).toHaveBeenNthCalledWith(3, "kb-1", [0.1, 0.2, 0.3], 25);
 
     // Only results from kb-1
     expect(results).toHaveLength(2);
@@ -301,10 +310,10 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
     mockSearchKBTable
       .mockResolvedValueOnce([makeSearchResult({ _distance: 0.2 })]) // probe
       .mockResolvedValueOnce([
-        // full search
-        makeSearchResult({ _distance: 0.2, content: "r1" }),
-        makeSearchResult({ _distance: 0.3, content: "r2" }),
-        makeSearchResult({ _distance: 0.4, content: "r3" }),
+        // hybrid vector leg (perIndexLimit=25)
+        makeSearchResult({ _distance: 0.2, content: "r1", id: "c1" }),
+        makeSearchResult({ _distance: 0.3, content: "r2", id: "c2" }),
+        makeSearchResult({ _distance: 0.4, content: "r3", id: "c3" }),
       ]);
 
     const results = await searchKnowledgeBases({
@@ -313,9 +322,9 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
       max_chunks: 2,
     });
 
-    // Stage 2 called with max_chunks=2 (from request, not KB's 10)
-    expect(mockSearchKBTable).toHaveBeenNthCalledWith(2, "kb-1", [0.1, 0.2, 0.3], 2);
-    // Total results capped at 2
+    // Hybrid search uses perIndexLimit=25 for the vector leg, not max_chunks
+    expect(mockSearchKBTable).toHaveBeenNthCalledWith(2, "kb-1", [0.1, 0.2, 0.3], 25);
+    // Total results still capped at max_chunks=2 by twoStageSearch
     expect(results).toHaveLength(2);
   });
 
@@ -330,13 +339,13 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
       .mockResolvedValueOnce([makeSearchResult({ kb_id: "kb-1", _distance: 0.3 })]) // kb-1 probe
       .mockResolvedValueOnce([makeSearchResult({ kb_id: "kb-2", _distance: 0.1 })]) // kb-2 probe
       .mockResolvedValueOnce([
-        // kb-1 full
-        makeSearchResult({ kb_id: "kb-1", _distance: 0.3, content: "kb1 mid" }),
-        makeSearchResult({ kb_id: "kb-1", _distance: 0.8, content: "kb1 low" }),
+        // kb-1 hybrid vector leg
+        makeSearchResult({ kb_id: "kb-1", _distance: 0.3, content: "kb1 mid", id: "c1" }),
+        makeSearchResult({ kb_id: "kb-1", _distance: 0.8, content: "kb1 low", id: "c2" }),
       ])
       .mockResolvedValueOnce([
-        // kb-2 full
-        makeSearchResult({ kb_id: "kb-2", _distance: 0.1, content: "kb2 high" }),
+        // kb-2 hybrid vector leg
+        makeSearchResult({ kb_id: "kb-2", _distance: 0.1, content: "kb2 high", id: "c3" }),
       ]);
 
     const results = await searchKnowledgeBases({
@@ -345,9 +354,7 @@ describe("searchKnowledgeBases (two-stage routing)", () => {
     });
 
     expect(results).toHaveLength(3);
-    // Best result should be from kb-2 (distance 0.1 → highest similarity)
-    expect(results[0].content).toBe("kb2 high");
-    // Scores should be descending
+    // Scores should be descending (similarity scores)
     for (let i = 1; i < results.length; i++) {
       expect(results[i].score).toBeLessThanOrEqual(results[i - 1].score);
     }

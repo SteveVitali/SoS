@@ -12,9 +12,11 @@ import { setSlackPoster } from "./jobs/jobService.js";
 import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
 import { initTitleGenerator } from "./jobs/titleGenerator.js";
 import {
+  closeFTSStore,
   closeVectorStore,
   ensureKBDocumentIndexes,
   ensureKBIndexes,
+  initFTSStore,
   initVectorStore,
 } from "./kb/index.js";
 import { resetStaleBuildingStatuses } from "./kb/raptor/raptorRepo.js";
@@ -59,6 +61,7 @@ async function main() {
         ? path.join(config.workspaceRoot, "kb")
         : path.join(process.cwd(), ".sos-kb"));
     await initVectorStore(kbStoragePath);
+    initFTSStore(kbStoragePath);
     await ensureKBIndexes();
     await ensureKBDocumentIndexes();
     log.info("Knowledge base subsystem initialized", { storagePath: kbStoragePath });
@@ -234,6 +237,7 @@ async function main() {
     } catch {
       /* best effort */
     }
+    closeFTSStore();
     await closeVectorStore();
     await closeMongo();
     process.exit(0);

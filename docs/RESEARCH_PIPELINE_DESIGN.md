@@ -23,6 +23,8 @@
 | NDJSON streaming (web + worker endpoints) | ✅ Implemented |
 | Per-job research audit section (`JobDetail.tsx`) | ✅ Implemented |
 | Worker streaming client (`researchKnowledgeBasesStreaming`) | ✅ Implemented |
+| Hybrid search (vector + FTS5 keyword via RRF) | ✅ Implemented |
+| Agent tool: `keyword_search` (BM25 keyword search with metadata) | ✅ Implemented |
 
 ## Table of Contents
 

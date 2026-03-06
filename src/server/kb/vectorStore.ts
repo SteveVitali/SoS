@@ -385,6 +385,56 @@ export async function listRaptorNodes(kbId: string): Promise<
 }
 
 /**
+ * List all chunks from a KB table with fields needed for FTS indexing.
+ * Used during FTS index rebuild for existing KBs that predate hybrid search.
+ */
+export async function listAllChunksForFTS(kbId: string): Promise<
+  Array<{
+    id: string;
+    kb_id: string;
+    source_file: string;
+    content: string;
+    section: string;
+    page: number;
+    file_path: string;
+    parent_dir: string;
+  }>
+> {
+  const conn = getDb();
+  const name = tableName(kbId);
+
+  const existing = await conn.tableNames();
+  if (!existing.includes(name)) return [];
+
+  const table = await conn.openTable(name);
+  const MAX_CHUNKS = 1_000_000;
+  const rows = await table
+    .query()
+    .select(["id", "kb_id", "source_file", "content", "section", "page", "file_path", "parent_dir"])
+    .where("level = 0") // Only raw chunks, not RAPTOR summaries
+    .limit(MAX_CHUNKS)
+    .toArray();
+
+  if (rows.length === MAX_CHUNKS) {
+    log.warn("listAllChunksForFTS hit row limit — FTS rebuild may be incomplete", {
+      kbId,
+      limit: MAX_CHUNKS,
+    });
+  }
+
+  return rows.map((r: any) => ({
+    id: r.id,
+    kb_id: r.kb_id,
+    source_file: r.source_file,
+    content: r.content,
+    section: r.section ?? "",
+    page: r.page ?? 0,
+    file_path: r.file_path ?? "",
+    parent_dir: r.parent_dir ?? "",
+  }));
+}
+
+/**
  * Get the storage path for the vector store.
  */
 export function getVectorStorePath(): string | null {

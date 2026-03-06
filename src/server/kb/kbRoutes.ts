@@ -9,6 +9,14 @@ import type { KBScope } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import type { ResearchStrategy } from "../../shared/researchTypes.js";
 import {
+  addToFTSIndex,
+  countFTSRows,
+  dropFTSIndex,
+  type FTSRecord,
+  hasFTSIndex,
+  rebuildFTSIndex,
+} from "./ftsStore.js";
+import {
   createKnowledgeBase,
   deleteKnowledgeBase,
   getDocumentChunks,
@@ -32,7 +40,7 @@ import {
   getRecentUploadsForKB,
   getUploadJob,
 } from "./uploadRepo.js";
-import { listRaptorNodes } from "./vectorStore.js";
+import { listAllChunksForFTS, listRaptorNodes } from "./vectorStore.js";
 
 const log = createLogger("server:kb:routes");
 
@@ -483,6 +491,129 @@ export function createKBWebRoutes(): Router {
     } catch (err: any) {
       log.error("Get research session error", { error: err.message });
       res.status(500).json({ error: err.message });
+    }
+  });
+
+  // ─── FTS (Keyword Index) Routes ─────────────────────────────
+
+  // GET /api/web/kb/:id/fts/status — get FTS index status for a KB
+  router.get("/:id/fts/status", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const kb = await getKnowledgeBase(kbId);
+      if (!kb) {
+        res.status(404).json({ error: "Knowledge base not found" });
+        return;
+      }
+
+      const indexed = hasFTSIndex(kbId);
+      const ftsRows = indexed ? countFTSRows(kbId) : 0;
+      res.json({
+        indexed,
+        fts_chunk_count: ftsRows,
+        vector_chunk_count: kb.chunk_count,
+        needs_rebuild: indexed ? ftsRows < kb.chunk_count : kb.chunk_count > 0,
+      });
+    } catch (err: any) {
+      log.error("FTS status error", { error: err.message });
+      res.status(500).json({ error: err.message });
+    }
+  });
+
+  // POST /api/web/kb/:id/fts/rebuild — rebuild FTS index from LanceDB chunks
+  // Supports NDJSON streaming (Accept: text/x-ndjson) for real-time progress.
+  router.post("/:id/fts/rebuild", async (req: Request, res: Response) => {
+    try {
+      const kbId = pstr(req.params.id);
+      const kb = await getKnowledgeBase(kbId);
+      if (!kb) {
+        res.status(404).json({ error: "Knowledge base not found" });
+        return;
+      }
+
+      const wantsStream = req.headers.accept?.includes("text/x-ndjson");
+      const BATCH_SIZE = 500;
+
+      if (wantsStream) {
+        res.setHeader("Content-Type", "text/x-ndjson; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.flushHeaders();
+
+        let closed = false;
+        res.on("close", () => {
+          closed = true;
+        });
+
+        const emit = (event: Record<string, unknown>) => {
+          if (!closed) res.write(JSON.stringify(event) + "\n");
+        };
+
+        try {
+          emit({ type: "reading", message: "Reading chunks from knowledge base..." });
+
+          const chunks = await listAllChunksForFTS(kbId);
+          const total = chunks.length;
+          emit({ type: "read_complete", total });
+
+          // Drop existing index
+          dropFTSIndex(kbId);
+
+          if (total === 0) {
+            emit({ type: "complete", chunks_indexed: 0, total: 0 });
+            if (!closed) res.end();
+            return;
+          }
+
+          // Insert in batches with progress events
+          let indexed = 0;
+          for (let i = 0; i < total; i += BATCH_SIZE) {
+            const batch = chunks.slice(i, i + BATCH_SIZE);
+            const records: FTSRecord[] = batch.map((c) => ({
+              chunk_id: c.id,
+              kb_id: c.kb_id,
+              source_file: c.source_file,
+              content: c.content,
+              section: c.section || undefined,
+              page: c.page || undefined,
+              file_path: c.file_path || undefined,
+              parent_dir: c.parent_dir || undefined,
+            }));
+            addToFTSIndex(kbId, records);
+            indexed += records.length;
+            emit({ type: "batch", indexed, total });
+          }
+
+          emit({ type: "complete", chunks_indexed: indexed, total });
+          log.info("FTS index rebuilt via API (streaming)", { kbId, chunks: indexed });
+        } catch (err: any) {
+          emit({ type: "error", error: err.message });
+          log.error("FTS rebuild error (streaming)", { error: err.message });
+        } finally {
+          if (!closed) res.end();
+        }
+      } else {
+        // Non-streaming: original behavior
+        const chunks = await listAllChunksForFTS(kbId);
+        const ftsRecords: FTSRecord[] = chunks.map((c) => ({
+          chunk_id: c.id,
+          kb_id: c.kb_id,
+          source_file: c.source_file,
+          content: c.content,
+          section: c.section || undefined,
+          page: c.page || undefined,
+          file_path: c.file_path || undefined,
+          parent_dir: c.parent_dir || undefined,
+        }));
+        rebuildFTSIndex(kbId, ftsRecords);
+        log.info("FTS index rebuilt via API", { kbId, chunks: ftsRecords.length });
+        res.json({ ok: true, chunks_indexed: ftsRecords.length });
+      }
+    } catch (err: any) {
+      log.error("FTS rebuild error", { error: err.message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
     }
   });
 

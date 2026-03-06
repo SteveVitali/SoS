@@ -313,11 +313,15 @@ Searches enabled knowledge bases by scope. Used by workers to fetch KB context b
       "kb_name": "Design Docs",
       "kb_id": "uuid",
       "score": 0.87,
+      "rrf_score": 0.032,
       "metadata": { "section": "Authentication Flow", "file_path": "design-docs/auth.md", "parent_dir": "design-docs" }
     }
   ]
 }
 ```
+
+- `score` — original similarity score (vector) or BM25 score (keyword-only hit)
+- `rrf_score` — Reciprocal Rank Fusion score when hybrid search is used (present only for hybrid results)
 
 ---
 
@@ -1058,6 +1062,44 @@ Removes a document and its chunks from both the vector store and MongoDB.
 
 **Response:** `{ "ok": true }`
 
+### FTS Index Status
+
+```
+GET /api/web/kb/:id/fts/status
+```
+
+Returns the current state of the SQLite FTS5 keyword index for a knowledge base.
+
+**Response:**
+```json
+{
+  "kb_id": "uuid",
+  "indexed": true,
+  "fts_rows": 47,
+  "needs_rebuild": false
+}
+```
+
+- `indexed` — whether an FTS index file exists for this KB
+- `fts_rows` — number of rows in the FTS index
+- `needs_rebuild` — heuristic: `true` if `fts_rows < kb.chunk_count` or if `kb.chunk_count > 0` and `indexed` is `false`
+
+### Rebuild FTS Index
+
+```
+POST /api/web/kb/:id/fts/rebuild
+```
+
+Drops and rebuilds the FTS5 keyword index from all level-0 chunks in the vector store. Use this after schema changes or if the FTS index is out of sync.
+
+**Response:**
+```json
+{
+  "ok": true,
+  "rows_indexed": 47
+}
+```
+
 ---
 
 ## Research Pipeline Endpoints (`/api/web/kb`)
@@ -1462,7 +1504,7 @@ Saves GitHub Hub settings to MongoDB. Invalidates the config cache so changes ta
 interface JobDoc {
   _id?: ObjectId;
   task_id: string;                    // UUID, unique
-  job_type?: "create" | "respond_to_pr_comments" | "self_review_pr" | "add_pr_review_comments" | "github_summary";  // default: "create"
+  job_type?: "create" | "respond_to_pr_comments" | "self_review_pr" | "add_pr_review_comments";  // default: "create"
   source: {
     type: "slack_app_mention" | "web_create";
     event_id?: string;                // Slack event ID (unique when present)
@@ -1499,15 +1541,6 @@ interface JobDoc {
     cost_usd?: number;
   };
   custom_instructions?: string;       // Custom instructions injected into Claude prompt
-
-  // GitHub query params (for github_summary jobs)
-  github_query?: {
-    query_type: GithubQueryType;      // "my_recap" | "team_recap" | ...
-    time_range?: string;
-    org?: string;
-    team_slug?: string;
-    github_username?: string;
-  };
 
   // Lease
   claimed_by?: string;                // worker node ID

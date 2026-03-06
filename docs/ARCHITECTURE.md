@@ -34,6 +34,10 @@ Son of Steve is a **local-first coding agent orchestrator**. It receives coding 
 │  └──────────────┘                                               │
 │                                                                 │
 │  ┌──────────────┐                                               │
+│  │  SQLite FTS5  │ (per-KB keyword index for hybrid search)     │
+│  └──────────────┘                                               │
+│                                                                 │
+│  ┌──────────────┐                                               │
 │  │  Slack (WS)   │ Socket Mode — no public URL needed           │
 │  └──────────────┘                                               │
 └─────────────────────────────────────────────────────────────────┘
@@ -53,7 +57,7 @@ The server is the **single source of truth** for job state. It:
 6. **Manages an in-memory worker registry** (register, deregister, status, stale detection)
 7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
 8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
-9. **Manages knowledge bases** with vector-indexed document storage (hierarchical path metadata, breadcrumb-enriched embeddings), semantic search, streaming ingestion progress, context injection into LLM calls, an **advanced research pipeline** (multi-stage RAG with simple/deep/agent strategies, LLM-driven query analysis, CRAG evaluation, IRCoT reasoning, and a ReAct agent), full **audit logging** of research sessions, and **RAPTOR tree** preprocessing (recursive clustering and summarization of KB chunks for hierarchical retrieval)
+9. **Manages knowledge bases** with vector-indexed document storage (hierarchical path metadata, breadcrumb-enriched embeddings), **hybrid search** (LanceDB vector similarity + SQLite FTS5 keyword search merged via Reciprocal Rank Fusion), streaming ingestion progress, context injection into LLM calls, an **advanced research pipeline** (multi-stage RAG with simple/deep/agent strategies, LLM-driven query analysis, CRAG evaluation, IRCoT reasoning, and a ReAct agent with `keyword_search` tool), full **audit logging** of research sessions, **RAPTOR tree** preprocessing (recursive clustering and summarization of KB chunks for hierarchical retrieval), and **KB-enriched image generation** (vector search + evaluator filtering + LLM prompt rewriting)
 10. **Runs the GitHub Hub sync engine** — background priority-queue loop that hot-syncs open PRs, backfills historical chunks, warm-syncs org/team membership, and rebuilds contribution aggregations. Uses Octokit with dual rate limiters (REST 5,000/hr + Search 30/min token bucket) and deterministic epoch-anchored 28-day chunks stored in MongoDB. See [docs/GITHUB_HUB_DESIGN.md](GITHUB_HUB_DESIGN.md) for details.
 11. **Caches GitHub PR stats** (TTL-based) to avoid API rate limit exhaustion
 12. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
@@ -76,7 +80,6 @@ The worker also supports additional job types:
 - **`respond_to_pr_comments`** — fetches unresolved PR review threads, runs Claude to address each thread, commits, pushes, and replies to the threads.
 - **`self_review_pr`** — checks out an existing PR branch, runs a self-review pass (Claude as Staff Engineer code reviewer), fixes issues found, and pushes.
 - **`add_pr_review_comments`** — reviews a PR and posts inline review comments on GitHub as the bot.
-- **`github_summary`** — fetches GitHub activity data (merged PRs, reviews, stats) via `gh` CLI, builds an LLM prompt, runs Claude to generate a narrative recap, and posts the formatted summary.
 
 On startup, the worker **registers** with the server (hostname, PID, concurrency) and opens a **WebSocket** connection for real-time log streaming and receiving commands (e.g., shutdown). Each loop reports its status (idle/busy, current task) on every poll cycle. Claude's raw stream-json output is teed to the server via WebSocket so it can be viewed live in the web UI.
 
@@ -84,7 +87,7 @@ Workers are **stateless** — all persistent state lives in MongoDB via the serv
 
 ### MongoDB
 
-Twelve collections:
+Thirteen collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
@@ -99,6 +102,7 @@ Twelve collections:
 - **`github_sync_chunks`** — Backfill chunk state tracking (status, pages fetched, resumability).
 - **`github_sync_log`** — Timestamped sync activity log (displayed in UI via SSE stream).
 - **`github_settings`** — UI-editable GitHub Hub configuration (org, team, sync toggles, etc.).
+- **`generated_images`** — Stored generated images (base64 data, metadata, 90-day TTL index).
 
 **Key indexes:**
 - `source.event_id` — unique partial (idempotency for Slack events)
@@ -290,7 +294,7 @@ The system prompt supports three placeholders: `{ACTIONS}` (replaced with the au
 
 ### Execution Types
 
-Each action has an `execution` block that determines what happens when the LLM picks it. There are 13 execution types:
+Each action has an `execution` block that determines what happens when the LLM picks it. There are 14 execution types:
 
 | Type | What it does |
 |---|---|
@@ -300,12 +304,13 @@ Each action has an `execution` block that determines what happens when the LLM p
 | `job_query` | Resolve a task_id and render job info with a template |
 | `job_list` | List recent jobs, render each with an item template |
 | `create_respond_job` | Create a respond-to-PR-comments job from a task_id or direct PR URL |
-| `github_query` | Dispatch to instant GitHub queries or queue async summary jobs |
+| `github_query` | Dispatch to instant GitHub queries or run inline recap generation |
 | `shell` | Run a shell command and return stdout |
 | `webhook` | HTTP request to an external URL |
 | `agent_task` | Create a job with custom YAML-defined instructions injected into the Claude prompt |
 | `leave_channel` | Leave the current Slack channel |
 | `dispatch` | Route to sub-executions based on a parameter value (polymorphic dispatch) |
+| `generate_image` | Generate an image from a text prompt, optionally enriched with KB context |
 | `research` | Run the advanced research pipeline against knowledge bases (supports simple/deep/agent strategies) |
 
 ### Template Engine
@@ -423,10 +428,10 @@ son-of-steve/
 │   │   │   ├── anthropicProvider.ts   # Anthropic API implementation
 │   │   │   ├── openaiProvider.ts      # OpenAI-compatible implementation
 │   │   │   └── index.ts               # Provider factory
-│   │   ├── github/                # Legacy gh CLI-based GitHub queries (instant queries, recap data)
-│   │   │   ├── teamCache.ts       # Cached GitHub team member resolution via Teams API
-│   │   │   ├── queries.ts         # gh CLI wrappers for PR search, recap data fetching
-│   │   │   ├── formatting.ts      # Slack formatting for query results + LLM prompt builders
+│   │   ├── github/                # GitHub queries via MongoDB cache (instant queries, inline recaps)
+│   │   │   ├── mongoQueries.ts    # MongoDB-backed GitHub queries (PRs, reviews, team activity)
+│   │   │   ├── mongoFormatting.ts # Slack formatting for query results + LLM prompt builders
+│   │   │   ├── recapService.ts    # Inline recap generation using MongoDB data + LLM provider
 │   │   │   └── index.ts           # Barrel export
 │   │   ├── githubSync/            # GitHub Hub sync engine (REST API + MongoDB cache)
 │   │   │   ├── syncService.ts     # Main orchestrator: priority-queue loop (hot PRs, backfill, org sync, contributions)
@@ -450,12 +455,14 @@ son-of-steve/
 │   │   │   └── formatting.ts      # Slack message templates
 │   │   ├── kb/
 │   │   │   ├── vectorStore.ts     # LanceDB wrapper (init, create/add/search/delete tables, RAPTOR node listing)
+│   │   │   ├── ftsStore.ts        # SQLite FTS5 wrapper (per-KB keyword index, BM25 search, schema migration)
+│   │   │   ├── hybridSearch.ts    # Hybrid retrieval: vector + FTS5 keyword search merged via RRF
 │   │   │   ├── chunker.ts         # Markdown-aware text chunking (headings → paragraphs → sentences)
 │   │   │   ├── embeddings.ts      # OpenAI/LiteLLM embedding provider with batching
 │   │   │   ├── ingestion.ts       # File ingestion pipeline (text, PDF, archives)
 │   │   │   ├── kbRepo.ts          # MongoDB CRUD for KB + document metadata
 │   │   │   ├── kbService.ts       # Orchestration: CRUD, ingestion, embedding, search, researchKnowledgeBases() entry point
-│   │   │   ├── kbRoutes.ts        # Express routes: web + worker KB, research, and RAPTOR endpoints; NDJSON streaming
+│   │   │   ├── kbRoutes.ts        # Express routes: web + worker KB, research, RAPTOR, and FTS endpoints; NDJSON streaming
 │   │   │   ├── uploadRepo.ts      # MongoDB CRUD for durable upload job tracking (per-file status, progress)
 │   │   │   ├── index.ts           # Barrel export
 │   │   │   ├── research/          # Advanced RAG research pipeline
@@ -473,7 +480,7 @@ son-of-steve/
 │   │   │   │   │   └── synthesizer.ts     # Final context assembly with inline citations
 │   │   │   │   └── agent/
 │   │   │   │       ├── agentLoop.ts       # ReAct agent loop (Phase 4)
-│   │   │   │       ├── agentTools.ts      # Tool definitions: search_kb, evaluate_relevance, generate_hyde, etc.
+│   │   │   │       ├── agentTools.ts      # Tool definitions: search_kb, keyword_search, evaluate_relevance, generate_hyde, etc.
 │   │   │   │       └── agentPrompts.ts    # Agent system prompt builder
 │   │   │   └── raptor/            # RAPTOR tree preprocessing
 │   │   │       ├── clusterer.ts       # K-means clustering of chunk embeddings
@@ -483,9 +490,8 @@ son-of-steve/
 │   │   └── api/
 │   │       ├── router.ts        # Mount worker + web + chat + KB + GitHub routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)
-│   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, routing, models, worktrees)
-│   │       ├── githubRoutes.ts  # /api/web/github/* (PRs, contributions, teams, sync, settings)
-│   │       └── ghPrs.ts         # Legacy GitHub PR listing + comment stats (with TTL cache)
+│   │       ├── webRoutes.ts     # /api/web/* (jobs, PRs, workers, registry, routing, models, worktrees, images)
+│   │       └── githubRoutes.ts  # /api/web/github/* (PRs, contributions, teams, sync, settings)
 │   │
 │   ├── worker/                # sos-worker process
 │   │   ├── index.ts           # Entry point: register, start loops, connect WS
@@ -498,7 +504,6 @@ son-of-steve/
 │   │   └── executor/
 │   │       ├── runJob.ts              # Main orchestrator: full create-job workflow
 │   │       ├── runPlanJob.ts          # Pre-flight planning workflow (read-only Claude)
-│   │       ├── runGithubSummaryJob.ts # GitHub recap summary (data fetch → Claude → format)
 │   │       ├── runRespondToComments.ts # PR comment review workflow
 │   │       ├── runSelfReviewPr.ts      # Self-review existing PR (Claude as reviewer → fix → push)
 │   │       ├── runAddReviewComments.ts # Review PR and post inline comments on GitHub
@@ -528,13 +533,15 @@ son-of-steve/
 │           ├── stores/
 │           │   └── AppDataContext.tsx  # Shared state + polling (jobs, PRs, workers, etc.)
 │           └── components/
-│               ├── chat/          # ChatsList, ChatDetail
+│               ├── chat/          # ChatsList, ChatDetail (with inline image rendering)
 │               ├── jobs/          # JobsList, JobDetail (incl. ResearchAudit), JobRow, etc.
 │               ├── kb/            # KBList, KBDetail, KBPlayground, kbShared, ResearchPlayground, ResearchTimeline, ResearchHistory, RaptorStatus, RaptorTree, StrategyComparison
-│               ├── prs/           # PrsList, PrRow
+│               ├── github/        # GitHubPage, GitHubPrsView, GitHubContributionsView, GitHubSyncDashboard, GitHubSettingsView, TeamMemberRoster
 │               ├── workers/       # WorkersList, WorkerCard, WorkerDetail, SpawnWorkerModal
 │               ├── registry/      # RepoRegistryEditor
 │               ├── routing/       # RoutingConfigEditor, ParameterListEditor, ExecutionEditor
+│               ├── models/        # ModelsPage, ModelAutocomplete
+│               ├── research/      # ResearchPage (global config, strategy comparison)
 │               └── shared/        # PageHeader, NavTab, HoverRow, Badge, Spinner, etc.
 │
 ├── docs/                  # Documentation
@@ -592,9 +599,9 @@ Claude Code can produce hundreds of stream-json lines per second during an activ
 
 Responding to PR review comments is fundamentally different from creating new code: the worker needs to check out the existing PR branch, read specific review threads, fix each one, and reply inline. Rather than cramming this into the `create` pipeline with flags, a dedicated `respond_to_pr_comments` job type has its own clean workflow in `runRespondToComments.ts`.
 
-### Why split GitHub queries into instant vs. async?
+### Why split GitHub queries into instant vs. recap?
 
-GitHub queries like "my open PRs" or "team review requests" are fast `gh search prs` calls that return in seconds — these execute synchronously on the server and return results directly in the Slack reply. Recap summaries ("my weekly recap", "team recap") require fetching data for potentially many team members, enriching PRs with per-PR detail calls, then running Claude to generate a narrative — this can take minutes, so they're queued as `github_summary` worker jobs. A single polymorphic `github` tool in the LLM router handles both; the `commandExecutor` dispatches to the right path based on the `query_type`.
+GitHub queries like "my open PRs" or "team review requests" read directly from the MongoDB sync cache and return instantly in the Slack reply. Recap summaries ("my weekly recap", "team recap") also read from MongoDB but additionally run an LLM call to generate a narrative — these execute inline on the server using `recapService.ts` and the LLM provider (no background jobs or `claude` CLI). A single polymorphic `github` tool in the LLM router handles both; the `commandExecutor` dispatches to the right path based on the `query_type`.
 
 ### Why a local vector database for knowledge bases?
 
@@ -603,3 +610,11 @@ LanceDB is embedded (no external service), stores data on the local filesystem a
 ### Why scope-based KB filtering?
 
 Different knowledge bases contain different types of context (design docs, coding standards, incident history). Not all KB content is relevant to all actions — injecting irrelevant context wastes tokens and can confuse the LLM. Scopes (`chat`, `create_job`, `plan_job`, `agent_task`, `all`) let users control which KBs are queried for which action types. A KB scoped to `chat` will be searched when answering questions but not when generating code.
+
+### Why hybrid search (vector + keyword) instead of vector-only?
+
+Vector similarity search is powerful for semantic matching but can miss exact keyword matches — e.g., a query for "RAPTOR" might rank a semantically-similar chunk about "tree indexing" higher than a chunk that literally contains "RAPTOR" in the text. SQLite FTS5 provides BM25-scored keyword search that catches these cases. The two result sets are merged via **Reciprocal Rank Fusion (RRF)** with k=60, which produces a unified ranking that respects both semantic relevance and keyword precision. Each KB gets its own SQLite FTS5 database file (`fts_{kb_id}.sqlite`) stored alongside LanceDB data, with lazy schema migration via the `user_version` pragma. FTS records also store `UNINDEXED` metadata columns (`section`, `page`, `file_path`, `parent_dir`) so keyword-only hits can provide the same rich metadata as vector results. The `hybridSearch()` function wraps both retrieval paths and is the primary search interface used by the research pipeline retriever and the ReAct agent's `keyword_search` tool.
+
+### Why per-KB SQLite files instead of a single database?
+
+Matching the LanceDB pattern (one table per KB), each KB gets its own FTS5 SQLite file. This means dropping a KB is a simple file deletion — no orphan cleanup, no shared-table bookkeeping. It also avoids cross-KB index contention and makes backup/restore granular.

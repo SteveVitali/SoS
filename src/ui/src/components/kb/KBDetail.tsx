@@ -17,15 +17,15 @@ import {
   updateKB,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { formatBytes } from "../../utils/format.js";
+import { DropOverlay, useDropZone } from "../shared/DropZone.js";
+import { FtsStatus } from "./FtsStatus.js";
 import {
-  DropOverlay,
-  formatBytes,
   ScopeBadge,
   ScopeToggleButtons,
   SearchResultCard,
   UploadDropdown,
   UploadProgressBadge,
-  useDropZone,
 } from "./kbShared.js";
 import { RaptorStatus } from "./RaptorStatus.js";
 import { RaptorTree } from "./RaptorTree.js";
@@ -671,6 +671,9 @@ export function KBDetail() {
           </div>
         )}
       </div>
+
+      {/* FTS Keyword Index Status */}
+      {kb && <FtsStatus kbId={kb.kb_id} />}
 
       {/* RAPTOR Index Status */}
       {kb && <RaptorStatus kbId={kb.kb_id} />}
