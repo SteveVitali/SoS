@@ -17,6 +17,7 @@ import {
   type PrCommentStats,
   type PrSortField,
 } from "../../api.js";
+import { buildCacheKey, getCached, setCache } from "../../hooks/useApiCache.js";
 import { useClickOutside } from "../../hooks/useClickOutside.js";
 import { useAppData } from "../../stores/AppDataContext.js";
 import { css } from "../../styles/theme.js";
@@ -65,29 +66,56 @@ export function GitHubPrsView() {
   const [sortOrder, setSortOrder] = useState<"asc" | "desc">("desc");
   const [busyPr, setBusyPr] = useState<string | null>(null);
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await listGitHubPrs({
-        scope,
-        state,
-        limit: PAGE_SIZE,
-        offset,
-        sort: sortField,
-        order: sortOrder,
-      });
-      setData(res);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
+  const cacheParams = { scope, state, limit: PAGE_SIZE, offset, sort: sortField, order: sortOrder };
+  const cacheKey = buildCacheKey("github-prs", cacheParams);
+
+  // When params change, immediately show cached data or clear stale data so the
+  // big Spinner renders while the network request is in flight.
+  useEffect(() => {
+    const cached = getCached<GitHubHubPrsResponse>(cacheKey);
+    if (cached) {
+      setData(cached);
+      setError("");
+    } else {
+      setData(null);
     }
-  }, [scope, state, offset, sortField, sortOrder]);
+  }, [cacheKey]);
+
+  const fetchPrs = useCallback(
+    async (skipCache = false) => {
+      if (!skipCache) {
+        const cached = getCached<GitHubHubPrsResponse>(cacheKey);
+        if (cached) {
+          setData(cached);
+          setError("");
+          return;
+        }
+      }
+      setLoading(true);
+      setError("");
+      try {
+        const res = await listGitHubPrs({
+          scope,
+          state,
+          limit: PAGE_SIZE,
+          offset,
+          sort: sortField,
+          order: sortOrder,
+        });
+        setData(res);
+        setCache(cacheKey, res);
+      } catch (err: unknown) {
+        setError(toErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [cacheKey, scope, state, offset, sortField, sortOrder],
+  );
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    fetchPrs();
+  }, [fetchPrs]);
 
   const handleTrigger = async (pr: GitHubHubPr, action: PrAction) => {
     const prUrl = `https://github.com/${pr.repo}/pull/${pr.number}`;
@@ -219,7 +247,12 @@ export function GitHubPrsView() {
               )}
             </span>
           )}
-          <button type="button" onClick={refresh} style={css.btnSmall} disabled={loading}>
+          <button
+            type="button"
+            onClick={() => fetchPrs(true)}
+            style={css.btnSmall}
+            disabled={loading}
+          >
             {loading ? "Loading…" : "↻ Refresh"}
           </button>
         </div>
