@@ -1,5 +1,11 @@
-import { type RefObject, useCallback, useState } from "react";
-import type { KBScope, KBSearchResult, UploadJob } from "../../api.js";
+import { type ReactNode, type RefObject, useCallback, useState } from "react";
+import type {
+  HybridSearchStats,
+  KBScope,
+  KBSearchResult,
+  RetrievalSource,
+  UploadJob,
+} from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { MiniProgressBar } from "../shared/IndexCard.js";
 
@@ -232,6 +238,163 @@ export function UploadProgressBadge({ job }: { job: UploadJob }) {
   );
 }
 
+export const SOURCE_STYLES: Record<
+  RetrievalSource,
+  { icon: string; label: string; color: string }
+> = {
+  vector: { icon: "🧠", label: "vector", color: "#a855f7" },
+  keyword: { icon: "🔍", label: "keyword", color: "#3b82f6" },
+  both: { icon: "⚡", label: "both", color: "#22c55e" },
+};
+
+function RetrievalSourceBadge({
+  source,
+  vectorRank,
+  keywordRank,
+}: {
+  source: RetrievalSource;
+  vectorRank?: number;
+  keywordRank?: number;
+}) {
+  const s = SOURCE_STYLES[source];
+  const rankLabel =
+    source === "both"
+      ? `#${vectorRank}/#${keywordRank}`
+      : source === "vector"
+        ? `#${vectorRank}`
+        : `#${keywordRank}`;
+  return (
+    <span
+      style={{
+        fontSize: 10,
+        fontWeight: 600,
+        padding: "1px 5px",
+        borderRadius: 3,
+        background: `${s.color}18`,
+        color: s.color,
+        whiteSpace: "nowrap",
+      }}
+      title={`Found via ${s.label} search (rank ${rankLabel})`}
+    >
+      {s.icon} {s.label} {rankLabel}
+    </span>
+  );
+}
+
+export function SourceCountBadge({ source, count }: { source: RetrievalSource; count: number }) {
+  if (count === 0) return null;
+  const s = SOURCE_STYLES[source];
+  return (
+    <span style={{ color: s.color }}>
+      {s.icon} {count} {s.label}
+    </span>
+  );
+}
+
+export function RetrievalSummary({ stats }: { stats: HybridSearchStats }) {
+  if (stats.total === 0) return null;
+  return (
+    <div
+      style={{
+        display: "flex",
+        gap: 10,
+        alignItems: "center",
+        fontSize: 12,
+        color: "var(--fg2)",
+        padding: "6px 0",
+      }}
+    >
+      <span style={{ fontWeight: 600, color: "var(--fg)" }}>{stats.total} results:</span>
+      <SourceCountBadge source="vector" count={stats.vector_only} />
+      <SourceCountBadge source="keyword" count={stats.keyword_only} />
+      <SourceCountBadge source="both" count={stats.both} />
+    </div>
+  );
+}
+
+export function CollapsibleSection({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h4
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          margin: "0 0 8px",
+          color: "var(--fg)",
+          cursor: "pointer",
+          userSelect: "none",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+        onClick={() => setOpen(!open)}
+      >
+        <span style={{ fontSize: 11, color: "var(--fg2)" }}>{open ? "▼" : "▶"}</span>
+        {title}
+      </h4>
+      {open && children}
+    </div>
+  );
+}
+
+const DEFAULT_PREVIEW_CHARS = 400;
+
+export function ExpandableText({
+  text,
+  previewChars = DEFAULT_PREVIEW_CHARS,
+  fontSize = 12,
+}: {
+  text: string;
+  previewChars?: number;
+  fontSize?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const needsTruncation = text.length > previewChars;
+
+  return (
+    <div>
+      <pre
+        style={{
+          fontSize,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          margin: 0,
+          color: "var(--fg)",
+          lineHeight: 1.5,
+        }}
+      >
+        {expanded || !needsTruncation ? text : `${text.slice(0, previewChars)}\u2026`}
+      </pre>
+      {needsTruncation && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--accent)",
+            cursor: "pointer",
+            fontSize: fontSize - 1,
+            fontWeight: 600,
+            padding: "4px 0 0",
+          }}
+        >
+          {expanded ? "Show less" : "Show full answer"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 export function SearchResultCard({
   result,
   showKBName,
@@ -282,9 +445,18 @@ export function SearchResultCard({
             {result.metadata.section ? ` > ${result.metadata.section}` : ""}
           </span>
         </div>
-        <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
-          {(result.score * 100).toFixed(1)}%
-        </span>
+        <div style={{ display: "flex", gap: 6, alignItems: "center" }}>
+          {result.retrieval_source && (
+            <RetrievalSourceBadge
+              source={result.retrieval_source}
+              vectorRank={result.vector_rank}
+              keywordRank={result.keyword_rank}
+            />
+          )}
+          <span style={{ fontSize: 12, fontWeight: 600, color: "var(--accent)" }}>
+            {(result.score * 100).toFixed(1)}%
+          </span>
+        </div>
       </div>
       <pre
         style={{

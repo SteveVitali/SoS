@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { type ResearchResult, type ResearchStrategy, runResearch } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { ScopeToggleButtons, useToggleScopes } from "./kbShared.js";
+import { ExpandableText, ScopeToggleButtons, useToggleScopes } from "./kbShared.js";
 import { MetricsSummary } from "./ResearchTimeline.js";
 
 interface ComparisonEntry {
@@ -156,23 +156,30 @@ export function StrategyComparison() {
                     <span style={{ color: "var(--fg2)" }}> chunks returned</span>
                   </div>
                   {entry.result.context && (
-                    <pre
+                    <div
                       style={{
                         marginTop: 8,
                         background: "var(--bg2)",
                         padding: 8,
                         borderRadius: 4,
-                        fontSize: 10,
-                        maxHeight: 200,
-                        overflow: "auto",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                        color: "var(--fg)",
                       }}
                     >
-                      {entry.result.context.slice(0, 1000)}
-                      {entry.result.context.length > 1000 ? "\n..." : ""}
-                    </pre>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--accent)",
+                          marginBottom: 4,
+                        }}
+                      >
+                        📋 Answer
+                      </div>
+                      <ExpandableText
+                        text={entry.result.context}
+                        previewChars={300}
+                        fontSize={11}
+                      />
+                    </div>
                   )}
                 </div>
               )}

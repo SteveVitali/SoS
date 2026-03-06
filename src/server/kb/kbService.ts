@@ -5,6 +5,7 @@
 import { dirname } from "node:path";
 import { v4 as uuidv4 } from "uuid";
 import type {
+  HybridSearchStats,
   IngestProgressEvent,
   KBProbeResult,
   KBScope,
@@ -570,6 +571,21 @@ export async function deleteKnowledgeBase(kbId: string): Promise<boolean> {
 }
 
 /**
+ * Compute retrieval source stats from a list of search results.
+ */
+function computeRetrievalStats(results: KBSearchResult[]): HybridSearchStats {
+  let vector_only = 0;
+  let keyword_only = 0;
+  let both = 0;
+  for (const r of results) {
+    if (r.retrieval_source === "both") both++;
+    else if (r.retrieval_source === "keyword") keyword_only++;
+    else vector_only++; // "vector" or undefined (backward compat)
+  }
+  return { vector_only, keyword_only, both, total: results.length };
+}
+
+/**
  * Internal two-stage search implementation that returns both results and routing metadata.
  */
 async function twoStageSearch(
@@ -644,7 +660,7 @@ async function twoStageSearch(
     const minScore_ = min_score ?? kb.min_similarity_score;
 
     try {
-      const results = await hybridSearch(kb.kb_id, queryVector, query, perKBLimit, {
+      const { results } = await hybridSearch(kb.kb_id, queryVector, query, perKBLimit, {
         minSimilarityScore: minScore_,
         kbName: kb.name,
       });
@@ -661,7 +677,12 @@ async function twoStageSearch(
   // Sort by score descending and limit total results
   allResults.sort((a, b) => b.score - a.score);
   const totalLimit = max_chunks ?? 10;
-  return { results: allResults.slice(0, totalLimit), routing };
+  const trimmed = allResults.slice(0, totalLimit);
+
+  // Recompute stats over the trimmed set (may differ from pre-trim aggregate)
+  const retrieval_stats = computeRetrievalStats(trimmed);
+
+  return { results: trimmed, routing, retrieval_stats };
 }
 
 /**
@@ -710,16 +731,23 @@ export async function searchSingleKB(
   kbId: string,
   query: string,
   limit?: number,
-): Promise<KBSearchResult[]> {
+): Promise<{ results: KBSearchResult[]; retrieval_stats: HybridSearchStats }> {
   const kb = await findKB(kbId);
   if (!kb) throw new Error(`Knowledge base ${kbId} not found`);
 
   const embeddingProvider = getEmbeddingProvider();
   const [queryVector] = await embeddingProvider.embed([query]);
 
-  return hybridSearch(kbId, queryVector, query, limit ?? kb.max_chunks_per_query, {
-    kbName: kb.name,
-  });
+  const { results, stats } = await hybridSearch(
+    kbId,
+    queryVector,
+    query,
+    limit ?? kb.max_chunks_per_query,
+    {
+      kbName: kb.name,
+    },
+  );
+  return { results, retrieval_stats: stats };
 }
 
 /**

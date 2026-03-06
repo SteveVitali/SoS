@@ -71,6 +71,9 @@ export async function runRetriever(
     const kbIdsSearched: string[] = [];
     let queryResultCount = 0;
     let queryTopScore = 0;
+    let queryVectorHits = 0;
+    let queryKeywordHits = 0;
+    let queryBothHits = 0;
 
     for (const kb of kbs) {
       const minScore = config.min_similarity_score;
@@ -86,10 +89,14 @@ export async function runRetriever(
 
         // Hybrid search (vector + keyword)
         kbIdsSearched.push(kb.kb_id);
-        const results = await hybridSearch(kb.kb_id, eq.vector, eq.text, perKBLimit, {
+        const { results, stats } = await hybridSearch(kb.kb_id, eq.vector, eq.text, perKBLimit, {
           minSimilarityScore: minScore,
           kbName: kb.name,
         });
+
+        queryVectorHits += stats.vector_only;
+        queryKeywordHits += stats.keyword_only;
+        queryBothHits += stats.both;
 
         for (const r of results) {
           allChunks.push(r);
@@ -113,6 +120,9 @@ export async function runRetriever(
       results_count: queryResultCount,
       top_score: queryTopScore,
       duration_ms: Date.now() - start,
+      vector_hits: queryVectorHits,
+      keyword_hits: queryKeywordHits,
+      both_hits: queryBothHits,
     });
 
     // Record each retrieval in the audit
@@ -125,17 +135,33 @@ export async function runRetriever(
   allChunks.sort((a, b) => b.score - a.score);
   const deduped = deduplicateChunks(allChunks);
 
+  // Compute source breakdown over deduped chunks
+  let dedupedVectorOnly = 0;
+  let dedupedKeywordOnly = 0;
+  let dedupedBoth = 0;
+  for (const c of deduped) {
+    if (c.retrieval_source === "both") dedupedBoth++;
+    else if (c.retrieval_source === "keyword") dedupedKeywordOnly++;
+    else dedupedVectorOnly++;
+  }
+
   log.info("Retrieval complete", {
     queries: expandedQueries.length,
     kbs_available: kbs.length,
     total_chunks: allChunks.length,
     deduped_chunks: deduped.length,
+    vector_only: dedupedVectorOnly,
+    keyword_only: dedupedKeywordOnly,
+    both: dedupedBoth,
   });
 
   recorder.recordOutput({
     total_chunks: allChunks.length,
     deduped_chunks: deduped.length,
     kbs_searched: new Set(allChunks.map((c) => c.kb_id)).size,
+    vector_only: dedupedVectorOnly,
+    keyword_only: dedupedKeywordOnly,
+    both: dedupedBoth,
   });
   recorder.finish({
     chunks: deduped.length,

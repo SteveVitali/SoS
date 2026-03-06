@@ -1,7 +1,13 @@
 import { useState } from "react";
-import { type KBProbeResult, type KBScope, type KBSearchResult, searchAllKBs } from "../../api.js";
+import {
+  type HybridSearchStats,
+  type KBProbeResult,
+  type KBScope,
+  type KBSearchResult,
+  searchAllKBs,
+} from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { ALL_SCOPES, ScopeToggleButtons, SearchResultCard } from "./kbShared.js";
+import { ALL_SCOPES, RetrievalSummary, ScopeToggleButtons, SearchResultCard } from "./kbShared.js";
 
 export function KBPlayground() {
   const [open, setOpen] = useState(false);
@@ -16,6 +22,7 @@ export function KBPlayground() {
   const [routingSummary, setRoutingSummary] = useState<{ total: number; relevant: number } | null>(
     null,
   );
+  const [retrievalStats, setRetrievalStats] = useState<HybridSearchStats | null>(null);
 
   const handleSearch = async () => {
     if (!query.trim()) return;
@@ -26,6 +33,7 @@ export function KBPlayground() {
       setResults(data.results);
       setProbes(data.routing.probes);
       setRoutingSummary({ total: data.routing.total_kbs, relevant: data.routing.relevant_kbs });
+      setRetrievalStats(data.retrieval_stats ?? null);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -136,6 +144,9 @@ export function KBPlayground() {
               </div>
             </div>
           )}
+
+          {/* Retrieval source breakdown */}
+          {retrievalStats && <RetrievalSummary stats={retrievalStats} />}
 
           {/* Results */}
           {results && results.length > 0 && (

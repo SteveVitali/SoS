@@ -6,7 +6,13 @@ import {
   runResearchStreaming,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { ScopeToggleButtons, SearchResultCard, useToggleScopes } from "./kbShared.js";
+import {
+  CollapsibleSection,
+  ExpandableText,
+  ScopeToggleButtons,
+  SearchResultCard,
+  useToggleScopes,
+} from "./kbShared.js";
 import { MetricsSummary, ResearchTimeline } from "./ResearchTimeline.js";
 
 const STRATEGY_DESCRIPTIONS: Record<ResearchStrategy, string> = {
@@ -197,26 +203,23 @@ export function ResearchPlayground() {
             <ResearchTimeline session={result.audit} metrics={result.metrics} />
           </div>
 
-          {/* Retrieved chunks */}
+          {/* Retrieved chunks (collapsible) */}
           {result.chunks.length > 0 && (
-            <div>
-              <h4 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px", color: "var(--fg)" }}>
-                Retrieved Chunks ({result.chunks.length})
-              </h4>
+            <CollapsibleSection
+              title={`Retrieved Chunks (${result.chunks.length})`}
+              defaultOpen={false}
+            >
               <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
                 {result.chunks.map((c, i) => (
                   <SearchResultCard key={i} result={c} showKBName />
                 ))}
               </div>
-            </div>
+            </CollapsibleSection>
           )}
 
-          {/* Reasoning trace */}
+          {/* Reasoning trace (collapsible) */}
           {result.reasoning_trace && (
-            <div style={{ marginTop: 12 }}>
-              <h4 style={{ fontSize: 13, fontWeight: 600, margin: "0 0 8px", color: "var(--fg)" }}>
-                Reasoning Trace
-              </h4>
+            <CollapsibleSection title="Reasoning Trace" defaultOpen={false}>
               <pre
                 style={{
                   background: "var(--bg)",
@@ -232,7 +235,23 @@ export function ResearchPlayground() {
               >
                 {result.reasoning_trace}
               </pre>
-            </div>
+            </CollapsibleSection>
+          )}
+
+          {/* Final answer */}
+          {result.context && (
+            <CollapsibleSection title="📋 Synthesized Answer" defaultOpen>
+              <div
+                style={{
+                  background: "var(--bg)",
+                  border: "1px solid var(--accent)44",
+                  borderRadius: "var(--radius)",
+                  padding: 12,
+                }}
+              >
+                <ExpandableText text={result.context} />
+              </div>
+            </CollapsibleSection>
           )}
         </div>
       )}

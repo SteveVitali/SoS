@@ -208,7 +208,7 @@ async function executeSearchKB(
       if (probeScore < ctx.config.min_similarity_score) continue;
 
       // Hybrid search (vector + keyword)
-      const results = await hybridSearch(
+      const { results } = await hybridSearch(
         kb.kb_id,
         queryVector,
         query,
@@ -260,7 +260,11 @@ async function executeSearchSpecificKB(
   }
 
   try {
-    const results = await searchSingleKB(targetKB.kb_id, query, ctx.config.max_chunks_per_query);
+    const { results } = await searchSingleKB(
+      targetKB.kb_id,
+      query,
+      ctx.config.max_chunks_per_query,
+    );
 
     if (results.length === 0) {
       return { result: `No results found in "${kbName}" for query: "${query}"` };
@@ -465,7 +469,7 @@ async function executeGenerateHyde(
         if (probeScore < ctx.config.min_similarity_score) continue;
 
         // Hybrid search — use HyDE vector + original question text for keyword
-        const results = await hybridSearch(
+        const { results } = await hybridSearch(
           kb.kb_id,
           hydeVector,
           question,

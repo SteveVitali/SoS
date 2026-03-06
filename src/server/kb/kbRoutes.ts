@@ -345,8 +345,8 @@ export function createKBWebRoutes(): Router {
         return;
       }
 
-      const results = await searchSingleKB(kbId, query, limit);
-      res.json({ results });
+      const { results, retrieval_stats } = await searchSingleKB(kbId, query, limit);
+      res.json({ results, retrieval_stats });
     } catch (err: any) {
       log.error("Search KB error", { error: err.message });
       res.status(500).json({ error: err.message });

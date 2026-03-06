@@ -1,6 +1,6 @@
-import { useState } from "react";
-import type { ResearchMetrics, ResearchSession, ResearchStep } from "../../api.js";
-import { sessionStatusColor } from "./kbShared.js";
+import { Fragment, useState } from "react";
+import type { ResearchMetrics, ResearchSession, ResearchStep, RetrievalSource } from "../../api.js";
+import { SOURCE_STYLES, SourceCountBadge, sessionStatusColor } from "./kbShared.js";
 
 const STAGE_ICONS: Record<string, string> = {
   query_analysis: "🔍",
@@ -19,6 +19,107 @@ const STAGE_LABELS: Record<string, string> = {
   reasoning: "Reasoning",
   synthesis: "Synthesis",
 };
+
+function RetrievalOutput({ output }: { output: Record<string, unknown> }) {
+  const total = (output.total_chunks as number) ?? 0;
+  const deduped = (output.deduped_chunks as number) ?? 0;
+  const kbs = (output.kbs_searched as number) ?? 0;
+  const vectorOnly = (output.vector_only as number) ?? 0;
+  const keywordOnly = (output.keyword_only as number) ?? 0;
+  const bothCount = (output.both as number) ?? 0;
+
+  return (
+    <div
+      style={{
+        background: "var(--bg2)",
+        padding: 8,
+        borderRadius: 4,
+        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+      }}
+    >
+      <div style={{ color: "var(--fg)" }}>
+        <strong>{total}</strong> chunks → <strong>{deduped}</strong> after dedup · {kbs} KBs
+      </div>
+      {(vectorOnly > 0 || keywordOnly > 0 || bothCount > 0) && (
+        <div style={{ display: "flex", gap: 10 }}>
+          <SourceCountBadge source="vector" count={vectorOnly} />
+          <SourceCountBadge source="keyword" count={keywordOnly} />
+          <SourceCountBadge source="both" count={bothCount} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvaluationOutput({ output }: { output: Record<string, unknown> }) {
+  const correct = (output.correct as number) ?? 0;
+  const incorrect = (output.incorrect as number) ?? 0;
+  const ambiguous = (output.ambiguous as number) ?? 0;
+  const needsRequery = output.needs_requery as boolean;
+  const reformulated = (output.reformulated_queries as number) ?? 0;
+  const bySource = output.by_source as
+    | Record<string, { correct: number; incorrect: number; ambiguous: number }>
+    | undefined;
+
+  return (
+    <div
+      style={{
+        background: "var(--bg2)",
+        padding: 8,
+        borderRadius: 4,
+        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      <div style={{ display: "flex", gap: 12, color: "var(--fg)" }}>
+        <span>
+          <span style={{ color: "#22c55e" }}>✓</span> {correct} correct
+        </span>
+        <span>
+          <span style={{ color: "#ef4444" }}>✗</span> {incorrect} incorrect
+        </span>
+        <span>
+          <span style={{ color: "#f59e0b" }}>?</span> {ambiguous} ambiguous
+        </span>
+        {needsRequery && <span style={{ color: "#f59e0b", fontWeight: 600 }}>→ re-query</span>}
+        {reformulated > 0 && (
+          <span style={{ color: "var(--fg2)" }}>{reformulated} reformulated</span>
+        )}
+      </div>
+      {bySource && Object.keys(bySource).length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "auto repeat(3, 1fr)",
+            gap: "2px 12px",
+            color: "var(--fg2)",
+            fontSize: 10,
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>source</span>
+          <span style={{ color: "#22c55e", fontWeight: 600 }}>correct</span>
+          <span style={{ color: "#ef4444", fontWeight: 600 }}>incorrect</span>
+          <span style={{ color: "#f59e0b", fontWeight: 600 }}>ambiguous</span>
+          {Object.entries(bySource).map(([src, counts]) => (
+            <Fragment key={src}>
+              <span style={{ color: SOURCE_STYLES[src as RetrievalSource]?.color ?? "var(--fg2)" }}>
+                {SOURCE_STYLES[src as RetrievalSource]?.icon ?? "•"} {src}
+              </span>
+              <span>{counts.correct}</span>
+              <span>{counts.incorrect}</span>
+              <span>{counts.ambiguous}</span>
+            </Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StepDetail({ step }: { step: ResearchStep }) {
   const [expanded, setExpanded] = useState(false);
@@ -81,20 +182,26 @@ function StepDetail({ step }: { step: ResearchStep }) {
           {step.output && Object.keys(step.output).length > 0 && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontWeight: 600, color: "var(--fg2)", marginBottom: 4 }}>Output</div>
-              <pre
-                style={{
-                  background: "var(--bg2)",
-                  padding: 8,
-                  borderRadius: 4,
-                  fontSize: 11,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  margin: 0,
-                  color: "var(--fg)",
-                }}
-              >
-                {JSON.stringify(step.output, null, 2)}
-              </pre>
+              {step.stage === "retrieval" ? (
+                <RetrievalOutput output={step.output} />
+              ) : step.stage === "evaluation" ? (
+                <EvaluationOutput output={step.output} />
+              ) : (
+                <pre
+                  style={{
+                    background: "var(--bg2)",
+                    padding: 8,
+                    borderRadius: 4,
+                    fontSize: 11,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    margin: 0,
+                    color: "var(--fg)",
+                  }}
+                >
+                  {JSON.stringify(step.output, null, 2)}
+                </pre>
+              )}
             </div>
           )}
 
@@ -160,6 +267,15 @@ function StepDetail({ step }: { step: ResearchStep }) {
                     {call.results_count} results · top score: {(call.top_score * 100).toFixed(1)}%
                     {call.kb_ids_searched.length > 0 && ` · ${call.kb_ids_searched.length} KBs`}
                   </div>
+                  {(call.vector_hits != null ||
+                    call.keyword_hits != null ||
+                    call.both_hits != null) && (
+                    <div style={{ display: "flex", gap: 8, color: "var(--fg2)", marginTop: 2 }}>
+                      <SourceCountBadge source="vector" count={call.vector_hits ?? 0} />
+                      <SourceCountBadge source="keyword" count={call.keyword_hits ?? 0} />
+                      <SourceCountBadge source="both" count={call.both_hits ?? 0} />
+                    </div>
+                  )}
                 </div>
               ))}
             </div>

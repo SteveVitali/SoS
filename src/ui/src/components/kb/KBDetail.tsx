@@ -6,6 +6,7 @@ import {
   getActiveUploadsForKB,
   getKB,
   getUploadJob,
+  type HybridSearchStats,
   ingestKBFiles,
   type KBDocument,
   type KBScope,
@@ -21,6 +22,7 @@ import { formatBytes } from "../../utils/format.js";
 import { DropOverlay, useDropZone } from "../shared/DropZone.js";
 import { FtsStatus } from "./FtsStatus.js";
 import {
+  RetrievalSummary,
   ScopeBadge,
   ScopeToggleButtons,
   SearchResultCard,
@@ -170,6 +172,7 @@ export function KBDetail() {
   // Search state
   const [searchQuery, setSearchQuery] = useState("");
   const [searchResults, setSearchResults] = useState<KBSearchResult[]>([]);
+  const [searchStats, setSearchStats] = useState<HybridSearchStats | null>(null);
   const [searching, setSearching] = useState(false);
 
   // Settings editing
@@ -403,8 +406,9 @@ export function KBDetail() {
     if (!searchQuery.trim() || !kb) return;
     setSearching(true);
     try {
-      const { results } = await searchKB(kb.kb_id, searchQuery.trim());
+      const { results, retrieval_stats } = await searchKB(kb.kb_id, searchQuery.trim());
       setSearchResults(results);
+      setSearchStats(retrieval_stats ?? null);
     } catch (err: any) {
       setError(err.message);
     } finally {
@@ -964,6 +968,7 @@ export function KBDetail() {
             {searching ? "..." : "Search"}
           </button>
         </div>
+        {searchStats && <RetrievalSummary stats={searchStats} />}
         {searchResults.length > 0 && (
           <div style={{ display: "flex", flexDirection: "column", gap: 8 }}>
             {searchResults.map((r, i) => (

@@ -101,6 +101,12 @@ export interface RetrievalRecord {
   results_count: number;
   top_score: number;
   duration_ms: number;
+  /** Number of results found via vector search only. */
+  vector_hits?: number;
+  /** Number of results found via keyword search only. */
+  keyword_hits?: number;
+  /** Number of results found in both indexes. */
+  both_hits?: number;
 }
 
 // ─── Stage I/O Types ────────────────────────────────────────────
@@ -177,7 +183,15 @@ export type ResearchStreamEvent =
   | { type: "session_start"; session_id: string; strategy: ResearchStrategy }
   | { type: "step_start"; stage: ResearchStage; iteration: number }
   | { type: "llm_call"; purpose: string; duration_ms: number; model: string }
-  | { type: "retrieval"; kb: string; results: number; top_score: number }
+  | {
+      type: "retrieval";
+      kb: string;
+      results: number;
+      top_score: number;
+      vector_hits?: number;
+      keyword_hits?: number;
+      both_hits?: number;
+    }
   | {
       type: "step_complete";
       stage: ResearchStage;

@@ -536,13 +536,26 @@ export interface KBDocument {
   ingested_at: string;
 }
 
+export type RetrievalSource = "vector" | "keyword" | "both";
+
 export interface KBSearchResult {
   content: string;
   source_file: string;
   kb_name: string;
   kb_id: string;
   score: number;
+  rrf_score?: number;
+  retrieval_source?: RetrievalSource;
+  vector_rank?: number;
+  keyword_rank?: number;
   metadata: { section?: string; page?: number };
+}
+
+export interface HybridSearchStats {
+  vector_only: number;
+  keyword_only: number;
+  both: number;
+  total: number;
 }
 
 export interface KBProbeResult {
@@ -559,6 +572,7 @@ export interface KBSearchWithRoutingResult {
     relevant_kbs: number;
     probes: KBProbeResult[];
   };
+  retrieval_stats?: HybridSearchStats;
 }
 
 export async function searchAllKBs(params: {
@@ -742,7 +756,7 @@ export async function searchKB(
   kbId: string,
   query: string,
   limit?: number,
-): Promise<{ results: KBSearchResult[] }> {
+): Promise<{ results: KBSearchResult[]; retrieval_stats?: HybridSearchStats }> {
   return request("POST", `/kb/${kbId}/search`, { query, limit });
 }
 
@@ -930,6 +944,9 @@ export interface ResearchStep {
     results_count: number;
     top_score: number;
     duration_ms: number;
+    vector_hits?: number;
+    keyword_hits?: number;
+    both_hits?: number;
   }>;
 }
 
