@@ -188,10 +188,33 @@ export async function getIncompleteChunks(
     .find({
       org,
       data_type: dataType as any,
-      status: { $in: ["pending", "failed"] } as any,
+      status: { $in: ["pending", "in_progress", "failed"] } as any,
     })
     .sort({ chunk_start: -1 })
     .toArray();
+}
+
+/**
+ * Reset chunks stuck in "in_progress" back to "pending".
+ * This recovers from server crashes/restarts that left chunks orphaned.
+ * Only resets chunks whose started_at is older than `staleThresholdMs` (default 5 min).
+ */
+export async function resetStaleInProgressChunks(
+  org: string,
+  dataType: string,
+  staleThresholdMs = 5 * 60 * 1000,
+): Promise<number> {
+  const cutoff = new Date(Date.now() - staleThresholdMs);
+  const result = await getSyncChunksCollection().updateMany(
+    {
+      org,
+      data_type: dataType,
+      status: "in_progress",
+      $or: [{ started_at: { $lt: cutoff } }, { started_at: { $exists: false } }],
+    } as any,
+    { $set: { status: "pending" }, $unset: { error: 1 } } as any,
+  );
+  return result.modifiedCount;
 }
 
 // --- Sync cursor (persists across reboots) ---

@@ -2,15 +2,17 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Mock all heavy dependencies before importing the module under test
 vi.mock("./githubRepo.js", () => ({
-  getChunkStats: vi.fn().mockResolvedValue({ pending: 0, failed: 0 }),
+  getChunkStats: vi.fn().mockResolvedValue({ pending: 0, failed: 0, in_progress: 0 }),
   getIncompleteChunks: vi.fn().mockResolvedValue([]),
   getSyncChunk: vi.fn().mockResolvedValue(null),
   getSyncChunksCollection: vi.fn().mockReturnValue({
     deleteMany: vi.fn().mockResolvedValue({ deletedCount: 0 }),
     findOne: vi.fn().mockResolvedValue(null),
+    updateMany: vi.fn().mockResolvedValue({ modifiedCount: 0 }),
   }),
   getSyncCursor: vi.fn().mockResolvedValue({}),
   getTaskLastRunTimestamps: vi.fn().mockResolvedValue({}),
+  resetStaleInProgressChunks: vi.fn().mockResolvedValue(0),
   setSyncCursor: vi.fn().mockResolvedValue(undefined),
   setTaskLastRun: vi.fn().mockResolvedValue(undefined),
   upsertSyncChunk: vi.fn().mockResolvedValue(undefined),
@@ -61,11 +63,20 @@ vi.mock("./chunks.js", () => ({
   }),
 }));
 
-import { getTaskLastRunTimestamps, setTaskLastRun } from "./githubRepo.js";
+import {
+  getChunkStats,
+  getTaskLastRunTimestamps,
+  resetStaleInProgressChunks,
+  setTaskLastRun,
+} from "./githubRepo.js";
+import { writeSyncLog } from "./syncEventLog.js";
 import { computeNextRunAt, GitHubSyncService } from "./syncService.js";
 
 const mockedGetTaskTimestamps = vi.mocked(getTaskLastRunTimestamps);
 const mockedSetTaskLastRun = vi.mocked(setTaskLastRun);
+const mockedResetStaleInProgress = vi.mocked(resetStaleInProgressChunks);
+const mockedGetChunkStats = vi.mocked(getChunkStats);
+const mockedWriteSyncLog = vi.mocked(writeSyncLog);
 
 describe("computeNextRunAt", () => {
   it("returns now when no lastRun exists (first boot)", () => {
@@ -190,6 +201,53 @@ describe("GitHubSyncService", () => {
       // Both should be ready to run now (nextRunAt <= now or very close)
       expect(new Date(hotTask?.nextRunAt ?? 0).getTime()).toBeLessThanOrEqual(Date.now() + 100);
       expect(new Date(orgTask?.nextRunAt ?? 0).getTime()).toBeLessThanOrEqual(Date.now() + 100);
+    });
+  });
+
+  describe("stale in_progress chunk recovery on startup", () => {
+    it("calls resetStaleInProgressChunks on start", async () => {
+      mockedGetTaskTimestamps.mockResolvedValue({});
+      mockedResetStaleInProgress.mockResolvedValue(0);
+
+      await service.start();
+      service.stop();
+
+      expect(mockedResetStaleInProgress).toHaveBeenCalledWith("testorg", "prs");
+    });
+
+    it("logs recovery when stale chunks are found", async () => {
+      mockedGetTaskTimestamps.mockResolvedValue({});
+      mockedResetStaleInProgress.mockResolvedValue(3);
+
+      await service.start();
+      service.stop();
+
+      expect(mockedResetStaleInProgress).toHaveBeenCalledWith("testorg", "prs");
+      expect(mockedWriteSyncLog).toHaveBeenCalledWith(
+        "info",
+        "backfill",
+        expect.stringContaining("3 stale in_progress"),
+      );
+    });
+
+    it("adds backfill task when in_progress chunks exist", async () => {
+      mockedGetTaskTimestamps.mockResolvedValue({});
+      mockedResetStaleInProgress.mockResolvedValue(2);
+      mockedGetChunkStats.mockResolvedValue({
+        total: 10,
+        completed: 8,
+        in_progress: 2,
+        failed: 0,
+        pending: 0,
+        total_items: 100,
+      });
+
+      await service.start();
+      const status = await service.getStatus();
+      service.stop();
+
+      const backfillTask = status.tasks.find((t) => t.type === "backfill-chunk");
+      expect(backfillTask).toBeDefined();
     });
   });
 

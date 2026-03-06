@@ -22,6 +22,7 @@ import {
   getSyncChunksCollection,
   getSyncCursor,
   getTaskLastRunTimestamps,
+  resetStaleInProgressChunks,
   setSyncCursor,
   setTaskLastRun,
   upsertSyncChunk,
@@ -142,6 +143,17 @@ export class GitHubSyncService {
         lastRunAt: t.lastRunAt?.toISOString(),
       })),
     });
+
+    // Recover any chunks left stuck as "in_progress" from a previous crash/restart
+    const recovered = await resetStaleInProgressChunks(org, "prs");
+    if (recovered > 0) {
+      log.info("Recovered stale in_progress chunks", { recovered });
+      await writeSyncLog(
+        "info",
+        "backfill",
+        `Recovered ${recovered} stale in_progress chunk(s) → pending`,
+      );
+    }
 
     // Initialize backfill chunks
     await this.initializeBackfillChunks(config);
@@ -422,7 +434,7 @@ export class GitHubSyncService {
     } else {
       // Check if there are any incomplete
       const stats = await getChunkStats(org, "prs");
-      if (stats.pending > 0 || stats.failed > 0) {
+      if (stats.pending > 0 || stats.in_progress > 0 || stats.failed > 0) {
         this.tasks.push({
           id: "backfill-chunk",
           type: "backfill-chunk",
@@ -436,11 +448,12 @@ export class GitHubSyncService {
 
   private async resetFailedChunks(): Promise<void> {
     const config = await resolveGitHubConfig();
+    const org = config.org.toLowerCase();
     await getSyncChunksCollection().updateMany(
-      { org: config.org.toLowerCase(), status: "failed" },
+      { org, status: { $in: ["failed", "in_progress"] } },
       { $set: { status: "pending", attempt: 0 }, $unset: { error: 1 } } as any,
     );
-    await writeSyncLog("info", "backfill", "Reset all failed chunks for retry");
+    await writeSyncLog("info", "backfill", "Reset all failed/stuck chunks for retry");
   }
 }
 
