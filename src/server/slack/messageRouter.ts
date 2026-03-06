@@ -235,6 +235,8 @@ export async function routeMessage(
   const messages: { role: "user" | "assistant"; content: string | ContentBlock[] }[] = [];
   if (threadMessages && threadMessages.length > 0) {
     for (const msg of threadMessages) {
+      // Skip messages with empty text — Bedrock rejects blank content blocks
+      if (!msg.text?.trim()) continue;
       if (msg.isBot) {
         messages.push({ role: "assistant", content: msg.text });
       } else {
