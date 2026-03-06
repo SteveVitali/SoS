@@ -21,7 +21,9 @@ import {
   getSyncChunk,
   getSyncChunksCollection,
   getSyncCursor,
+  getTaskLastRunTimestamps,
   setSyncCursor,
+  setTaskLastRun,
   upsertSyncChunk,
 } from "./githubRepo.js";
 import { getRateLimitBudget } from "./octokitClient.js";
@@ -30,6 +32,18 @@ import { syncChunk, syncOpenPrs } from "./prSyncer.js";
 import { writeSyncLog } from "./syncEventLog.js";
 
 const log = createLogger("github:syncService");
+
+/**
+ * Compute when a task should next run based on its persisted last-run timestamp.
+ * If no timestamp exists (first boot), run immediately.
+ * If the interval hasn't elapsed since lastRun, wait the remainder.
+ * If the interval has already elapsed, run immediately.
+ */
+export function computeNextRunAt(lastRun: Date | undefined, intervalMs: number): Date {
+  if (!lastRun) return new Date();
+  const nextAt = lastRun.getTime() + intervalMs;
+  return new Date(Math.max(nextAt, Date.now()));
+}
 
 interface SyncTask {
   id: string;
@@ -77,7 +91,8 @@ export class GitHubSyncService {
     this.running = true;
 
     // Restore last hot sync cursor from MongoDB (survives reboots)
-    const cursor = await getSyncCursor(config.org.toLowerCase());
+    const org = config.org.toLowerCase();
+    const cursor = await getSyncCursor(org);
     const restoredLastRun = cursor.last_hot_sync_at;
     if (restoredLastRun) {
       log.info("Restored hot sync cursor from MongoDB", {
@@ -85,31 +100,48 @@ export class GitHubSyncService {
       });
     }
 
+    // Restore per-task last-run timestamps so we resume timers after restart
+    const taskTimestamps = await getTaskLastRunTimestamps(org);
+
+    const hotIntervalMs = config.hotIntervalSeconds * 1000;
+    const warmIntervalMs = config.warmIntervalSeconds * 1000;
+    const contributionIntervalMs = 3600_000; // every hour
+
     // Initialize tasks
     this.tasks = [
       {
         id: "hot-prs",
         type: "hot-prs",
         priority: 1,
-        nextRunAt: new Date(), // run immediately
-        intervalMs: config.hotIntervalSeconds * 1000,
+        nextRunAt: computeNextRunAt(taskTimestamps["hot-prs"], hotIntervalMs),
+        intervalMs: hotIntervalMs,
         lastRunAt: restoredLastRun,
       },
       {
         id: "org-sync",
         type: "org-sync",
         priority: 2,
-        nextRunAt: new Date(Date.now() + 5000), // slight delay
-        intervalMs: config.warmIntervalSeconds * 1000,
+        nextRunAt: computeNextRunAt(taskTimestamps["org-sync"], warmIntervalMs),
+        intervalMs: warmIntervalMs,
+        lastRunAt: taskTimestamps["org-sync"],
       },
       {
         id: "contributions",
         type: "contributions",
         priority: 3,
-        nextRunAt: new Date(Date.now() + 60_000), // delay 1 min
-        intervalMs: 3600_000, // every hour
+        nextRunAt: computeNextRunAt(taskTimestamps.contributions, contributionIntervalMs),
+        intervalMs: contributionIntervalMs,
+        lastRunAt: taskTimestamps.contributions,
       },
     ];
+
+    log.info("Restored task schedules from MongoDB", {
+      tasks: this.tasks.map((t) => ({
+        type: t.type,
+        nextRunAt: t.nextRunAt.toISOString(),
+        lastRunAt: t.lastRunAt?.toISOString(),
+      })),
+    });
 
     // Initialize backfill chunks
     await this.initializeBackfillChunks(config);
@@ -232,6 +264,16 @@ export class GitHubSyncService {
       }
 
       task.lastRunAt = new Date();
+
+      // Persist task timestamp so it survives reboots
+      try {
+        await setTaskLastRun(config.org.toLowerCase(), task.type, task.lastRunAt);
+      } catch (persistErr: unknown) {
+        log.warn("Failed to persist task timestamp", {
+          task: task.id,
+          error: (persistErr as Error).message,
+        });
+      }
     } catch (err: unknown) {
       log.error("Sync task failed", {
         task: task.id,

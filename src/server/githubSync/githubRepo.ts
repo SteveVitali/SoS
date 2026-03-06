@@ -199,6 +199,7 @@ export async function getIncompleteChunks(
 interface SyncCursorDoc {
   _id: string;
   last_hot_sync_at?: Date;
+  task_last_run?: Record<string, Date>;
 }
 
 function getSyncStateCollection(): Collection<SyncCursorDoc> {
@@ -214,6 +215,19 @@ export async function setSyncCursor(org: string, lastHotSyncAt: Date): Promise<v
   await getSyncStateCollection().updateOne(
     { _id: org },
     { $set: { last_hot_sync_at: lastHotSyncAt } },
+    { upsert: true },
+  );
+}
+
+export async function getTaskLastRunTimestamps(org: string): Promise<Record<string, Date>> {
+  const doc = await getSyncStateCollection().findOne({ _id: org });
+  return doc?.task_last_run ?? {};
+}
+
+export async function setTaskLastRun(org: string, taskType: string, ts: Date): Promise<void> {
+  await getSyncStateCollection().updateOne(
+    { _id: org },
+    { $set: { [`task_last_run.${taskType}`]: ts } },
     { upsert: true },
   );
 }
