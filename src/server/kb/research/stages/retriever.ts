@@ -135,17 +135,33 @@ export async function runRetriever(
   allChunks.sort((a, b) => b.score - a.score);
   const deduped = deduplicateChunks(allChunks);
 
+  // Compute source breakdown over deduped chunks
+  let dedupedVectorOnly = 0;
+  let dedupedKeywordOnly = 0;
+  let dedupedBoth = 0;
+  for (const c of deduped) {
+    if (c.retrieval_source === "both") dedupedBoth++;
+    else if (c.retrieval_source === "keyword") dedupedKeywordOnly++;
+    else dedupedVectorOnly++;
+  }
+
   log.info("Retrieval complete", {
     queries: expandedQueries.length,
     kbs_available: kbs.length,
     total_chunks: allChunks.length,
     deduped_chunks: deduped.length,
+    vector_only: dedupedVectorOnly,
+    keyword_only: dedupedKeywordOnly,
+    both: dedupedBoth,
   });
 
   recorder.recordOutput({
     total_chunks: allChunks.length,
     deduped_chunks: deduped.length,
     kbs_searched: new Set(allChunks.map((c) => c.kb_id)).size,
+    vector_only: dedupedVectorOnly,
+    keyword_only: dedupedKeywordOnly,
+    both: dedupedBoth,
   });
   recorder.finish({
     chunks: deduped.length,

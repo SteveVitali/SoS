@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { Fragment, useState } from "react";
 import type { ResearchMetrics, ResearchSession, ResearchStep } from "../../api.js";
 import { sessionStatusColor } from "./kbShared.js";
 
@@ -19,6 +19,129 @@ const STAGE_LABELS: Record<string, string> = {
   reasoning: "Reasoning",
   synthesis: "Synthesis",
 };
+
+const SOURCE_COLORS: Record<string, string> = {
+  vector: "#a855f7",
+  keyword: "#3b82f6",
+  both: "#22c55e",
+};
+
+const SOURCE_ICONS: Record<string, string> = {
+  vector: "🧠",
+  keyword: "🔍",
+  both: "⚡",
+};
+
+function SourceBadge({ source, count }: { source: string; count: number }) {
+  if (count === 0) return null;
+  const color = SOURCE_COLORS[source] ?? "var(--fg2)";
+  return (
+    <span style={{ color }}>
+      {SOURCE_ICONS[source] ?? "•"} {count} {source}
+    </span>
+  );
+}
+
+function RetrievalOutput({ output }: { output: Record<string, unknown> }) {
+  const total = (output.total_chunks as number) ?? 0;
+  const deduped = (output.deduped_chunks as number) ?? 0;
+  const kbs = (output.kbs_searched as number) ?? 0;
+  const vectorOnly = (output.vector_only as number) ?? 0;
+  const keywordOnly = (output.keyword_only as number) ?? 0;
+  const bothCount = (output.both as number) ?? 0;
+
+  return (
+    <div
+      style={{
+        background: "var(--bg2)",
+        padding: 8,
+        borderRadius: 4,
+        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
+        gap: 4,
+      }}
+    >
+      <div style={{ color: "var(--fg)" }}>
+        <strong>{total}</strong> chunks → <strong>{deduped}</strong> after dedup · {kbs} KBs
+      </div>
+      {(vectorOnly > 0 || keywordOnly > 0 || bothCount > 0) && (
+        <div style={{ display: "flex", gap: 10 }}>
+          <SourceBadge source="vector" count={vectorOnly} />
+          <SourceBadge source="keyword" count={keywordOnly} />
+          <SourceBadge source="both" count={bothCount} />
+        </div>
+      )}
+    </div>
+  );
+}
+
+function EvaluationOutput({ output }: { output: Record<string, unknown> }) {
+  const correct = (output.correct as number) ?? 0;
+  const incorrect = (output.incorrect as number) ?? 0;
+  const ambiguous = (output.ambiguous as number) ?? 0;
+  const needsRequery = output.needs_requery as boolean;
+  const reformulated = (output.reformulated_queries as number) ?? 0;
+  const bySource = output.by_source as
+    | Record<string, { correct: number; incorrect: number; ambiguous: number }>
+    | undefined;
+
+  return (
+    <div
+      style={{
+        background: "var(--bg2)",
+        padding: 8,
+        borderRadius: 4,
+        fontSize: 11,
+        display: "flex",
+        flexDirection: "column",
+        gap: 6,
+      }}
+    >
+      <div style={{ display: "flex", gap: 12, color: "var(--fg)" }}>
+        <span>
+          <span style={{ color: "#22c55e" }}>✓</span> {correct} correct
+        </span>
+        <span>
+          <span style={{ color: "#ef4444" }}>✗</span> {incorrect} incorrect
+        </span>
+        <span>
+          <span style={{ color: "#f59e0b" }}>?</span> {ambiguous} ambiguous
+        </span>
+        {needsRequery && <span style={{ color: "#f59e0b", fontWeight: 600 }}>→ re-query</span>}
+        {reformulated > 0 && (
+          <span style={{ color: "var(--fg2)" }}>{reformulated} reformulated</span>
+        )}
+      </div>
+      {bySource && Object.keys(bySource).length > 0 && (
+        <div
+          style={{
+            display: "grid",
+            gridTemplateColumns: "auto repeat(3, 1fr)",
+            gap: "2px 12px",
+            color: "var(--fg2)",
+            fontSize: 10,
+          }}
+        >
+          <span style={{ fontWeight: 600 }}>source</span>
+          <span style={{ color: "#22c55e", fontWeight: 600 }}>correct</span>
+          <span style={{ color: "#ef4444", fontWeight: 600 }}>incorrect</span>
+          <span style={{ color: "#f59e0b", fontWeight: 600 }}>ambiguous</span>
+          {Object.entries(bySource).map(([src, counts]) => (
+            <Fragment key={src}>
+              <span style={{ color: SOURCE_COLORS[src] ?? "var(--fg2)" }}>
+                {SOURCE_ICONS[src] ?? "•"} {src}
+              </span>
+              <span>{counts.correct}</span>
+              <span>{counts.incorrect}</span>
+              <span>{counts.ambiguous}</span>
+            </Fragment>
+          ))}
+        </div>
+      )}
+    </div>
+  );
+}
 
 function StepDetail({ step }: { step: ResearchStep }) {
   const [expanded, setExpanded] = useState(false);
@@ -81,20 +204,26 @@ function StepDetail({ step }: { step: ResearchStep }) {
           {step.output && Object.keys(step.output).length > 0 && (
             <div style={{ marginBottom: 10 }}>
               <div style={{ fontWeight: 600, color: "var(--fg2)", marginBottom: 4 }}>Output</div>
-              <pre
-                style={{
-                  background: "var(--bg2)",
-                  padding: 8,
-                  borderRadius: 4,
-                  fontSize: 11,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  margin: 0,
-                  color: "var(--fg)",
-                }}
-              >
-                {JSON.stringify(step.output, null, 2)}
-              </pre>
+              {step.stage === "retrieval" ? (
+                <RetrievalOutput output={step.output} />
+              ) : step.stage === "evaluation" ? (
+                <EvaluationOutput output={step.output} />
+              ) : (
+                <pre
+                  style={{
+                    background: "var(--bg2)",
+                    padding: 8,
+                    borderRadius: 4,
+                    fontSize: 11,
+                    whiteSpace: "pre-wrap",
+                    wordBreak: "break-word",
+                    margin: 0,
+                    color: "var(--fg)",
+                  }}
+                >
+                  {JSON.stringify(step.output, null, 2)}
+                </pre>
+              )}
             </div>
           )}
 

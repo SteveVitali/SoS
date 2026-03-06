@@ -136,6 +136,14 @@ export async function runEvaluator(
   const ambiguous_count = evaluations.filter((e) => e.relevance === "ambiguous").length;
   const total = evaluations.length;
 
+  // Count by retrieval source
+  const bySource: Record<string, { correct: number; incorrect: number; ambiguous: number }> = {};
+  for (const e of evaluations) {
+    const src = e.chunk.retrieval_source ?? "vector";
+    if (!bySource[src]) bySource[src] = { correct: 0, incorrect: 0, ambiguous: 0 };
+    bySource[src][e.relevance]++;
+  }
+
   // CRAG decision logic (Phase 2)
   let needs_requery = false;
   let reformulated_queries: string[] = [];
@@ -203,6 +211,7 @@ export async function runEvaluator(
     ambiguous: ambiguous_count,
     needs_requery,
     reformulated_queries: reformulated_queries.length,
+    by_source: bySource,
   });
   recorder.finish({
     correct: correct_count,
