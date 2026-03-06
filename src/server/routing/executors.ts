@@ -9,6 +9,7 @@
 import { execFile } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
 import { getModelForRole } from "../../shared/modelConfig.js";
+import type { ResearchConfig } from "../../shared/researchTypes.js";
 import type { GithubQueryType } from "../../shared/types.js";
 import { GITHUB_INSTANT_QUERIES, GITHUB_SUMMARY_QUERIES } from "../../shared/types.js";
 import { storeGeneratedImage } from "../chat/imageStore.js";
@@ -813,7 +814,7 @@ async function enrichImagePromptWithKB(
         session_id: "image-enrich",
         original_query: prompt,
         scopes: [],
-        config: {} as import("../../shared/researchTypes.js").ResearchConfig,
+        config: {} as ResearchConfig,
         steps: [],
         status: "running" as const,
         created_at: new Date(),
@@ -822,7 +823,7 @@ async function enrichImagePromptWithKB(
       const evaluation = await runEvaluator(
         prompt,
         aboveThreshold.slice(0, 10),
-        { enable_crag: false } as import("../../shared/researchTypes.js").ResearchConfig,
+        { enable_crag: false } as ResearchConfig,
         researchLLM,
         recorder,
       );
@@ -863,7 +864,7 @@ async function enrichImagePromptWithKB(
       .map((r) => r.content)
       .join("\n---\n");
 
-    const enrichmentModel = getModelForRole("routing");
+    const enrichmentModel = getModelForRole("research");
     const response = await recapLlmProvider!.chat({
       model: enrichmentModel,
       maxTokens: 1024,
@@ -871,6 +872,7 @@ async function enrichImagePromptWithKB(
         "You are an image prompt writer. You will receive an image generation prompt and relevant context " +
         "from a knowledge base. Rewrite the prompt to incorporate any useful visual details from the context. " +
         "Output ONLY the rewritten prompt — no commentary, no preamble.",
+      tools: [],
       messages: [
         {
           role: "user",
