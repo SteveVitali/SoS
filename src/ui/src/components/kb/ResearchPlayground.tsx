@@ -1,4 +1,4 @@
-import { type ReactNode, useState } from "react";
+import { useState } from "react";
 import {
   type ResearchResult,
   type ResearchStrategy,
@@ -6,89 +6,14 @@ import {
   runResearchStreaming,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
-import { ScopeToggleButtons, SearchResultCard, useToggleScopes } from "./kbShared.js";
+import {
+  CollapsibleSection,
+  ExpandableText,
+  ScopeToggleButtons,
+  SearchResultCard,
+  useToggleScopes,
+} from "./kbShared.js";
 import { MetricsSummary, ResearchTimeline } from "./ResearchTimeline.js";
-
-function CollapsibleSection({
-  title,
-  defaultOpen = true,
-  children,
-}: {
-  title: string;
-  defaultOpen?: boolean;
-  children: ReactNode;
-}) {
-  const [open, setOpen] = useState(defaultOpen);
-  return (
-    <div style={{ marginTop: 12 }}>
-      <h4
-        style={{
-          fontSize: 13,
-          fontWeight: 600,
-          margin: "0 0 8px",
-          color: "var(--fg)",
-          cursor: "pointer",
-          userSelect: "none",
-          display: "flex",
-          alignItems: "center",
-          gap: 6,
-        }}
-        onClick={() => setOpen(!open)}
-      >
-        <span style={{ fontSize: 11, color: "var(--fg2)" }}>{open ? "▼" : "▶"}</span>
-        {title}
-      </h4>
-      {open && children}
-    </div>
-  );
-}
-
-const PREVIEW_CHARS = 400;
-
-function ExpandableText({
-  text,
-  previewChars = PREVIEW_CHARS,
-}: {
-  text: string;
-  previewChars?: number;
-}) {
-  const [expanded, setExpanded] = useState(false);
-  const needsTruncation = text.length > previewChars;
-
-  return (
-    <div>
-      <pre
-        style={{
-          fontSize: 12,
-          whiteSpace: "pre-wrap",
-          wordBreak: "break-word",
-          margin: 0,
-          color: "var(--fg)",
-          lineHeight: 1.5,
-        }}
-      >
-        {expanded || !needsTruncation ? text : `${text.slice(0, previewChars)}…`}
-      </pre>
-      {needsTruncation && (
-        <button
-          type="button"
-          onClick={() => setExpanded(!expanded)}
-          style={{
-            background: "none",
-            border: "none",
-            color: "var(--accent)",
-            cursor: "pointer",
-            fontSize: 11,
-            fontWeight: 600,
-            padding: "4px 0 0",
-          }}
-        >
-          {expanded ? "Show less" : `Show all (${text.length} chars)`}
-        </button>
-      )}
-    </div>
-  );
-}
 
 const STRATEGY_DESCRIPTIONS: Record<ResearchStrategy, string> = {
   simple: "Fast — HyDE + reranking (2-4s, ~3 LLM calls)",

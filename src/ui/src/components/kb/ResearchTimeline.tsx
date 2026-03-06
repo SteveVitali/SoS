@@ -1,6 +1,6 @@
 import { Fragment, useState } from "react";
-import type { ResearchMetrics, ResearchSession, ResearchStep } from "../../api.js";
-import { sessionStatusColor } from "./kbShared.js";
+import type { ResearchMetrics, ResearchSession, ResearchStep, RetrievalSource } from "../../api.js";
+import { SOURCE_STYLES, SourceCountBadge, sessionStatusColor } from "./kbShared.js";
 
 const STAGE_ICONS: Record<string, string> = {
   query_analysis: "🔍",
@@ -19,28 +19,6 @@ const STAGE_LABELS: Record<string, string> = {
   reasoning: "Reasoning",
   synthesis: "Synthesis",
 };
-
-const SOURCE_COLORS: Record<string, string> = {
-  vector: "#a855f7",
-  keyword: "#3b82f6",
-  both: "#22c55e",
-};
-
-const SOURCE_ICONS: Record<string, string> = {
-  vector: "🧠",
-  keyword: "🔍",
-  both: "⚡",
-};
-
-function SourceBadge({ source, count }: { source: string; count: number }) {
-  if (count === 0) return null;
-  const color = SOURCE_COLORS[source] ?? "var(--fg2)";
-  return (
-    <span style={{ color }}>
-      {SOURCE_ICONS[source] ?? "•"} {count} {source}
-    </span>
-  );
-}
 
 function RetrievalOutput({ output }: { output: Record<string, unknown> }) {
   const total = (output.total_chunks as number) ?? 0;
@@ -67,9 +45,9 @@ function RetrievalOutput({ output }: { output: Record<string, unknown> }) {
       </div>
       {(vectorOnly > 0 || keywordOnly > 0 || bothCount > 0) && (
         <div style={{ display: "flex", gap: 10 }}>
-          <SourceBadge source="vector" count={vectorOnly} />
-          <SourceBadge source="keyword" count={keywordOnly} />
-          <SourceBadge source="both" count={bothCount} />
+          <SourceCountBadge source="vector" count={vectorOnly} />
+          <SourceCountBadge source="keyword" count={keywordOnly} />
+          <SourceCountBadge source="both" count={bothCount} />
         </div>
       )}
     </div>
@@ -129,8 +107,8 @@ function EvaluationOutput({ output }: { output: Record<string, unknown> }) {
           <span style={{ color: "#f59e0b", fontWeight: 600 }}>ambiguous</span>
           {Object.entries(bySource).map(([src, counts]) => (
             <Fragment key={src}>
-              <span style={{ color: SOURCE_COLORS[src] ?? "var(--fg2)" }}>
-                {SOURCE_ICONS[src] ?? "•"} {src}
+              <span style={{ color: SOURCE_STYLES[src as RetrievalSource]?.color ?? "var(--fg2)" }}>
+                {SOURCE_STYLES[src as RetrievalSource]?.icon ?? "•"} {src}
               </span>
               <span>{counts.correct}</span>
               <span>{counts.incorrect}</span>
@@ -292,16 +270,10 @@ function StepDetail({ step }: { step: ResearchStep }) {
                   {(call.vector_hits != null ||
                     call.keyword_hits != null ||
                     call.both_hits != null) && (
-                    <div style={{ color: "var(--fg2)", marginTop: 2 }}>
-                      {call.vector_hits != null && call.vector_hits > 0 && (
-                        <span style={{ color: "#a855f7" }}>🧠 {call.vector_hits} vector </span>
-                      )}
-                      {call.keyword_hits != null && call.keyword_hits > 0 && (
-                        <span style={{ color: "#3b82f6" }}>🔍 {call.keyword_hits} keyword </span>
-                      )}
-                      {call.both_hits != null && call.both_hits > 0 && (
-                        <span style={{ color: "#22c55e" }}>⚡ {call.both_hits} both</span>
-                      )}
+                    <div style={{ display: "flex", gap: 8, color: "var(--fg2)", marginTop: 2 }}>
+                      <SourceCountBadge source="vector" count={call.vector_hits ?? 0} />
+                      <SourceCountBadge source="keyword" count={call.keyword_hits ?? 0} />
+                      <SourceCountBadge source="both" count={call.both_hits ?? 0} />
                     </div>
                   )}
                 </div>

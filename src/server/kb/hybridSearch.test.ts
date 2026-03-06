@@ -163,16 +163,24 @@ describe("hybridSearch", () => {
     expect(results[0].keyword_rank).toBe(1);
   });
 
-  it("respects the limit parameter", async () => {
+  it("respects the limit parameter and stats reflect trimmed results", async () => {
+    // 3 results total, but limit=2 — stats should count only the 2 returned
     mockSearchKBTable.mockResolvedValue([
       makeVectorResult("c1", "content 1", 0.1),
       makeVectorResult("c2", "content 2", 0.2),
       makeVectorResult("c3", "content 3", 0.3),
     ]);
-    mockSearchFTS.mockReturnValue([]);
+    mockSearchFTS.mockReturnValue([
+      makeFTSResult("c1", "content 1", 5.0), // c1 appears in both
+    ]);
 
-    const { results } = await hybridSearch("kb1", [1, 2, 3], "test", 2);
+    const { results, stats } = await hybridSearch("kb1", [1, 2, 3], "test", 2);
     expect(results.length).toBe(2);
+    // c1 ranks highest (both indexes), then c2 or c3 (vector-only). c3 is dropped by limit.
+    expect(stats.total).toBe(2);
+    expect(stats.both).toBe(1); // c1
+    expect(stats.vector_only).toBe(1); // whichever of c2/c3 made the cut
+    expect(stats.keyword_only).toBe(0);
   });
 
   it("filters vector results below minSimilarityScore", async () => {

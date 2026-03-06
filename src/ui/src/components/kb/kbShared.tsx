@@ -1,4 +1,4 @@
-import { type RefObject, useCallback, useState } from "react";
+import { type ReactNode, type RefObject, useCallback, useState } from "react";
 import type {
   HybridSearchStats,
   KBScope,
@@ -238,7 +238,10 @@ export function UploadProgressBadge({ job }: { job: UploadJob }) {
   );
 }
 
-const SOURCE_STYLES: Record<RetrievalSource, { icon: string; label: string; color: string }> = {
+export const SOURCE_STYLES: Record<
+  RetrievalSource,
+  { icon: string; label: string; color: string }
+> = {
   vector: { icon: "🧠", label: "vector", color: "#a855f7" },
   keyword: { icon: "🔍", label: "keyword", color: "#3b82f6" },
   both: { icon: "⚡", label: "both", color: "#22c55e" },
@@ -278,6 +281,16 @@ function RetrievalSourceBadge({
   );
 }
 
+export function SourceCountBadge({ source, count }: { source: RetrievalSource; count: number }) {
+  if (count === 0) return null;
+  const s = SOURCE_STYLES[source];
+  return (
+    <span style={{ color: s.color }}>
+      {s.icon} {count} {s.label}
+    </span>
+  );
+}
+
 export function RetrievalSummary({ stats }: { stats: HybridSearchStats }) {
   if (stats.total === 0) return null;
   return (
@@ -292,13 +305,92 @@ export function RetrievalSummary({ stats }: { stats: HybridSearchStats }) {
       }}
     >
       <span style={{ fontWeight: 600, color: "var(--fg)" }}>{stats.total} results:</span>
-      {stats.vector_only > 0 && (
-        <span style={{ color: "#a855f7" }}>🧠 {stats.vector_only} vector</span>
+      <SourceCountBadge source="vector" count={stats.vector_only} />
+      <SourceCountBadge source="keyword" count={stats.keyword_only} />
+      <SourceCountBadge source="both" count={stats.both} />
+    </div>
+  );
+}
+
+export function CollapsibleSection({
+  title,
+  defaultOpen = true,
+  children,
+}: {
+  title: string;
+  defaultOpen?: boolean;
+  children: ReactNode;
+}) {
+  const [open, setOpen] = useState(defaultOpen);
+  return (
+    <div style={{ marginTop: 12 }}>
+      <h4
+        style={{
+          fontSize: 13,
+          fontWeight: 600,
+          margin: "0 0 8px",
+          color: "var(--fg)",
+          cursor: "pointer",
+          userSelect: "none",
+          display: "flex",
+          alignItems: "center",
+          gap: 6,
+        }}
+        onClick={() => setOpen(!open)}
+      >
+        <span style={{ fontSize: 11, color: "var(--fg2)" }}>{open ? "▼" : "▶"}</span>
+        {title}
+      </h4>
+      {open && children}
+    </div>
+  );
+}
+
+const DEFAULT_PREVIEW_CHARS = 400;
+
+export function ExpandableText({
+  text,
+  previewChars = DEFAULT_PREVIEW_CHARS,
+  fontSize = 12,
+}: {
+  text: string;
+  previewChars?: number;
+  fontSize?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const needsTruncation = text.length > previewChars;
+
+  return (
+    <div>
+      <pre
+        style={{
+          fontSize,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          margin: 0,
+          color: "var(--fg)",
+          lineHeight: 1.5,
+        }}
+      >
+        {expanded || !needsTruncation ? text : `${text.slice(0, previewChars)}\u2026`}
+      </pre>
+      {needsTruncation && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--accent)",
+            cursor: "pointer",
+            fontSize: fontSize - 1,
+            fontWeight: 600,
+            padding: "4px 0 0",
+          }}
+        >
+          {expanded ? "Show less" : "Show full answer"}
+        </button>
       )}
-      {stats.keyword_only > 0 && (
-        <span style={{ color: "#3b82f6" }}>🔍 {stats.keyword_only} keyword</span>
-      )}
-      {stats.both > 0 && <span style={{ color: "#22c55e" }}>⚡ {stats.both} both</span>}
     </div>
   );
 }
