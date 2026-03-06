@@ -17,6 +17,7 @@ import {
   updateKB,
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { FtsStatus } from "./FtsStatus.js";
 import {
   DropOverlay,
   formatBytes,
@@ -671,6 +672,9 @@ export function KBDetail() {
           </div>
         )}
       </div>
+
+      {/* FTS Keyword Index Status */}
+      {kb && <FtsStatus kbId={kb.kb_id} />}
 
       {/* RAPTOR Index Status */}
       {kb && <RaptorStatus kbId={kb.kb_id} />}

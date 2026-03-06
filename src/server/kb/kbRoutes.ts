@@ -8,7 +8,14 @@ import multer from "multer";
 import type { KBScope } from "../../shared/kbTypes.js";
 import { createLogger } from "../../shared/logger.js";
 import type { ResearchStrategy } from "../../shared/researchTypes.js";
-import { countFTSRows, type FTSRecord, hasFTSIndex, rebuildFTSIndex } from "./ftsStore.js";
+import {
+  addToFTSIndex,
+  countFTSRows,
+  dropFTSIndex,
+  type FTSRecord,
+  hasFTSIndex,
+  rebuildFTSIndex,
+} from "./ftsStore.js";
 import {
   createKnowledgeBase,
   deleteKnowledgeBase,
@@ -514,6 +521,7 @@ export function createKBWebRoutes(): Router {
   });
 
   // POST /api/web/kb/:id/fts/rebuild — rebuild FTS index from LanceDB chunks
+  // Supports NDJSON streaming (Accept: text/x-ndjson) for real-time progress.
   router.post("/:id/fts/rebuild", async (req: Request, res: Response) => {
     try {
       const kbId = pstr(req.params.id);
@@ -523,29 +531,89 @@ export function createKBWebRoutes(): Router {
         return;
       }
 
-      // Read all L0 chunks from LanceDB
-      const chunks = await listAllChunksForFTS(kbId);
+      const wantsStream = req.headers.accept?.includes("text/x-ndjson");
+      const BATCH_SIZE = 500;
 
-      // Build FTS records
-      const ftsRecords: FTSRecord[] = chunks.map((c) => ({
-        chunk_id: c.id,
-        kb_id: c.kb_id,
-        source_file: c.source_file,
-        content: c.content,
-        section: c.section || undefined,
-        page: c.page || undefined,
-        file_path: c.file_path || undefined,
-        parent_dir: c.parent_dir || undefined,
-      }));
+      if (wantsStream) {
+        res.setHeader("Content-Type", "text/x-ndjson; charset=utf-8");
+        res.setHeader("Cache-Control", "no-cache");
+        res.setHeader("X-Accel-Buffering", "no");
+        res.flushHeaders();
 
-      // Rebuild the index (drops + re-creates)
-      rebuildFTSIndex(kbId, ftsRecords);
+        let closed = false;
+        res.on("close", () => {
+          closed = true;
+        });
 
-      log.info("FTS index rebuilt via API", { kbId, chunks: ftsRecords.length });
-      res.json({ ok: true, chunks_indexed: ftsRecords.length });
+        const emit = (event: Record<string, unknown>) => {
+          if (!closed) res.write(JSON.stringify(event) + "\n");
+        };
+
+        try {
+          emit({ type: "reading", message: "Reading chunks from vector store..." });
+
+          const chunks = await listAllChunksForFTS(kbId);
+          const total = chunks.length;
+          emit({ type: "read_complete", total });
+
+          // Drop existing index
+          dropFTSIndex(kbId);
+
+          if (total === 0) {
+            emit({ type: "complete", chunks_indexed: 0, total: 0 });
+            if (!closed) res.end();
+            return;
+          }
+
+          // Insert in batches with progress events
+          let indexed = 0;
+          for (let i = 0; i < total; i += BATCH_SIZE) {
+            const batch = chunks.slice(i, i + BATCH_SIZE);
+            const records: FTSRecord[] = batch.map((c) => ({
+              chunk_id: c.id,
+              kb_id: c.kb_id,
+              source_file: c.source_file,
+              content: c.content,
+              section: c.section || undefined,
+              page: c.page || undefined,
+              file_path: c.file_path || undefined,
+              parent_dir: c.parent_dir || undefined,
+            }));
+            addToFTSIndex(kbId, records);
+            indexed += records.length;
+            emit({ type: "batch", indexed, total });
+          }
+
+          emit({ type: "complete", chunks_indexed: indexed, total });
+          log.info("FTS index rebuilt via API (streaming)", { kbId, chunks: indexed });
+        } catch (err: any) {
+          emit({ type: "error", error: err.message });
+          log.error("FTS rebuild error (streaming)", { error: err.message });
+        } finally {
+          if (!closed) res.end();
+        }
+      } else {
+        // Non-streaming: original behavior
+        const chunks = await listAllChunksForFTS(kbId);
+        const ftsRecords: FTSRecord[] = chunks.map((c) => ({
+          chunk_id: c.id,
+          kb_id: c.kb_id,
+          source_file: c.source_file,
+          content: c.content,
+          section: c.section || undefined,
+          page: c.page || undefined,
+          file_path: c.file_path || undefined,
+          parent_dir: c.parent_dir || undefined,
+        }));
+        rebuildFTSIndex(kbId, ftsRecords);
+        log.info("FTS index rebuilt via API", { kbId, chunks: ftsRecords.length });
+        res.json({ ok: true, chunks_indexed: ftsRecords.length });
+      }
     } catch (err: any) {
       log.error("FTS rebuild error", { error: err.message });
-      res.status(500).json({ error: err.message });
+      if (!res.headersSent) {
+        res.status(500).json({ error: err.message });
+      }
     }
   });
 

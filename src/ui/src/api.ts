@@ -782,6 +782,73 @@ export async function getAllActiveUploads(): Promise<{ uploads: UploadJob[] }> {
   return request("GET", "/kb/uploads/active");
 }
 
+// --- FTS (Keyword Index) ---
+
+export interface FtsStatus {
+  indexed: boolean;
+  fts_chunk_count: number;
+  vector_chunk_count: number;
+  needs_rebuild: boolean;
+}
+
+export async function getFtsStatus(kbId: string): Promise<FtsStatus> {
+  return request("GET", `/kb/${kbId}/fts/status`);
+}
+
+export type FtsRebuildEvent =
+  | { type: "reading"; message: string }
+  | { type: "read_complete"; total: number }
+  | { type: "batch"; indexed: number; total: number }
+  | { type: "complete"; chunks_indexed: number; total: number }
+  | { type: "error"; error: string };
+
+export async function rebuildFtsIndex(
+  kbId: string,
+  onProgress?: (event: FtsRebuildEvent) => void,
+): Promise<{ chunks_indexed: number }> {
+  const token = localStorage.getItem("sos_token") || "";
+  const res = await fetch(`${BASE}/kb/${kbId}/fts/rebuild`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      ...(token ? { Authorization: `Bearer ${token}` } : {}),
+      Accept: "text/x-ndjson",
+    },
+  });
+  if (!res.ok) {
+    const text = await res.text().catch(() => "");
+    throw new Error(`${res.status}: ${text}`);
+  }
+
+  const reader = res.body!.getReader();
+  const decoder = new TextDecoder();
+  let buffer = "";
+  let chunksIndexed = 0;
+
+  for (;;) {
+    const { done, value } = await reader.read();
+    if (done) break;
+    buffer += decoder.decode(value, { stream: true });
+
+    for (;;) {
+      const newlineIdx = buffer.indexOf("\n");
+      if (newlineIdx === -1) break;
+      const line = buffer.slice(0, newlineIdx).trim();
+      buffer = buffer.slice(newlineIdx + 1);
+      if (!line) continue;
+      try {
+        const event: FtsRebuildEvent = JSON.parse(line);
+        if (event.type === "complete") chunksIndexed = event.chunks_indexed;
+        onProgress?.(event);
+      } catch {
+        // skip malformed lines
+      }
+    }
+  }
+
+  return { chunks_indexed: chunksIndexed };
+}
+
 // --- RAPTOR ---
 
 export interface RaptorStatus {
