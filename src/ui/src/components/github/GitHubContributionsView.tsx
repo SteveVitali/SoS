@@ -4,8 +4,10 @@
 
 import { useCallback, useEffect, useState } from "react";
 import { type ContributionsResponse, type GitHubScope, getGitHubContributions } from "../../api.js";
+import { buildCacheKey, getCached, setCache } from "../../hooks/useApiCache.js";
 import { css } from "../../styles/theme.js";
 import { formatCompactNumber, toErrorMessage } from "../../utils/format.js";
+import { Spinner } from "../shared/Spinner.js";
 import { ScopeToggle } from "./ScopeToggle.js";
 
 const RANGE_OPTIONS = [
@@ -22,22 +24,49 @@ export function GitHubContributionsView() {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
-  const refresh = useCallback(async () => {
-    setLoading(true);
-    setError("");
-    try {
-      const res = await getGitHubContributions({ scope, range, group_by: "week" });
-      setData(res);
-    } catch (err: unknown) {
-      setError(toErrorMessage(err));
-    } finally {
-      setLoading(false);
+  const cacheParams = { scope, range, group_by: "week" };
+  const cacheKey = buildCacheKey("github-contributions", cacheParams);
+
+  // When params change, immediately show cached data or clear stale data so the
+  // big Spinner renders while the network request is in flight.
+  useEffect(() => {
+    const cached = getCached<ContributionsResponse>(cacheKey);
+    if (cached) {
+      setData(cached);
+      setError("");
+    } else {
+      setData(null);
     }
-  }, [scope, range]);
+  }, [cacheKey]);
+
+  const fetchContributions = useCallback(
+    async (skipCache = false) => {
+      if (!skipCache) {
+        const cached = getCached<ContributionsResponse>(cacheKey);
+        if (cached) {
+          setData(cached);
+          setError("");
+          return;
+        }
+      }
+      setLoading(true);
+      setError("");
+      try {
+        const res = await getGitHubContributions({ scope, range, group_by: "week" });
+        setData(res);
+        setCache(cacheKey, res);
+      } catch (err: unknown) {
+        setError(toErrorMessage(err));
+      } finally {
+        setLoading(false);
+      }
+    },
+    [cacheKey, scope, range],
+  );
 
   useEffect(() => {
-    refresh();
-  }, [refresh]);
+    fetchContributions();
+  }, [fetchContributions]);
 
   const summary = data?.summary;
 
@@ -65,7 +94,12 @@ export function GitHubContributionsView() {
             ))}
           </div>
         </div>
-        <button type="button" onClick={refresh} style={css.btnSmall} disabled={loading}>
+        <button
+          type="button"
+          onClick={() => fetchContributions(true)}
+          style={css.btnSmall}
+          disabled={loading}
+        >
           {loading ? "Loading…" : "Refresh"}
         </button>
       </div>
@@ -198,9 +232,36 @@ export function GitHubContributionsView() {
                 </tr>
               ))}
             </tbody>
+            {data.leaderboard_totals && (
+              <tfoot>
+                <tr style={{ borderTop: "2px solid var(--border)" }}>
+                  <td style={{ ...css.td, fontWeight: 700 }} />
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    Total ({data.leaderboard_totals.member_count} members)
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    {data.leaderboard_totals.prs_merged}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    {data.leaderboard_totals.reviews_submitted}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700, color: "#22c55e" }}>
+                    +{data.leaderboard_totals.additions}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700, color: "#ef4444" }}>
+                    −{data.leaderboard_totals.deletions}
+                  </td>
+                  <td style={{ ...css.td, fontWeight: 700 }}>
+                    {data.leaderboard_totals.unique_repos}
+                  </td>
+                </tr>
+              </tfoot>
+            )}
           </table>
         </div>
       )}
+
+      {loading && !data && <Spinner label="Loading contributions…" />}
 
       {!loading && !data?.leaderboard?.length && !data?.data_points?.length && !error && (
         <div style={{ textAlign: "center", padding: 40, color: "var(--fg3)" }}>

@@ -252,9 +252,19 @@ export interface LeaderboardEntry {
   repos_touched: string[];
 }
 
+export interface LeaderboardTotals {
+  prs_merged: number;
+  reviews_submitted: number;
+  additions: number;
+  deletions: number;
+  unique_repos: number;
+  member_count: number;
+}
+
 export interface ContributionsResponse {
   summary: ContributionSummary;
   data_points: ContributionDataPoint[];
   leaderboard: LeaderboardEntry[];
+  leaderboard_totals?: LeaderboardTotals;
   data_source: "cache" | "partial-cache";
 }
