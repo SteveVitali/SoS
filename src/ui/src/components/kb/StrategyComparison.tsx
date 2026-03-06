@@ -4,6 +4,53 @@ import { css } from "../../styles/theme.js";
 import { ScopeToggleButtons, useToggleScopes } from "./kbShared.js";
 import { MetricsSummary } from "./ResearchTimeline.js";
 
+const PREVIEW_CHARS = 300;
+
+function ExpandableText({
+  text,
+  previewChars = PREVIEW_CHARS,
+}: {
+  text: string;
+  previewChars?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const needsTruncation = text.length > previewChars;
+
+  return (
+    <div>
+      <pre
+        style={{
+          fontSize: 11,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          margin: 0,
+          color: "var(--fg)",
+          lineHeight: 1.4,
+        }}
+      >
+        {expanded || !needsTruncation ? text : `${text.slice(0, previewChars)}\u2026`}
+      </pre>
+      {needsTruncation && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--accent)",
+            cursor: "pointer",
+            fontSize: 10,
+            fontWeight: 600,
+            padding: "4px 0 0",
+          }}
+        >
+          {expanded ? "Show less" : "Show full answer"}
+        </button>
+      )}
+    </div>
+  );
+}
+
 interface ComparisonEntry {
   strategy: ResearchStrategy;
   status: "idle" | "running" | "done" | "error";
@@ -156,23 +203,26 @@ export function StrategyComparison() {
                     <span style={{ color: "var(--fg2)" }}> chunks returned</span>
                   </div>
                   {entry.result.context && (
-                    <pre
+                    <div
                       style={{
                         marginTop: 8,
                         background: "var(--bg2)",
                         padding: 8,
                         borderRadius: 4,
-                        fontSize: 10,
-                        maxHeight: 200,
-                        overflow: "auto",
-                        whiteSpace: "pre-wrap",
-                        wordBreak: "break-word",
-                        color: "var(--fg)",
                       }}
                     >
-                      {entry.result.context.slice(0, 1000)}
-                      {entry.result.context.length > 1000 ? "\n..." : ""}
-                    </pre>
+                      <div
+                        style={{
+                          fontSize: 11,
+                          fontWeight: 600,
+                          color: "var(--accent)",
+                          marginBottom: 4,
+                        }}
+                      >
+                        📋 Answer
+                      </div>
+                      <ExpandableText text={entry.result.context} />
+                    </div>
                   )}
                 </div>
               )}

@@ -43,6 +43,53 @@ function CollapsibleSection({
   );
 }
 
+const PREVIEW_CHARS = 400;
+
+function ExpandableText({
+  text,
+  previewChars = PREVIEW_CHARS,
+}: {
+  text: string;
+  previewChars?: number;
+}) {
+  const [expanded, setExpanded] = useState(false);
+  const needsTruncation = text.length > previewChars;
+
+  return (
+    <div>
+      <pre
+        style={{
+          fontSize: 12,
+          whiteSpace: "pre-wrap",
+          wordBreak: "break-word",
+          margin: 0,
+          color: "var(--fg)",
+          lineHeight: 1.5,
+        }}
+      >
+        {expanded || !needsTruncation ? text : `${text.slice(0, previewChars)}…`}
+      </pre>
+      {needsTruncation && (
+        <button
+          type="button"
+          onClick={() => setExpanded(!expanded)}
+          style={{
+            background: "none",
+            border: "none",
+            color: "var(--accent)",
+            cursor: "pointer",
+            fontSize: 11,
+            fontWeight: 600,
+            padding: "4px 0 0",
+          }}
+        >
+          {expanded ? "Show less" : `Show all (${text.length} chars)`}
+        </button>
+      )}
+    </div>
+  );
+}
+
 const STRATEGY_DESCRIPTIONS: Record<ResearchStrategy, string> = {
   simple: "Fast — HyDE + reranking (2-4s, ~3 LLM calls)",
   deep: "Thorough — decomposition + IRCoT loop + CRAG (5-15s, ~5-10 LLM calls)",
@@ -268,38 +315,18 @@ export function ResearchPlayground() {
 
           {/* Final answer */}
           {result.context && (
-            <div
-              style={{
-                marginTop: 12,
-                background: "var(--bg)",
-                border: "1px solid var(--accent)44",
-                borderRadius: "var(--radius)",
-                padding: 12,
-              }}
-            >
-              <h4
+            <CollapsibleSection title="📋 Synthesized Answer" defaultOpen>
+              <div
                 style={{
-                  fontSize: 13,
-                  fontWeight: 600,
-                  margin: "0 0 8px",
-                  color: "var(--accent)",
+                  background: "var(--bg)",
+                  border: "1px solid var(--accent)44",
+                  borderRadius: "var(--radius)",
+                  padding: 12,
                 }}
               >
-                📋 Synthesized Answer
-              </h4>
-              <pre
-                style={{
-                  fontSize: 12,
-                  whiteSpace: "pre-wrap",
-                  wordBreak: "break-word",
-                  margin: 0,
-                  color: "var(--fg)",
-                  lineHeight: 1.5,
-                }}
-              >
-                {result.context}
-              </pre>
-            </div>
+                <ExpandableText text={result.context} />
+              </div>
+            </CollapsibleSection>
           )}
         </div>
       )}
