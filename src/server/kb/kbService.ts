@@ -654,22 +654,17 @@ async function twoStageSearch(
 
   // --- Stage 2: Hybrid search (vector + keyword) on relevant KBs ---
   const allResults: KBSearchResult[] = [];
-  const aggregateStats: HybridSearchStats = { vector_only: 0, keyword_only: 0, both: 0, total: 0 };
 
   for (const kb of passedKBs) {
     const perKBLimit = max_chunks ?? kb.max_chunks_per_query;
     const minScore_ = min_score ?? kb.min_similarity_score;
 
     try {
-      const { results, stats } = await hybridSearch(kb.kb_id, queryVector, query, perKBLimit, {
+      const { results } = await hybridSearch(kb.kb_id, queryVector, query, perKBLimit, {
         minSimilarityScore: minScore_,
         kbName: kb.name,
       });
       allResults.push(...results);
-      aggregateStats.vector_only += stats.vector_only;
-      aggregateStats.keyword_only += stats.keyword_only;
-      aggregateStats.both += stats.both;
-      aggregateStats.total += stats.total;
     } catch (err: any) {
       log.warn("KB hybrid search failed in stage 2, skipping", {
         kbId: kb.kb_id,
