@@ -324,7 +324,7 @@ export function createGitHubRoutes(_config: ServerConfig): Router {
               },
             },
             { $sort: { prs_merged: -1 } },
-            { $limit: 50 },
+            ...(scope === "org" ? [] : [{ $limit: 50 }]),
           ])
           .toArray();
 
