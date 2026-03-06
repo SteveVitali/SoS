@@ -138,6 +138,10 @@ export interface GenerateImageExecution {
   type: "generate_image";
   default_size?: string;
   default_quality?: string;
+  /** When set, search these KB scopes and enrich the prompt with results before generating. */
+  kb_scopes?: string[];
+  /** Minimum vector similarity score for KB chunks to be considered (default 0.5). */
+  kb_min_score?: number;
   reply_error?: string;
   reply_unsupported?: string;
 }
