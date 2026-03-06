@@ -163,7 +163,7 @@ Write a team summary suitable for Slack. Highlight key themes, notable contribut
 // --- Inline Execution ---
 
 export async function executeRecapInline(
-  queryType: "my_recap" | "team_recap",
+  queryType: "my_recap" | "team_recap" | "user_recap",
   params: {
     org?: string;
     team_slug?: string;
@@ -178,6 +178,7 @@ export async function executeRecapInline(
   const range = params.time_range || "7d";
 
   let prompt: string;
+  let label: string;
   if (queryType === "my_recap") {
     const username = params.github_username || config.username || "";
     const data = await fetchMyRecapData(org, username, since);
@@ -185,7 +186,25 @@ export async function executeRecapInline(
       return `📊 *My Recap (${range})*\n\n_No activity found for this period._`;
     }
     prompt = buildMyRecapPrompt(data, params.time_range);
+    label = "My";
     log.info("Generating my recap inline", {
+      org,
+      username,
+      mergedPrs: data.mergedPrs.length,
+      reviewedPrs: data.reviewedPrs.length,
+    });
+  } else if (queryType === "user_recap") {
+    const username = params.github_username || "";
+    if (!username) {
+      return `📊 *User Recap (${range})*\n\n_No GitHub username provided._`;
+    }
+    const data = await fetchMyRecapData(org, username, since);
+    if (data.mergedPrs.length === 0 && data.reviewedPrs.length === 0) {
+      return `📊 *Recap for ${username} (${range})*\n\n_No activity found for ${username} in this period._`;
+    }
+    prompt = buildMyRecapPrompt(data, params.time_range);
+    label = `Recap for ${username}`;
+    log.info("Generating user recap inline", {
       org,
       username,
       mergedPrs: data.mergedPrs.length,
@@ -198,6 +217,7 @@ export async function executeRecapInline(
       return `📊 *Team Recap (${range})*\n\n_No team activity found for this period._`;
     }
     prompt = buildTeamRecapPrompt(data, params.time_range);
+    label = "Team";
     log.info("Generating team recap inline", {
       org,
       teamSlug,
@@ -230,6 +250,5 @@ export async function executeRecapInline(
     }),
   ]);
 
-  const label = queryType === "my_recap" ? "My" : "Team";
   return `📊 *${label} Recap (${range})*\n\n${result.text}`;
 }

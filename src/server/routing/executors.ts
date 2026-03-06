@@ -527,11 +527,11 @@ async function executeGithubQuery(
 
     try {
       const formatted = await executeRecapInline(
-        queryType as "my_recap" | "team_recap",
+        queryType as "my_recap" | "team_recap" | "user_recap",
         {
           org: action.args.org || ctx.githubOrg,
           team_slug: action.args.team_slug || ctx.githubTeamSlug,
-          github_username: ctx.githubUsername,
+          github_username: action.args.github_username || ctx.githubUsername,
           time_range: action.args.time_range,
         },
         recapLlmProvider,

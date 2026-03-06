@@ -93,7 +93,8 @@ export type GithubQueryType =
   | "team_open_prs"
   | "team_review_requests"
   | "my_recap"
-  | "team_recap";
+  | "team_recap"
+  | "user_recap";
 
 export const GITHUB_INSTANT_QUERIES: readonly GithubQueryType[] = [
   "my_review_requests",
@@ -106,6 +107,7 @@ export const GITHUB_INSTANT_QUERIES: readonly GithubQueryType[] = [
 export const GITHUB_SUMMARY_QUERIES: readonly GithubQueryType[] = [
   "my_recap",
   "team_recap",
+  "user_recap",
 ] as const;
 
 export interface ClaudeSession {
