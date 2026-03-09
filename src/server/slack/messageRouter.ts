@@ -216,12 +216,7 @@ export async function routeMessage(
   attachments?: JobAttachment[],
 ): Promise<RoutedAction> {
   if (!provider) {
-    log.warn("LLM provider not initialized, treating as job creation");
-    return {
-      command: "create_job",
-      args: { task_text: userMessage },
-      reply: "Got it — I'll take a look.",
-    };
+    throw new Error("LLM provider not initialized — cannot route message");
   }
 
   const jobsContext = await buildJobsContext();
@@ -344,11 +339,7 @@ export async function routeMessage(
 
     return { command, reply, args };
   } catch (err: unknown) {
-    log.error("LLM routing failed, falling back to create_job", { error: (err as Error).message });
-    return {
-      command: "create_job",
-      args: { task_text: userMessage },
-      reply: "Got it — I'll take a look. _(LLM routing unavailable, treating as a task)_",
-    };
+    log.error("LLM routing failed", { error: (err as Error).message });
+    throw new Error(`LLM routing unavailable: ${(err as Error).message}`);
   }
 }

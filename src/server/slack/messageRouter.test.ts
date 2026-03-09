@@ -104,16 +104,13 @@ describe("routeMessage", () => {
     expect(result.reply).toBe("On it.");
   });
 
-  it("falls back to create_job when LLM throws", async () => {
+  it("throws when LLM is unavailable", async () => {
     const provider: LLMProvider = {
       chat: vi.fn().mockRejectedValue(new Error("API rate limit")),
     };
     initMessageRouter(provider, "test-model");
 
-    const result = await routeMessage("fix the bug", "U123");
-    expect(result.command).toBe("create_job");
-    expect(result.args.task_text).toBe("fix the bug");
-    expect(result.reply).toContain("LLM routing unavailable");
+    await expect(routeMessage("fix the bug", "U123")).rejects.toThrow("LLM routing unavailable");
   });
 
   it("overrides chat → leave_channel when user message has leave intent", async () => {
