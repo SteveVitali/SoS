@@ -43,7 +43,7 @@
     "pdf-parse": "^2.4.5",
     "react-markdown": "^10.1.0",
     "react-router-dom": "^7.13.0",
-    "recharts": "^3.7.0",
+    "recharts": "^3.8.0",
     "uuid": "^13.0.0",
     "ws": "^8.19.0",
     "yaml": "^2.5.0",
