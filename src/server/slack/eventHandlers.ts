@@ -1,7 +1,6 @@
 import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
 import type { ServerConfig } from "../config.js";
-import { createJobFromSlack } from "../jobs/jobService.js";
 import { executeCommand } from "./commandExecutor.js";
 import type { ThreadMessage } from "./messageRouter.js";
 import { routeMessage } from "./messageRouter.js";
@@ -240,42 +239,15 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
 
       return { reply: result.reply, images: result.images };
     } catch (err: unknown) {
-      log.error("Message routing failed, falling back to direct job creation", {
+      log.error("Message routing failed", {
         error: (err as Error).message,
         event_id: eventId,
       });
 
-      // Fallback: parse modifiers and create job directly
-      const modifiers = parseModifiers(cleanText);
-      let taskText = cleanText
-        .replace(/\brepo=\S+/gi, "")
-        .replace(/\btests=(fast|full|none)\b/gi, "")
-        .replace(/\bci_fix=(on|off)\b/gi, "")
-        .replace(/\breview=\S+/gi, "")
-        .replace(/\s+/g, " ")
-        .trim();
-
-      if (!taskText) taskText = "(no task description provided)";
-
-      try {
-        const { job } = await createJobFromSlack({
-          event_id: eventId,
-          requested_by: event.user,
-          slack_requester: event.user,
-          task_text: taskText,
-          channel_id: event.channel,
-          thread_ts: threadTs,
-          message_ts: event.ts,
-          ...modifiers,
-        });
-        return {
-          reply: `Got it — queued as \`${job.task_id.slice(0, 8)}…\`. _(LLM routing was unavailable)_`,
-        };
-        // biome-ignore lint/suspicious/noExplicitAny: Slack API type
-      } catch (fallbackErr: any) {
-        log.error("Fallback job creation also failed", { error: fallbackErr.message });
-        return { reply: "Something went wrong — I couldn't process that. Try again?" };
-      }
+      return {
+        reply:
+          "Sorry, I can't process that right now — LLM routing is unavailable. Please try again later.",
+      };
     }
   };
 }
