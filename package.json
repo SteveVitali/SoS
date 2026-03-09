@@ -47,7 +47,7 @@
     "uuid": "^13.0.0",
     "ws": "^8.19.0",
     "yaml": "^2.5.0",
-    "zod": "^3.23.0"
+    "zod": "^4.3.6"
   },
   "devDependencies": {
     "@biomejs/biome": "^2.4.6",
