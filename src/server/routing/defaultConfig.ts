@@ -45,6 +45,7 @@ system_prompt: |
   - "Who has outstanding reviews?" / "team reviews" → team_review_requests
   - "What did I ship this week?" / "my recap" → my_recap (queues a summary job)
   - "What's the team been up to?" / "team recap" / "sprint summary" → team_recap (queues a summary job)
+  - "What did @username ship?" / "recap for seamusholland" / "what has alice been working on?" → user_recap (set github_username to the target user's GitHub handle, stripping any @ prefix or backticks)
 
   Time range inference: "this week" = 7d, "this sprint" / "last 2 weeks" = 14d, "this month" = 30d.
   If the user mentions a specific team, extract the team_slug. Otherwise, defaults are used.
@@ -269,11 +270,16 @@ actions:
           - team_review_requests
           - my_recap
           - team_recap
+          - user_recap
         description: >
           The type of GitHub query: my_review_requests (PRs awaiting my review),
           my_open_prs (my authored open PRs), my_merged_prs (my recently merged PRs),
           team_open_prs (team open PRs), team_review_requests (outstanding reviews by team member),
-          my_recap (LLM summary of my recent work), team_recap (LLM summary of team work)
+          my_recap (LLM summary of my recent work), team_recap (LLM summary of team work),
+          user_recap (LLM summary of a specific user's work — requires github_username)
+      github_username:
+        type: string
+        description: "Target GitHub username for user_recap queries. Strip any @ prefix or backticks from the user's message to extract the raw GitHub handle."
       time_range:
         type: string
         description: "Time range like '7d', '2w', '30d', or 'YYYY-MM-DD..YYYY-MM-DD'. Defaults to 7d for recaps and merged PR queries."
@@ -294,6 +300,7 @@ actions:
       summary_types:
         - my_recap
         - team_recap
+        - user_recap
       reply_error: "⚠️ GitHub query failed: {{error}}"
       reply_unknown_type: "⚠️ Unknown GitHub query type: {{query_type}}"
 
