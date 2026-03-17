@@ -2,26 +2,8 @@ import { useState } from "react";
 import type { MemoryNote, MemorySearchResult } from "../../api.js";
 import { editMemoryNote, invalidateMemoryNote } from "../../api.js";
 import { css } from "../../styles/theme.js";
+import { MEMORY_TYPE_COLORS, MEMORY_TYPE_LABELS, relTime, SOURCE_ICONS } from "./memoryShared.js";
 import { ScoreBreakdown } from "./ScoreBreakdown.js";
-
-const TYPE_COLORS: Record<string, string> = {
-  fact: "#3b82f6",
-  reflection: "#a855f7",
-  user_profile: "#22c55e",
-};
-
-const TYPE_LABELS: Record<string, string> = {
-  fact: "FACT",
-  reflection: "REFLECTION",
-  user_profile: "PROFILE",
-};
-
-const SOURCE_ICONS: Record<string, string> = {
-  slack: "💬",
-  discord: "🎮",
-  web_chat: "🌐",
-  system: "⚙️",
-};
 
 function ImportanceBar({ value }: { value: number }) {
   const pct = Math.max(0, Math.min(100, value * 100));
@@ -52,20 +34,6 @@ function ImportanceBar({ value }: { value: number }) {
   );
 }
 
-function relTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = Date.now();
-  const diffMs = now - d.getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
-
 interface MemoryCardProps {
   memory: MemoryNote;
   searchResult?: MemorySearchResult;
@@ -89,8 +57,8 @@ export function MemoryCard({
   const [saving, setSaving] = useState(false);
   const [confirmDelete, setConfirmDelete] = useState(false);
 
-  const typeColor = TYPE_COLORS[memory.memory_type] || "#6b7280";
-  const typeLabel = TYPE_LABELS[memory.memory_type] || memory.memory_type;
+  const typeColor = MEMORY_TYPE_COLORS[memory.memory_type] || "#6b7280";
+  const typeLabel = MEMORY_TYPE_LABELS[memory.memory_type] || memory.memory_type;
   const sourceIcon = SOURCE_ICONS[memory.source_type] || "❓";
   const isInvalidated = !!memory.invalidated_at;
 

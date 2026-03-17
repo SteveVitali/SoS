@@ -10,27 +10,7 @@ import {
 } from "../../api.js";
 import { css } from "../../styles/theme.js";
 import { Spinner } from "../shared/Spinner.js";
-import { SignalBadge } from "./SignalBadge.js";
-
-const TYPE_COLORS: Record<string, string> = {
-  fact: "#3b82f6",
-  reflection: "#a855f7",
-  user_profile: "#22c55e",
-};
-
-function relTime(dateStr: string): string {
-  const d = new Date(dateStr);
-  const now = Date.now();
-  const diffMs = now - d.getTime();
-  const mins = Math.floor(diffMs / 60000);
-  if (mins < 1) return "just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
-}
+import { MEMORY_TYPE_COLORS, relTime } from "./memoryShared.js";
 
 interface StatCardProps {
   label: string;
@@ -223,7 +203,7 @@ export function MemoryDashboard({ onNavigateTab }: MemoryDashboardProps) {
                       width: 8,
                       height: 8,
                       borderRadius: "50%",
-                      background: TYPE_COLORS[t],
+                      background: MEMORY_TYPE_COLORS[t],
                       display: "inline-block",
                     }}
                   />
