@@ -16,11 +16,20 @@ import {
 
 const log = createLogger("server:slack:router");
 
+export interface MemoryMeta {
+  memories_used: number;
+  facts_used: number;
+  reflections_used: number;
+  profile_loaded: boolean;
+  memory_context?: string;
+}
+
 export interface RoutedAction {
   command: string;
   // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   args: Record<string, any>;
   reply: string;
+  memoryMeta?: MemoryMeta;
 }
 
 /**
@@ -346,7 +355,23 @@ export async function routeMessage(
       reply: reply.slice(0, 100),
     });
 
-    return { command, reply, args };
+    // Build memory metadata for chat UI transparency
+    const memCtx = memoryResult.memoryContext;
+    const memLines = memCtx ? memCtx.split("\n").filter((l) => l.trim()) : [];
+    const factsUsed = memLines.filter((l) => l.includes("[fact")).length;
+    const reflectionsUsed = memLines.filter((l) => l.includes("[reflection")).length;
+    const memoryMeta: MemoryMeta | undefined =
+      memLines.length > 0 || memoryResult.userContext
+        ? {
+            memories_used: memLines.length,
+            facts_used: factsUsed,
+            reflections_used: reflectionsUsed,
+            profile_loaded: !!memoryResult.userContext,
+            memory_context: memCtx || undefined,
+          }
+        : undefined;
+
+    return { command, reply, args, memoryMeta };
   } catch (err: unknown) {
     log.error("LLM routing failed", { error: (err as Error).message });
     throw new Error(`LLM routing unavailable: ${(err as Error).message}`);

@@ -64,7 +64,14 @@ let imageGenProvider: LLMProvider | null = null;
 export function initExecutorLLM(provider: LLMProvider): void {
   recapLlmProvider = provider;
   imageGenProvider = provider;
-  log.info("Executor LLM provider initialized (inline recaps + image gen enabled)");
+  log.info("Executor LLM provider initialized (inline recaps enabled)");
+}
+
+export function initImageGenProvider(provider: LLMProvider): void {
+  imageGenProvider = provider;
+  log.info("Image generation provider initialized", {
+    supportsImageGen: typeof provider.generateImage === "function",
+  });
 }
 
 // --- Shared helpers ---

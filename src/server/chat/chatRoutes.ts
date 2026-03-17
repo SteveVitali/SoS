@@ -169,6 +169,7 @@ export function createChatRoutes(config: ServerConfig): Router {
         userMessage,
         assistantMessage,
         action: { command: action.command, taskId: result.taskId },
+        memoryMeta: action.memoryMeta || undefined,
       });
     } catch (err: unknown) {
       log.error("Send message error", {
