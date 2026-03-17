@@ -29,7 +29,7 @@ export const TestLevel = z.enum(["fast", "full", "none"]);
 export type TestLevel = z.infer<typeof TestLevel>;
 
 // --- Source ---
-export const JobSourceType = z.enum(["slack_app_mention", "web_create"]);
+export const JobSourceType = z.enum(["slack_app_mention", "discord_mention", "web_create"]);
 export type JobSourceType = z.infer<typeof JobSourceType>;
 
 export const JobSource = z.object({
@@ -46,6 +46,15 @@ export const SlackPointers = z.object({
   permalink: z.string().optional(),
 });
 export type SlackPointers = z.infer<typeof SlackPointers>;
+
+// --- Discord Pointers ---
+export const DiscordPointers = z.object({
+  channel_id: z.string().optional(),
+  thread_id: z.string().optional(),
+  message_id: z.string().optional(),
+  guild_id: z.string().optional(),
+});
+export type DiscordPointers = z.infer<typeof DiscordPointers>;
 
 // --- CI Run ---
 export const CIRun = z.object({
@@ -168,6 +177,8 @@ export interface JobDoc {
   created_at: Date;
   updated_at: Date;
   slack?: SlackPointers;
+  discord?: DiscordPointers;
+  discord_requester?: string;
   title?: string;
   task_text: string;
   repo_hint?: string;

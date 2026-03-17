@@ -10,7 +10,7 @@ import { execFile } from "node:child_process";
 import { createLogger } from "../../shared/logger.js";
 import { getModelForRole } from "../../shared/modelConfig.js";
 import type { ResearchConfig } from "../../shared/researchTypes.js";
-import type { GithubQueryType } from "../../shared/types.js";
+import type { GithubQueryType, JobDoc } from "../../shared/types.js";
 import { GITHUB_INSTANT_QUERIES, GITHUB_SUMMARY_QUERIES } from "../../shared/types.js";
 import { storeGeneratedImage } from "../chat/imageStore.js";
 import { formatInstantQueryFromMongo } from "../github/mongoFormatting.js";
@@ -19,6 +19,7 @@ import { executeRecapInline } from "../github/recapService.js";
 import {
   cancel,
   confirmJob,
+  createJobFromDiscord,
   createJobFromSlack,
   createJobFromWeb,
   createRespondToCommentsJob,
@@ -126,38 +127,59 @@ async function executeCreateJob(
 ): Promise<CommandResult> {
   try {
     const args = action.args;
-    const job =
-      ctx.source === "slack" && ctx.slack
-        ? (
-            await createJobFromSlack({
-              event_id: ctx.eventId,
-              requested_by: ctx.userId,
-              slack_requester: ctx.userId,
-              task_text: args.task_text || "(no task description)",
-              channel_id: ctx.slack.channelId,
-              thread_ts: ctx.slack.threadTs,
-              message_ts: ctx.slack.messageTs,
-              repo_hint: args.repo_hint,
-              test_level: args.test_level,
-              reviewers: args.reviewers,
-              attachments: ctx.attachments,
-              needs_plan: execDef.needs_plan,
-              custom_instructions: execDef.custom_instructions
-                ? renderTemplate(execDef.custom_instructions, tplCtx(action, ctx))
-                : undefined,
-            })
-          ).job
-        : await createJobFromWeb({
-            requested_by: ctx.ownerId,
-            task_text: args.task_text || "(no task description)",
-            repo_hint: args.repo_hint,
-            test_level: args.test_level,
-            reviewers: args.reviewers,
-            needs_plan: execDef.needs_plan,
-            custom_instructions: execDef.custom_instructions
-              ? renderTemplate(execDef.custom_instructions, tplCtx(action, ctx))
-              : undefined,
-          });
+    const customInstr = execDef.custom_instructions
+      ? renderTemplate(execDef.custom_instructions, tplCtx(action, ctx))
+      : undefined;
+
+    let job: JobDoc;
+    if (ctx.source === "slack" && ctx.slack) {
+      job = (
+        await createJobFromSlack({
+          event_id: ctx.eventId,
+          requested_by: ctx.userId,
+          slack_requester: ctx.userId,
+          task_text: args.task_text || "(no task description)",
+          channel_id: ctx.slack.channelId,
+          thread_ts: ctx.slack.threadTs,
+          message_ts: ctx.slack.messageTs,
+          repo_hint: args.repo_hint,
+          test_level: args.test_level,
+          reviewers: args.reviewers,
+          attachments: ctx.attachments,
+          needs_plan: execDef.needs_plan,
+          custom_instructions: customInstr,
+        })
+      ).job;
+    } else if (ctx.source === "discord" && ctx.discord) {
+      job = (
+        await createJobFromDiscord({
+          event_id: ctx.eventId,
+          requested_by: ctx.userId,
+          discord_requester: ctx.userId,
+          task_text: args.task_text || "(no task description)",
+          channel_id: ctx.discord.channelId,
+          thread_id: ctx.discord.threadId,
+          message_id: ctx.discord.messageId,
+          guild_id: ctx.discord.guildId,
+          repo_hint: args.repo_hint,
+          test_level: args.test_level,
+          reviewers: args.reviewers,
+          attachments: ctx.attachments,
+          needs_plan: execDef.needs_plan,
+          custom_instructions: customInstr,
+        })
+      ).job;
+    } else {
+      job = await createJobFromWeb({
+        requested_by: ctx.ownerId,
+        task_text: args.task_text || "(no task description)",
+        repo_hint: args.repo_hint,
+        test_level: args.test_level,
+        reviewers: args.reviewers,
+        needs_plan: execDef.needs_plan,
+        custom_instructions: customInstr,
+      });
+    }
 
     const reply = renderTemplate(
       execDef.reply_success || "📋 Task queued: `{{task_id:0:8}}…`",
@@ -441,10 +463,19 @@ async function executeCreateRespondJob(
       ctx.source === "slack" && ctx.slack
         ? { channel_id: ctx.slack.channelId, thread_ts: ctx.slack.threadTs }
         : undefined;
+    const discordThread =
+      ctx.source === "discord" && ctx.discord
+        ? {
+            channel_id: ctx.discord.channelId,
+            thread_id: ctx.discord.threadId,
+            guild_id: ctx.discord.guildId,
+          }
+        : undefined;
     const job = await createRespondToCommentsJob(
       { requested_by: ctx.ownerId, pr_url: prUrl, parent_task_id: parentTaskId },
       ctx.source,
       slackThread,
+      discordThread,
     );
 
     const reply = renderTemplate(
@@ -673,34 +704,55 @@ async function executeAgentTask(
       ? renderTemplate(execDef.repo_hint, tc)
       : action.args.repo_hint;
 
-    const job =
-      ctx.source === "slack" && ctx.slack
-        ? (
-            await createJobFromSlack({
-              event_id: ctx.eventId,
-              requested_by: ctx.userId,
-              slack_requester: ctx.userId,
-              task_text: taskText,
-              channel_id: ctx.slack.channelId,
-              thread_ts: ctx.slack.threadTs,
-              message_ts: ctx.slack.messageTs,
-              repo_hint: repoHint,
-              // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
-              test_level: (execDef.test_level || action.args.test_level) as any,
-              reviewers: execDef.reviewers || action.args.reviewers,
-              attachments: ctx.attachments,
-              custom_instructions: instructions,
-            })
-          ).job
-        : await createJobFromWeb({
-            requested_by: ctx.ownerId,
-            task_text: taskText,
-            repo_hint: repoHint,
-            // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
-            test_level: (execDef.test_level || action.args.test_level) as any,
-            reviewers: execDef.reviewers || action.args.reviewers,
-            custom_instructions: instructions,
-          });
+    let job: JobDoc;
+    if (ctx.source === "slack" && ctx.slack) {
+      job = (
+        await createJobFromSlack({
+          event_id: ctx.eventId,
+          requested_by: ctx.userId,
+          slack_requester: ctx.userId,
+          task_text: taskText,
+          channel_id: ctx.slack.channelId,
+          thread_ts: ctx.slack.threadTs,
+          message_ts: ctx.slack.messageTs,
+          repo_hint: repoHint,
+          // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
+          test_level: (execDef.test_level || action.args.test_level) as any,
+          reviewers: execDef.reviewers || action.args.reviewers,
+          attachments: ctx.attachments,
+          custom_instructions: instructions,
+        })
+      ).job;
+    } else if (ctx.source === "discord" && ctx.discord) {
+      job = (
+        await createJobFromDiscord({
+          event_id: ctx.eventId,
+          requested_by: ctx.userId,
+          discord_requester: ctx.userId,
+          task_text: taskText,
+          channel_id: ctx.discord.channelId,
+          thread_id: ctx.discord.threadId,
+          message_id: ctx.discord.messageId,
+          guild_id: ctx.discord.guildId,
+          repo_hint: repoHint,
+          // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
+          test_level: (execDef.test_level || action.args.test_level) as any,
+          reviewers: execDef.reviewers || action.args.reviewers,
+          attachments: ctx.attachments,
+          custom_instructions: instructions,
+        })
+      ).job;
+    } else {
+      job = await createJobFromWeb({
+        requested_by: ctx.ownerId,
+        task_text: taskText,
+        repo_hint: repoHint,
+        // biome-ignore lint/suspicious/noExplicitAny: dynamic config type
+        test_level: (execDef.test_level || action.args.test_level) as any,
+        reviewers: execDef.reviewers || action.args.reviewers,
+        custom_instructions: instructions,
+      });
+    }
 
     const reply = renderTemplate(
       execDef.reply_queued || "📋 Task queued: `{{task_id:0:8}}…`",

@@ -1,5 +1,6 @@
 import { type Request, type Response, Router } from "express";
 import { createLogger } from "../../shared/logger.js";
+import type { DiscordPoster } from "../discord/discordClient.js";
 import {
   ClaimJobSchema,
   CompleteJobSchema,
@@ -21,7 +22,10 @@ function pstr(v: unknown): string {
   return typeof v === "string" ? v : String(v ?? "");
 }
 
-export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
+export function createWorkerRoutes(
+  slackPoster?: SlackPoster,
+  discordPoster?: DiscordPoster,
+): Router {
   const router = Router();
 
   // POST /api/worker/register
@@ -346,6 +350,25 @@ export function createWorkerRoutes(slackPoster?: SlackPoster): Router {
         res.json({ messages });
       } catch (err: unknown) {
         log.error("Thread fetch error", { error: (err as Error).message });
+        res.status(500).json({ error: "Internal error" });
+      }
+    });
+  }
+
+  // GET /api/worker/discord/thread?channel_id=...&thread_id=...
+  if (discordPoster) {
+    router.get("/discord/thread", async (req: Request, res: Response) => {
+      try {
+        const channelId = qstr(req.query.channel_id);
+        const threadId = qstr(req.query.thread_id);
+        if (!channelId || !threadId) {
+          res.status(400).json({ error: "channel_id and thread_id required" });
+          return;
+        }
+        const messages = await discordPoster.fetchThread(channelId, threadId);
+        res.json({ messages });
+      } catch (err: unknown) {
+        log.error("Discord thread fetch error", { error: (err as Error).message });
         res.status(500).json({ error: "Internal error" });
       }
     });
