@@ -178,13 +178,16 @@ export function createMemoryRoutes(config: ServerConfig): Router {
       const effectiveConfig = await getEffectiveConfig();
       const requestedOwner = req.body.owner as string | undefined;
 
-      // Manual trigger always uses force: true to process ALL episodes,
-      // not just those since the last reflection timestamp
-      const force = req.body.force !== false;
+      // Manual trigger skips the last-reflection timestamp filter so it sees
+      // recent episodes even if a prior reflection already consumed them.
+      // Still capped at 200 episodes per owner for performance.
+      const skipTimestampFilter = true;
 
       if (requestedOwner) {
         // Run for a specific owner
-        const result = await runReflection(requestedOwner, effectiveConfig, { force });
+        const result = await runReflection(requestedOwner, effectiveConfig, {
+          skipTimestampFilter,
+        });
         res.json({ result });
         return;
       }
@@ -213,7 +216,7 @@ export function createMemoryRoutes(config: ServerConfig): Router {
         profile_updated: false,
       };
       for (const owner of owners) {
-        const r = await runReflection(owner, effectiveConfig, { force });
+        const r = await runReflection(owner, effectiveConfig, { skipTimestampFilter });
         combined.episodes_reviewed += r.episodes_reviewed;
         combined.clusters_found += r.clusters_found;
         combined.reflections_created += r.reflections_created;
