@@ -107,6 +107,43 @@ embedding: text-embedding-3-small
 
 The active model registry is exposed via `GET /api/web/models` and logged at server startup.
 
+## Memory System
+
+The persistent memory system learns from every interaction (chat, research, jobs, GitHub queries) and injects relevant context into future conversations. Configuration uses environment variables with sensible defaults.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SOS_MEMORY_ENABLED` | `true` | Enable/disable the entire memory system |
+| `SOS_MEMORY_MODEL` | `gpt-4.1-mini` | LLM model for fact extraction, curation, reflection, and evolution |
+| `SOS_MEMORY_RETRIEVAL_MAX_MEMORIES` | `8` | Max memories injected into `{MEMORY_CONTEXT}` |
+| `SOS_MEMORY_RETRIEVAL_MAX_TOKENS` | `1500` | Token budget for `{MEMORY_CONTEXT}` |
+| `SOS_MEMORY_RETRIEVAL_MIN_SCORE` | `0.3` | Minimum composite score for a memory to be included in context |
+| `SOS_MEMORY_RECENCY_HALFLIFE_DAYS` | `30` | Half-life (in days) for the recency decay function in composite scoring |
+| `SOS_MEMORY_EXTRACTION_MIN_TURNS` | `1` | Minimum conversation turns before extraction triggers |
+| `SOS_MEMORY_EXTRACTION_SKIP_ACTIONS` | `no_op` | Comma-separated routed actions to skip extraction for |
+| `SOS_MEMORY_EXTRACTION_MAX_FACTS` | `5` | Max facts extracted per LLM call |
+| `SOS_MEMORY_WEIGHT_SIMILARITY` | `0.45` | Weight for vector similarity in composite scoring (sum of all weights should be 1.0) |
+| `SOS_MEMORY_WEIGHT_RECENCY` | `0.20` | Weight for recency in composite scoring |
+| `SOS_MEMORY_WEIGHT_IMPORTANCE` | `0.20` | Weight for importance in composite scoring |
+| `SOS_MEMORY_WEIGHT_ACCESS` | `0.15` | Weight for access frequency in composite scoring |
+| `SOS_MEMORY_EVOLUTION_ENABLED` | `true` | Enable A-MEM-style memory linking and evolution |
+| `SOS_MEMORY_EVOLUTION_MAX_NEIGHBORS` | `5` | Max neighbors to consider for linking when a memory is created/updated |
+| `SOS_MEMORY_EVOLUTION_LINK_THRESHOLD` | `0.6` | Minimum similarity for creating a memory link |
+| `SOS_MEMORY_REFLECTION_ENABLED` | `true` | Enable periodic reflection and user profile synthesis |
+| `SOS_MEMORY_REFLECTION_INTERVAL_HOURS` | `24` | Minimum hours between reflection runs per owner |
+| `SOS_MEMORY_REFLECTION_MIN_EPISODES` | `10` | Minimum new episodes required to trigger reflection |
+| `SOS_MEMORY_SIGNAL_DELAY_MS` | `300000` | Delay (ms) before collecting feedback signals (default: 5 min) |
+| `SOS_MEMORY_SIGNAL_NO_RESPONSE_TIMEOUT_MS` | `1800000` | Timeout (ms) for detecting "no response" signal (default: 30 min) |
+| `SOS_MEMORY_STORAGE_DIR` | `$SOS_WORKSPACE_ROOT/memory` | Directory for memory LanceDB vector data and SQLite FTS5 keyword indexes |
+
+The memory model can also be overridden via `model-config.yaml`:
+
+```yaml
+memory: gpt-4.1-mini
+```
+
+Memory configuration can also be edited at runtime via `PUT /api/web/memory/config`, which persists overrides to MongoDB (merged with env var defaults).
+
 ## Routing Config: Research Strategy
 
 The `routing-config.yaml` supports an optional `kb_research_strategy` field at the top level to enable the research pipeline for chat/Slack KB context injection:

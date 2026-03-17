@@ -1515,6 +1515,263 @@ Saves GitHub Hub settings to MongoDB. Invalidates the config cache so changes ta
 
 ---
 
+## Memory System Endpoints (`/api/web/memory`)
+
+### Get Memory Stats
+
+```
+GET /api/web/memory/stats
+```
+
+Returns aggregate statistics about the memory system.
+
+**Response:**
+```json
+{
+  "total_memories": 42,
+  "active_memories": 38,
+  "invalidated_memories": 4,
+  "total_episodes": 156,
+  "memories_by_type": { "fact": 30, "reflection": 7, "user_profile": 1 },
+  "last_extraction_at": "2026-03-17T...",
+  "last_reflection_at": "2026-03-16T..."
+}
+```
+
+### List Memories
+
+```
+GET /api/web/memory/memories?type=fact&limit=50&offset=0&tag=code_style
+```
+
+All query params are optional. Only active (non-invalidated) memories are returned by default.
+
+**Query params:**
+- `type` — filter by memory type: `fact`, `reflection`, or `user_profile`
+- `limit` (default: 50, max: 100)
+- `offset` (default: 0)
+- `tag` — filter to memories containing this tag
+
+**Response:**
+```json
+{
+  "memories": [{ "memory_id": "...", "memory_type": "fact", "content": "...", "importance": 0.7, ... }],
+  "total": 30
+}
+```
+
+### Get Memory
+
+```
+GET /api/web/memory/memories/:memory_id
+```
+
+Returns a single memory note and its linked memories.
+
+**Response:**
+```json
+{
+  "memory": { "memory_id": "...", "content": "...", "linked_memory_ids": ["..."], ... },
+  "linked": [{ "memory_id": "...", "content": "...", ... }]
+}
+```
+
+**Response (404):** `{ "error": "Memory not found" }`
+
+### Search Memories
+
+```
+POST /api/web/memory/search
+```
+
+Hybrid search combining vector similarity, keyword matching, recency, importance, and access frequency via Reciprocal Rank Fusion.
+
+**Body:**
+```json
+{
+  "query": "TypeScript configuration preferences",
+  "owner": "global",
+  "memory_types": ["fact", "reflection"],
+  "tags": ["code_style"],
+  "limit": 10,
+  "min_score": 0.3,
+  "include_invalidated": false
+}
+```
+
+Only `query` is required. All other fields are optional.
+
+**Response:**
+```json
+{
+  "results": [{
+    "memory": { "memory_id": "...", "content": "...", ... },
+    "score": 0.82,
+    "similarity_score": 0.75,
+    "keyword_score": 0.6,
+    "recency_score": 0.95,
+    "importance_score": 0.7,
+    "access_score": 0.3
+  }]
+}
+```
+
+### Trigger Reflection
+
+```
+POST /api/web/memory/reflect
+```
+
+Manually triggers the reflection pipeline (Pipeline D) for an owner. Clusters recent episodes, generates higher-level insights, and updates the user profile.
+
+**Body (optional):** `{ "owner": "global" }`
+
+**Response:**
+```json
+{
+  "result": {
+    "episodes_reviewed": 25,
+    "clusters_found": 4,
+    "reflections_created": 3,
+    "profile_updated": true
+  }
+}
+```
+
+### Invalidate Memory
+
+```
+DELETE /api/web/memory/memories/:memory_id
+```
+
+Soft-deletes a memory by setting `invalidated_at`. The memory is **not** physically deleted — it remains in the database but is excluded from search results and context injection.
+
+**Response (200):** `{ "ok": true }`
+**Response (404):** `{ "error": "Memory not found" }`
+
+### Edit Memory
+
+```
+PUT /api/web/memory/memories/:memory_id
+```
+
+Manually edit a memory's content, importance, or tags. If content or tags change, the memory is re-embedded in both the vector store and FTS index.
+
+**Body:** Partial update — any of: `content`, `importance`, `tags`.
+
+```json
+{
+  "content": "The user prefers TypeScript strict mode with noImplicitAny",
+  "importance": 0.8,
+  "tags": ["code_style", "typescript"]
+}
+```
+
+**Response:** `{ "memory": { ... } }` (the updated memory)
+**Response (404):** `{ "error": "Memory not found" }`
+
+### Get User Profile
+
+```
+GET /api/web/memory/profile?owner=global
+```
+
+Returns the synthesized user profile memory note, or `null` if no profile exists yet.
+
+**Query params:**
+- `owner` (optional) — filter to a specific owner
+
+**Response:** `{ "profile": { "memory_id": "...", "memory_type": "user_profile", "content": "...", ... } }`
+**Response (no profile):** `{ "profile": null }`
+
+### List Episodes
+
+```
+GET /api/web/memory/episodes?limit=50&offset=0&action=chat
+```
+
+Lists interaction episodes (records of user interactions across all platforms).
+
+**Query params:**
+- `limit` (default: 50, max: 100)
+- `offset` (default: 0)
+- `action` — filter by routed action (e.g., `chat`, `create_job`, `kb_search`)
+
+**Response:**
+```json
+{
+  "episodes": [{ "episode_id": "...", "user_message": "...", "routed_action": "chat", "signals": [...], ... }],
+  "total": 156
+}
+```
+
+### Get Episode
+
+```
+GET /api/web/memory/episodes/:episode_id
+```
+
+Returns a single episode and the memory notes extracted from it.
+
+**Response:**
+```json
+{
+  "episode": { "episode_id": "...", "user_message": "...", "extraction_status": "extracted", ... },
+  "memories": [{ "memory_id": "...", "content": "...", ... }]
+}
+```
+
+**Response (404):** `{ "error": "Episode not found" }`
+
+### Get Memory Config
+
+```
+GET /api/web/memory/config
+```
+
+Returns the current effective memory configuration (env var defaults merged with any persisted MongoDB overrides).
+
+**Response:**
+```json
+{
+  "config": {
+    "enabled": true,
+    "extraction_model": "gpt-4.1-mini",
+    "retrieval_max_memories": 8,
+    "retrieval_max_tokens": 1500,
+    "weight_similarity": 0.45,
+    "weight_recency": 0.20,
+    "weight_importance": 0.20,
+    "weight_access": 0.15,
+    "reflection_enabled": true,
+    "reflection_interval_hours": 24,
+    ...
+  }
+}
+```
+
+### Update Memory Config
+
+```
+PUT /api/web/memory/config
+```
+
+Persists partial config overrides to MongoDB. Merged with env var defaults at read time.
+
+**Body:** Partial `MemoryConfig` — any subset of fields.
+
+```json
+{
+  "retrieval_max_memories": 12,
+  "reflection_enabled": false,
+  "weight_similarity": 0.5
+}
+```
+
+**Response:** `{ "config": { ... } }` (the full effective config after merge)
+
+---
+
 ## Job Document Schema
 
 ```typescript

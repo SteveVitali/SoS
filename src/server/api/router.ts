@@ -5,6 +5,7 @@ import { createImageRoutes } from "../chat/imageStore.js";
 import type { ServerConfig } from "../config.js";
 import type { DiscordPoster } from "../discord/discordClient.js";
 import { createKBWebRoutes, createKBWorkerRoutes } from "../kb/index.js";
+import { createMemoryRoutes } from "../memory/memoryRoutes.js";
 import type { SlackPoster } from "../slack/slackClient.js";
 import { createGitHubRoutes } from "./githubRoutes.js";
 import { createWebRoutes } from "./webRoutes.js";
@@ -36,6 +37,7 @@ export function createRouter(
   router.use("/api/web", webAuth, createWebRoutes(config));
   router.use("/api/web/chats", webAuth, createChatRoutes(config));
   router.use("/api/web/kb", webAuth, createKBWebRoutes());
+  router.use("/api/web/memory", webAuth, createMemoryRoutes(config));
   router.use("/api/web/github", webAuth, createGitHubRoutes(config));
 
   return router;
