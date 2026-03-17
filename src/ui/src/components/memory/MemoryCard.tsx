@@ -189,9 +189,6 @@ export function MemoryCard({
             {memory.linked_memory_ids.length} link{memory.linked_memory_ids.length !== 1 ? "s" : ""}
           </span>
         )}
-        {memory.memory_type === "reflection" && (
-          <span>from {memory.source_episodes.length} interactions</span>
-        )}
       </div>
 
       {/* Search score breakdown */}

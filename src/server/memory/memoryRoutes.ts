@@ -51,9 +51,10 @@ async function getPersistedConfigOverrides(): Promise<Partial<MemoryConfig>> {
  * Persist config overrides to MongoDB.
  */
 async function persistConfigOverrides(overrides: Partial<MemoryConfig>): Promise<void> {
+  // Use replaceOne so empty overrides clear all previously persisted fields
   await mongoGetDb()
     .collection(MEMORY_CONFIG_COLLECTION)
-    .updateOne({ _id: "config" as any }, { $set: overrides }, { upsert: true });
+    .replaceOne({ _id: "config" as any }, { _id: "config", ...overrides }, { upsert: true });
 }
 
 /**

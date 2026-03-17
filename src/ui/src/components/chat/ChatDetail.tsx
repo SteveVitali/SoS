@@ -355,7 +355,8 @@ export function ChatDetail() {
       });
       // Store memory metadata for this assistant message
       if (res.memoryMeta) {
-        setMemoryMetaMap((prev) => ({ ...prev, [res.assistantMessage.id]: res.memoryMeta! }));
+        const meta = res.memoryMeta;
+        setMemoryMetaMap((prev) => ({ ...prev, [res.assistantMessage.id]: meta }));
       }
       // Refresh to get title
       if (!conversation?.title) {
