@@ -239,9 +239,26 @@ async function main() {
   // Start Discord bot gateway (only if client is initialized)
   if (discordEnabled && discordPoster && discordClient) {
     try {
+      // Validate bot user ID — must be a 15+ digit Discord snowflake.
+      // Fall back to auto-detection from the client if misconfigured.
+      const configuredId = config.discordBotUserId;
+      const autoDetectedId = discordClient.user?.id || "";
+      const isValidSnowflake = /^\d{15,}$/.test(configuredId);
+      const discordBotUserId = isValidSnowflake ? configuredId : autoDetectedId;
+      if (!isValidSnowflake && configuredId) {
+        log.warn(
+          "DISCORD_BOT_USER_ID does not look like a valid snowflake, using auto-detected ID",
+          {
+            configured: configuredId,
+            autoDetected: autoDetectedId,
+          },
+        );
+      }
+      log.info("Discord bot user ID resolved", { discordBotUserId });
+
       await startDiscordBot(
         {
-          discordBotUserId: config.discordBotUserId || discordClient.user?.id || "",
+          discordBotUserId,
           discordJobOwner: config.discordJobOwner,
           maxThreadMessages: config.maxThreadMessages,
           maxAttachmentSizeMb: config.maxAttachmentSizeMb,
