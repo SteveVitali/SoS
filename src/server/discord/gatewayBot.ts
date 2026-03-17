@@ -37,12 +37,13 @@ export async function startDiscordBot(
 
     const eventId = `${message.channelId}-${message.id}`;
 
+    const isThread = message.channel.isThread();
     const event = {
       userId: message.author.id,
       text: message.content,
-      channelId: message.channelId,
+      channelId: isThread ? (message.channel.parentId ?? message.channelId) : message.channelId,
       messageId: message.id,
-      threadId: message.channel.isThread() ? message.channelId : undefined,
+      threadId: isThread ? message.channelId : undefined,
       guildId: message.guildId ?? undefined,
       files: [...message.attachments.values()].map((a) => ({
         id: a.id,
