@@ -25,6 +25,10 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `JOB_MAX_RUNTIME_MINUTES` | No (60) | Max job runtime |
 | `JOB_MAX_CI_FIX_ATTEMPTS` | No (2) | Max CI fix iterations |
 | `SOS_SLACK_NOTIFY_USER` | No | Always @-mention this Slack user ID in bot messages (for personal notifications) |
+| `DISCORD_BOT_TOKEN` | No | Discord bot token. Discord is optional — leave blank to disable. See [DISCORD_SETUP.md](DISCORD_SETUP.md). |
+| `DISCORD_BOT_USER_ID` | No | Bot's Discord user ID (same as Application ID). Required if Discord is enabled. |
+| `SOS_DISCORD_JOB_OWNER` | No | The `requested_by` value to assign to Discord-created jobs. Must match a worker's `SOS_REQUESTED_BY_SLACK_USER` so workers claim Discord jobs. |
+| `SOS_DISCORD_NOTIFY_USER` | No | Always @-mention this Discord user ID in bot messages (for personal notifications) |
 | `SOS_GH_BOT_LOGINS` | No (default: `son-of-steve,son-of-steve[bot]`) | Comma-separated GitHub logins to treat as "bot" when computing PR comment stats |
 | `SOS_GITHUB_ORG` | No | Default GitHub organization slug for team queries (e.g., `my-company`) |
 | `SOS_GITHUB_TEAM_SLUG` | No | Default GitHub team slug for team queries (e.g., `platform-eng`) |

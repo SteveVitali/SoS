@@ -70,7 +70,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 - **Files**: `camelCase.ts` (e.g., `jobRepo.ts`, `slackClient.ts`)
 - **Types/Interfaces**: `PascalCase` (e.g., `JobDoc`, `WorkerConfig`)
 - **Constants**: `UPPER_SNAKE_CASE` (e.g., `TERMINAL_STATUSES`, `SLACK_NOTIFY_EVENTS`)
-- **Functions**: `camelCase` (e.g., `createJobFromSlack`, `atomicClaim`)
+- **Functions**: `camelCase` (e.g., `createJobFromSlack`, `createJobFromDiscord`, `atomicClaim`)
 - **Env vars**: `UPPER_SNAKE_CASE` with `SOS_` prefix for app-specific vars
 
 ## Adding a New Feature
@@ -79,7 +79,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 1. Add to `JobDoc` interface in `src/shared/types.ts`
 2. Add Zod validation if it's an API input (`src/server/jobs/jobModel.ts`)
-3. Set it during creation in `jobService.ts` (`createJobFromSlack` / `createJobFromWeb`)
+3. Set it during creation in `jobService.ts` (`createJobFromSlack` / `createJobFromDiscord` / `createJobFromWeb`)
 4. Display it in the web UI (`src/ui/src/components/jobs/JobDetail.tsx`)
 5. If it comes from Slack, parse it in `eventHandlers.ts` (`parseModifiers`)
 
@@ -87,7 +87,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 1. Add to `WorkerEventType` union in `src/shared/types.ts`
 2. If it should update job fields, add handling in `jobService.ts` → `handleWorkerEvent`
-3. If it should trigger a Slack message, add to `SLACK_NOTIFY_EVENTS` and handle in `formatting.ts`
+3. If it should trigger a Slack/Discord notification, add to `SLACK_NOTIFY_EVENTS` and handle in `formatting.ts` (formatting is shared by both platforms via `NotificationPoster`)
 4. Emit from the appropriate place in `src/worker/executor/runJob.ts`
 
 ### Adding a new CI provider

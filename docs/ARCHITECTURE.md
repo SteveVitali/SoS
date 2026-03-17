@@ -4,7 +4,7 @@
 
 ## System Overview
 
-Son of Steve is a **local-first coding agent orchestrator**. It receives coding tasks via Slack mentions or a web UI, queues them in MongoDB, and dispatches them to local worker processes that use Claude Code CLI to implement changes end-to-end: resolve repo → create worktree → generate code → lint/test → commit → push → open PR → monitor CI → fix CI failures.
+Son of Steve is a **local-first coding agent orchestrator**. It receives coding tasks via Slack mentions, Discord mentions, or a web UI, queues them in MongoDB, and dispatches them to local worker processes that use Claude Code CLI to implement changes end-to-end: resolve repo → create worktree → generate code → lint/test → commit → push → open PR → monitor CI → fix CI failures.
 
 ```
 ┌─────────────────────────────────────────────────────────────────┐
@@ -40,6 +40,10 @@ Son of Steve is a **local-first coding agent orchestrator**. It receives coding 
 │  ┌──────────────┐                                               │
 │  │  Slack (WS)   │ Socket Mode — no public URL needed           │
 │  └──────────────┘                                               │
+│                                                                 │
+│  ┌──────────────┐                                               │
+│  │ Discord (WS) │ Gateway — no public URL needed               │
+│  └──────────────┘                                               │
 └─────────────────────────────────────────────────────────────────┘
 ```
 
@@ -49,11 +53,11 @@ Son of Steve is a **local-first coding agent orchestrator**. It receives coding 
 
 The server is the **single source of truth** for job state. It:
 
-1. **Receives Slack `app_mention` events** via Socket Mode (no public endpoint needed)
-2. **Creates jobs idempotently** in MongoDB (deduplicated by Slack `event_id`)
+1. **Receives Slack `app_mention` events** via Socket Mode and **Discord `messageCreate` events** via Gateway (no public endpoint needed for either)
+2. **Creates jobs idempotently** in MongoDB (deduplicated by Slack/Discord event IDs)
 3. **Exposes an HTTP API** for workers to poll/claim/heartbeat/update/complete/fail jobs
 4. **Exposes an HTTP API** for the web UI to list/view/create/cancel/retry/delete jobs
-5. **Posts Slack thread updates** for key lifecycle events (queued, claimed, PR, CI, done/failed)
+5. **Posts Slack/Discord thread updates** for key lifecycle events (queued, claimed, PR, CI, done/failed) via a `CompositePoster` that fans out to all enabled platforms
 6. **Manages an in-memory worker registry** (register, deregister, status, stale detection)
 7. **Runs a WebSocket server** for real-time worker log streaming and command dispatch
 8. **Provides a chat/conversation API** backed by the same LLM routing as Slack
@@ -63,7 +67,7 @@ The server is the **single source of truth** for job state. It:
 12. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
 13. **Serves the React SPA** as static files (production build)
 
-The server **holds all Slack credentials**. Workers never touch Slack directly.
+The server **holds all Slack and Discord credentials**. Workers never touch Slack or Discord directly.
 
 ### sos-worker (`src/worker/`)
 
@@ -105,7 +109,7 @@ Thirteen collections:
 - **`generated_images`** — Stored generated images (base64 data, metadata, 90-day TTL index).
 
 **Key indexes:**
-- `source.event_id` — unique partial (idempotency for Slack events)
+- `source.event_id` — unique partial (idempotency for Slack/Discord events)
 - `task_id` — unique (primary lookup key)
 - `{ requested_by, status, created_at }` — compound (poll queries)
 - `{ status, lease_expires_at }` — compound (reclaim expired leases)
@@ -136,6 +140,7 @@ The UI uses a component-based architecture under `src/ui/src/components/` with s
                     ┌──────────────────────────────────────────────┐
                     │                                              │
   Slack mention ──► QUEUED ──► RUNNING ──► DONE                   │
+  Discord mention ►      │          │  ▲                             │
   Web create ──►      │          │  ▲                             │
                       │          │  │                              │
                       ▼          ▼  │                              │
@@ -225,10 +230,11 @@ This means there is **no single point of failure** for job execution — as long
 - **Worker ↔ Server (WebSocket)**: Same token, passed as `?token=` query param on `ws://host/api/worker/ws`
 - **Web UI ↔ Server**: Same Bearer token (stored in browser localStorage) OR optional HTTP Basic Auth
 - **Server → Slack**: Bot token (`SLACK_BOT_TOKEN`) and App token (`SLACK_APP_TOKEN`)
+- **Server → Discord**: Bot token (`DISCORD_BOT_TOKEN`) via `discord.js` Gateway
 - **Worker → GitHub**: Relies on local `gh` CLI auth (user must run `gh auth login`)
 - **Worker → Claude**: Relies on local `claude` CLI auth
 
-Workers **never** hold Slack tokens. All Slack communication goes through the server.
+Workers **never** hold Slack or Discord tokens. All platform communication goes through the server.
 
 ## Repo Registry
 
@@ -389,6 +395,7 @@ son-of-steve/
 │   │   ├── time.ts            # Date helpers (nowDate, addSeconds, isExpired)
 │   │   ├── slug.ts            # Text slugification for branch names
 │   │   ├── slackMarkdown.ts   # Slack mrkdwn → plain text conversion
+│   │   ├── discordMarkdown.ts # Discord mention normalization + Slack link cleanup
 │   │   └── logger.ts          # Structured JSON logger with secret redaction
 │   │
 │   ├── server/                # sos-server process
@@ -445,14 +452,21 @@ son-of-steve/
 │   │   │   ├── githubRepo.ts      # MongoDB CRUD for all GitHub Hub collections
 │   │   │   ├── syncEventLog.ts    # Sync activity log + SSE subscriber fan-out
 │   │   │   └── index.ts           # Barrel export
+│   │   ├── notifications/
+│   │   │   └── poster.ts          # NotificationPoster interface + CompositePoster (multi-platform fan-out)
 │   │   ├── slack/
 │   │   │   ├── socketMode.ts      # Slack Bolt app with Socket Mode
 │   │   │   ├── eventHandlers.ts   # app_mention → job creation logic
-│   │   │   ├── messageRouter.ts   # LLM-powered intent classification
-│   │   │   ├── commandExecutor.ts # Execute routed actions (create, status, cancel, etc.)
-│   │   │   ├── slackClient.ts     # Slack Web API posting + thread fetching
+│   │   │   ├── messageRouter.ts   # LLM-powered intent classification (shared by Slack + Discord)
+│   │   │   ├── commandExecutor.ts # Execute routed actions (shared by Slack + Discord)
+│   │   │   ├── slackClient.ts     # SlackPoster: Slack Web API posting + thread fetching
 │   │   │   ├── userResolver.ts    # Resolve Slack user IDs to display names
-│   │   │   └── formatting.ts      # Slack message templates
+│   │   │   └── formatting.ts      # Status message templates (shared by Slack + Discord)
+│   │   ├── discord/
+│   │   │   ├── gatewayBot.ts      # Discord.js gateway bot (messageCreate listener)
+│   │   │   ├── eventHandlers.ts   # Discord mention → job creation logic
+│   │   │   ├── discordClient.ts   # DiscordPoster: Discord API posting + thread fetching
+│   │   │   └── userResolver.ts    # Resolve Discord user IDs to display names
 │   │   ├── kb/
 │   │   │   ├── vectorStore.ts     # LanceDB wrapper (init, create/add/search/delete tables, RAPTOR node listing)
 │   │   │   ├── ftsStore.ts        # SQLite FTS5 wrapper (per-KB keyword index, BM25 search, schema migration)
