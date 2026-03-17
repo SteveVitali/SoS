@@ -492,7 +492,6 @@ async function synthesizeUserProfile(owner: string, config: MemoryConfig): Promi
 export async function runReflection(
   owner: string,
   config: MemoryConfig,
-  options?: { skipTimestampFilter?: boolean },
 ): Promise<{
   episodes_reviewed: number;
   clusters_found: number;
@@ -508,14 +507,8 @@ export async function runReflection(
 
   if (!config.reflection_enabled) return result;
 
-  // 1. Fetch recent episodes (capped at 200 for performance).
-  // Periodic scheduler: only episodes since last reflection (incremental).
-  // Manual trigger (skipTimestampFilter): all recent episodes up to the cap,
-  // ignoring the last-reflection checkpoint. This avoids re-processing
-  // thousands of old episodes while still giving a meaningful reflection.
-  const lastReflection = options?.skipTimestampFilter
-    ? null
-    : await getLastReflectionTimestamp(owner);
+  // 1. Fetch episodes since last reflection
+  const lastReflection = await getLastReflectionTimestamp(owner);
   const { episodes: allEpisodes } = await listEpisodes({ owner, limit: 200 });
 
   const episodes = lastReflection

@@ -234,26 +234,8 @@ describe("memoryRoutes", () => {
   });
 
   describe("POST /reflect", () => {
-    it("triggers reflection for all owners and returns result", async () => {
-      // Insert an episode so the route discovers at least one owner
-      await insertEpisode(makeEpisode({ episode_id: "ep-reflect" }));
-
+    it("triggers reflection and returns result", async () => {
       const res = await request(app).post("/api/web/memory/reflect").send({});
-      expect(res.status).toBe(200);
-      expect(res.body.result).toBeDefined();
-      expect(runReflection).toHaveBeenCalled();
-    });
-
-    it("returns zero result when no episodes exist", async () => {
-      const res = await request(app).post("/api/web/memory/reflect").send({});
-      expect(res.status).toBe(200);
-      expect(res.body.result.episodes_reviewed).toBe(0);
-    });
-
-    it("triggers reflection for a specific owner", async () => {
-      const res = await request(app)
-        .post("/api/web/memory/reflect")
-        .send({ owner: "specific-owner" });
       expect(res.status).toBe(200);
       expect(res.body.result).toBeDefined();
       expect(runReflection).toHaveBeenCalled();
