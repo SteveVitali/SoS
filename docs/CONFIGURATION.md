@@ -39,6 +39,7 @@ All configuration is via environment variables in a single `.env` file (see `.en
 | `SOS_REPO_REGISTRY` | No | Path to `repo-registry.yaml` (also used by server for PR listing and registry editor) |
 | `WEB_BASIC_AUTH_USER` | No | Optional basic auth for web UI |
 | `WEB_BASIC_AUTH_PASS` | No | Optional basic auth for web UI |
+| `SOS_WORKER_PROCESSES` | No (default: 4) | Number of worker processes to auto-spawn on server startup |
 
 ## GitHub Hub (Sync Engine)
 
@@ -103,6 +104,7 @@ research: claude-opus-4.5
 raptorSummarization: claude-opus-4.5
 imageGeneration: gpt-image-1
 embedding: text-embedding-3-small
+memory: gpt-4.1-mini
 ```
 
 The active model registry is exposed via `GET /api/web/models` and logged at server startup.

@@ -92,7 +92,7 @@ Workers are **stateless** — all persistent state lives in MongoDB via the serv
 
 ### MongoDB
 
-Thirteen collections:
+Seventeen collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
@@ -143,7 +143,7 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 - **Knowledge** — create/manage knowledge bases, upload documents or folders (with real-time per-file progress), test semantic search in the KBPlayground, configure scopes and chunking parameters, **RAPTOR tree** visualization (build/rebuild indices, interactive cluster hierarchy explorer)
 - **Research** — global research config controls (chat/Slack strategy, max context tokens persisted to routing-config.yaml), **Research Playground** (run queries with simple/deep/agent strategies, real-time NDJSON-streamed pipeline timeline, model selector), **Strategy Comparison** (side-by-side all-strategies benchmark), **Research History** (paginated session browser with timeline drill-down), and per-job **Research Audit** sections on the Jobs detail page
 - **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 13 execution types, reply template management, with a raw YAML fallback view
-- **Models** — view and override model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding) with autocomplete from available models
+- **Models** — view and override model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration, memory) with autocomplete from available models
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
 
