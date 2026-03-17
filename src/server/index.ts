@@ -76,6 +76,17 @@ async function main() {
     log.warn("Failed to initialize knowledge base subsystem (non-fatal)", { error: err.message });
   }
 
+  // Initialize memory system
+  try {
+    const { initMemorySystem } = await import("./memory/index.js");
+    await initMemorySystem(config);
+    log.info("Memory system initialized");
+  } catch (err: unknown) {
+    log.warn("Failed to initialize memory system (non-fatal)", {
+      error: (err as Error).message,
+    });
+  }
+
   // Create Slack poster (only if real tokens are configured, not placeholders)
   const slackEnabled = config.slackBotToken.length > 20 && config.slackAppToken.length > 20;
   let slackPoster: ReturnType<typeof createSlackPoster> | undefined;
@@ -305,6 +316,12 @@ async function main() {
     try {
       const { getGitHubSyncService } = await import("./githubSync/index.js");
       getGitHubSyncService().stop();
+    } catch {
+      /* best effort */
+    }
+    try {
+      const { shutdownMemorySystem } = await import("./memory/index.js");
+      await shutdownMemorySystem();
     } catch {
       /* best effort */
     }

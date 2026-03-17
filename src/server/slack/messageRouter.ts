@@ -7,6 +7,7 @@ import type { JobAttachment } from "../../shared/types.js";
 import { queryJobs } from "../jobs/jobService.js";
 import { researchKnowledgeBases, searchKnowledgeBases } from "../kb/kbService.js";
 import type { ContentBlock, LLMProvider, ToolDefinition } from "../llm/index.js";
+import { getMemoryContext } from "../memory/index.js";
 import {
   buildActionsPromptSection,
   buildToolsFromConfig,
@@ -219,11 +220,19 @@ export async function routeMessage(
     throw new Error("LLM provider not initialized — cannot route message");
   }
 
-  const jobsContext = await buildJobsContext();
   const { systemPromptTemplate, tools: configTools, model } = buildSystemPromptAndTools();
-  const kbContext = await buildKBContext(userMessage, ["chat", "all"]);
+  const [jobsContext, kbContext, memoryResult] = await Promise.all([
+    buildJobsContext(),
+    buildKBContext(userMessage, ["chat", "all"]),
+    getMemoryContext(userMessage, slackUserId).catch(() => ({
+      memoryContext: "",
+      userContext: "",
+    })),
+  ]);
   let systemPrompt = systemPromptTemplate.replace("{JOBS_CONTEXT}", jobsContext);
   systemPrompt = systemPrompt.replace("{KB_CONTEXT}", kbContext);
+  systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", memoryResult.memoryContext);
+  systemPrompt = systemPrompt.replace("{USER_CONTEXT}", memoryResult.userContext);
   const activeModel = model || configuredModel;
 
   // Build message history from thread context
