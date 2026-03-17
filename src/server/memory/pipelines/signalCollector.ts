@@ -13,13 +13,11 @@ import type {
   InteractionEpisode,
   MemoryConfig,
   OutcomeSignal,
-  SignalType,
 } from "../../../shared/memoryTypes.js";
 import { findConversation } from "../../chat/conversationRepo.js";
 import { findJobByTaskId } from "../../jobs/jobRepo.js";
 import { getEmbeddingProvider } from "../../kb/embeddings.js";
 import { appendSignals, listEpisodes } from "../episodeRepo.js";
-import { distanceToSimilarity } from "../memoryUtils.js";
 
 const log = createLogger("server:memory:signalCollector");
 
@@ -27,7 +25,8 @@ const log = createLogger("server:memory:signalCollector");
 
 export const GRATITUDE_REGEX = /\b(thanks|thank you|perfect|exactly|great|awesome)\b/i;
 
-export const CORRECTION_REGEX = /\b(no|wrong|incorrect|that's not|actually|not what I meant)\b/i;
+export const CORRECTION_REGEX =
+  /(?:\bno[,.]|\bnope\b|\bwrong\b|\bincorrect\b|\bthat's not\b|\bactually[,.]|\bnot what I meant\b|\bnot right\b)/i;
 
 // ─── Cosine Similarity ──────────────────────────────────────────
 
@@ -192,9 +191,7 @@ export async function detectEmbeddingSignals(
   const now = new Date();
 
   const embeddingProvider = getEmbeddingProvider();
-  const [embeddings] = await Promise.all([
-    embeddingProvider.embed([originalMessage, followUpMessage]),
-  ]);
+  const embeddings = await embeddingProvider.embed([originalMessage, followUpMessage]);
 
   const similarity = cosineSimilarity(embeddings[0], embeddings[1]);
 

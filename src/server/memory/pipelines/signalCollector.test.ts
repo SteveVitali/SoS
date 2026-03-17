@@ -129,8 +129,20 @@ describe("signalCollector", () => {
   });
 
   describe("CORRECTION_REGEX", () => {
-    it("matches 'no'", () => {
+    it("matches 'no,' (with punctuation)", () => {
       expect(CORRECTION_REGEX.test("no, that's not right")).toBe(true);
+    });
+
+    it("matches 'nope'", () => {
+      expect(CORRECTION_REGEX.test("nope, try again")).toBe(true);
+    });
+
+    it("does not false-positive on 'no worries'", () => {
+      expect(CORRECTION_REGEX.test("no worries, thanks")).toBe(false);
+    });
+
+    it("does not false-positive on 'I have no questions'", () => {
+      expect(CORRECTION_REGEX.test("I have no questions")).toBe(false);
     });
 
     it("matches 'wrong'", () => {
@@ -141,8 +153,12 @@ describe("signalCollector", () => {
       expect(CORRECTION_REGEX.test("that's incorrect")).toBe(true);
     });
 
-    it("matches 'actually'", () => {
+    it("matches 'actually,' (with punctuation)", () => {
       expect(CORRECTION_REGEX.test("actually, I wanted something else")).toBe(true);
+    });
+
+    it("matches 'not right'", () => {
+      expect(CORRECTION_REGEX.test("that's not right")).toBe(true);
     });
 
     it("matches 'not what I meant'", () => {
@@ -155,6 +171,10 @@ describe("signalCollector", () => {
 
     it("does not match unrelated text", () => {
       expect(CORRECTION_REGEX.test("please show me the logs")).toBe(false);
+    });
+
+    it("does not match 'actually' without punctuation in flowing sentence", () => {
+      expect(CORRECTION_REGEX.test("I actually like this approach")).toBe(false);
     });
   });
 
@@ -333,7 +353,7 @@ describe("signalCollector", () => {
           {
             id: "m3",
             role: "user",
-            text: "no, that's not what I meant",
+            text: "nope, that's not what I meant",
             at: new Date("2025-03-15T10:01:00Z"),
           },
         ],

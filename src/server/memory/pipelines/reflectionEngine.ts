@@ -310,7 +310,10 @@ async function synthesizeUserProfile(owner: string, config: MemoryConfig): Promi
     limit: 50,
   });
 
-  const allMemories = [...factMemories, ...reflectionMemories];
+  // Filter out internal metadata (e.g. reflection tracking) from profile synthesis
+  const allMemories = [...factMemories, ...reflectionMemories].filter(
+    (m) => !m.tags.includes("__internal__"),
+  );
   if (allMemories.length === 0) return false;
 
   // Sort by importance descending, take top memories for the prompt
