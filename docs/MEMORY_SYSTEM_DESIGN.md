@@ -1,6 +1,6 @@
 # Persistent Agent Memory System — Design Specification
 
-> **Status**: Design spec — not yet implemented.
+> **Status**: Implemented (Phases 1–7 complete). See `src/server/memory/` and `src/shared/memoryTypes.ts`.
 > **Authors**: Steve Vitali + Cascade AI
 > **Date**: March 2026
 
