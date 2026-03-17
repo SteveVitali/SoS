@@ -7,16 +7,12 @@
  */
 
 import { createLogger } from "../../shared/logger.js";
-import type {
-  MemoryConfig,
-  MemoryNote,
-  MemorySearchResult,
-  MemoryType,
-} from "../../shared/memoryTypes.js";
+import type { MemoryConfig, MemorySearchResult, MemoryType } from "../../shared/memoryTypes.js";
 import { getEmbeddingProvider } from "../kb/embeddings.js";
-import { type MemoryFTSSearchResult, searchMemoryFTS } from "./memoryFtsStore.js";
+import { searchMemoryFTS } from "./memoryFtsStore.js";
 import { findMemory, incrementAccessCount } from "./memoryRepo.js";
-import { type MemoryVectorSearchResult, searchMemoryTable } from "./memoryVectorStore.js";
+import { distanceToSimilarity } from "./memoryUtils.js";
+import { searchMemoryTable } from "./memoryVectorStore.js";
 
 const log = createLogger("server:memory:search");
 
@@ -25,13 +21,6 @@ const RRF_K = 60;
 
 /** Default number of candidates to retrieve from each index before fusion. */
 const DEFAULT_PER_INDEX_LIMIT = 25;
-
-/**
- * Convert LanceDB L2 distance to a 0-1 similarity score.
- */
-function distanceToSimilarity(distance: number): number {
-  return 1 / (1 + distance);
-}
 
 /**
  * Compute the RRF score for a candidate given its ranks in each result list.

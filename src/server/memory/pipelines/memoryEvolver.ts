@@ -11,22 +11,14 @@
 
 import { createLogger } from "../../../shared/logger.js";
 import type { MemoryConfig, MemoryNote } from "../../../shared/memoryTypes.js";
-import { getModelForRole } from "../../../shared/modelConfig.js";
 import { getEmbeddingProvider } from "../../kb/embeddings.js";
-import { createResearchLLMClient, type LLMClient } from "../../kb/research/llmClient.js";
 import { addToMemoryFTS, deleteFromMemoryFTS } from "../memoryFtsStore.js";
 import { findMemory, updateMemory } from "../memoryRepo.js";
+import { createMemoryLLMClient, distanceToSimilarity } from "../memoryUtils.js";
 import { addToMemoryTable, searchMemoryTable } from "../memoryVectorStore.js";
 import { buildMemoryEvolutionPrompt } from "../prompts.js";
 
 const log = createLogger("server:memory:evolver");
-
-/**
- * Convert LanceDB L2 distance to a 0-1 similarity score.
- */
-function distanceToSimilarity(distance: number): number {
-  return 1 / (1 + distance);
-}
 
 export interface EvolutionDecision {
   memory_id: string;
@@ -35,22 +27,6 @@ export interface EvolutionDecision {
   update_context: string | null;
   update_keywords: string[] | null;
   update_tags: string[] | null;
-}
-
-/**
- * Create a memory LLM client for evolution calls.
- */
-function createMemoryLLMClient(): LLMClient {
-  return createResearchLLMClient({
-    model: getModelForRole("memory"),
-  });
-}
-
-/**
- * Build the embedding text for a memory note.
- */
-function buildEmbeddingText(memory: MemoryNote): string {
-  return `${memory.content} ${memory.context} ${memory.keywords.join(" ")}`;
 }
 
 /**

@@ -6,7 +6,7 @@
  */
 
 import { createLogger } from "../../shared/logger.js";
-import type { MemoryConfig, MemoryNote, MemorySearchResult } from "../../shared/memoryTypes.js";
+import type { MemoryConfig, MemorySearchResult } from "../../shared/memoryTypes.js";
 import { listMemories } from "./memoryRepo.js";
 import { searchMemories } from "./memorySearch.js";
 

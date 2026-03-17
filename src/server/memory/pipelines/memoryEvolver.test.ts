@@ -25,8 +25,8 @@ vi.mock("../../kb/embeddings.js", () => ({
   })),
 }));
 
-vi.mock("../../kb/research/llmClient.js", () => ({
-  createResearchLLMClient: vi.fn(() => ({
+vi.mock("../memoryUtils.js", () => ({
+  createMemoryLLMClient: vi.fn(() => ({
     chat: vi.fn(),
     chatWithTools: vi.fn(),
     toAuditRecord: vi.fn(),
@@ -38,15 +38,12 @@ vi.mock("../../kb/research/llmClient.js", () => ({
       max_tokens: 2048,
     },
   })),
+  distanceToSimilarity: vi.fn((d: number) => 1 / (1 + d)),
 }));
 
-vi.mock("../../../shared/modelConfig.js", () => ({
-  getModelForRole: vi.fn(() => "gpt-4.1-mini"),
-}));
-
-import { createResearchLLMClient } from "../../kb/research/llmClient.js";
 import { addToMemoryFTS, deleteFromMemoryFTS } from "../memoryFtsStore.js";
 import { findMemory, updateMemory } from "../memoryRepo.js";
+import { createMemoryLLMClient } from "../memoryUtils.js";
 import { addToMemoryTable, searchMemoryTable } from "../memoryVectorStore.js";
 import { evolveMemory } from "./memoryEvolver.js";
 
@@ -56,7 +53,7 @@ const mockSearchMemoryTable = vi.mocked(searchMemoryTable);
 const mockAddToMemoryTable = vi.mocked(addToMemoryTable);
 const mockAddToMemoryFTS = vi.mocked(addToMemoryFTS);
 const mockDeleteFromMemoryFTS = vi.mocked(deleteFromMemoryFTS);
-const mockCreateLLMClient = vi.mocked(createResearchLLMClient);
+const mockCreateMemoryLLMClient = vi.mocked(createMemoryLLMClient);
 
 function makeConfig(overrides: Partial<MemoryConfig> = {}): MemoryConfig {
   return {
@@ -227,7 +224,7 @@ describe("memoryEvolver", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmDecisions),
           model: "gpt-4.1-mini",
@@ -287,7 +284,7 @@ describe("memoryEvolver", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmDecisions),
           model: "gpt-4.1-mini",
@@ -369,7 +366,7 @@ describe("memoryEvolver", () => {
         },
       ]);
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockRejectedValue(new Error("LLM unavailable")),
         chatWithTools: vi.fn(),
         toAuditRecord: vi.fn(),

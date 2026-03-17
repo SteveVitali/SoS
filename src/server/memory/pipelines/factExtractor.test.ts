@@ -1,6 +1,6 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
 import type { InteractionEpisode, MemoryConfig } from "../../../shared/memoryTypes.js";
-import { type ExtractionOperation, shouldExtract } from "./factExtractor.js";
+import { shouldExtract } from "./factExtractor.js";
 
 // Mock all external dependencies
 vi.mock("../episodeRepo.js", () => ({
@@ -53,14 +53,33 @@ vi.mock("../../../shared/modelConfig.js", () => ({
   getModelForRole: vi.fn(() => "gpt-4.1-mini"),
 }));
 
+vi.mock("../memoryUtils.js", () => ({
+  buildEmbeddingText: vi.fn(
+    (content: string, context: string, keywords: string[]) =>
+      `${content} ${context} ${keywords.join(" ")}`,
+  ),
+  createMemoryLLMClient: vi.fn(() => ({
+    chat: vi.fn(),
+    chatWithTools: vi.fn(),
+    toAuditRecord: vi.fn(),
+    config: {
+      model: "gpt-4.1-mini",
+      api_key: "test",
+      base_url: "http://test",
+      temperature: 0,
+      max_tokens: 2048,
+    },
+  })),
+  distanceToSimilarity: vi.fn((d: number) => 1 / (1 + d)),
+}));
+
 vi.mock("./memoryEvolver.js", () => ({
   evolveMemory: vi.fn().mockResolvedValue({ links_created: 0, neighbors_evolved: 0 }),
 }));
 
-import { createResearchLLMClient } from "../../kb/research/llmClient.js";
 import { findEpisode, listEpisodes, updateExtractionStatus } from "../episodeRepo.js";
-import { addToMemoryFTS } from "../memoryFtsStore.js";
 import { findMemory, insertMemory, invalidateMemory, updateMemory } from "../memoryRepo.js";
+import { createMemoryLLMClient } from "../memoryUtils.js";
 import { addToMemoryTable, searchMemoryTable } from "../memoryVectorStore.js";
 import { extractFactsFromEpisode } from "./factExtractor.js";
 import { evolveMemory } from "./memoryEvolver.js";
@@ -74,7 +93,7 @@ const mockInsertMemory = vi.mocked(insertMemory);
 const mockInvalidateMemory = vi.mocked(invalidateMemory);
 const mockUpdateMemory = vi.mocked(updateMemory);
 const mockAddToMemoryTable = vi.mocked(addToMemoryTable);
-const mockCreateLLMClient = vi.mocked(createResearchLLMClient);
+const mockCreateMemoryLLMClient = vi.mocked(createMemoryLLMClient);
 const mockEvolveMemory = vi.mocked(evolveMemory);
 
 function makeConfig(overrides: Partial<MemoryConfig> = {}): MemoryConfig {
@@ -235,7 +254,7 @@ describe("factExtractor", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmResponse),
           model: "gpt-4.1-mini",
@@ -307,7 +326,7 @@ describe("factExtractor", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmResponse),
           model: "gpt-4.1-mini",
@@ -350,7 +369,7 @@ describe("factExtractor", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmResponse),
           model: "gpt-4.1-mini",
@@ -392,7 +411,7 @@ describe("factExtractor", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmResponse),
           model: "gpt-4.1-mini",
@@ -455,7 +474,7 @@ describe("factExtractor", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmResponse),
           model: "gpt-4.1-mini",
@@ -483,7 +502,7 @@ describe("factExtractor", () => {
       mockSearchMemoryTable.mockResolvedValue([]);
       mockUpdateExtractionStatus.mockResolvedValue(null);
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify({ operations: [] }),
           model: "gpt-4.1-mini",
@@ -509,7 +528,7 @@ describe("factExtractor", () => {
       mockSearchMemoryTable.mockResolvedValue([]);
       mockUpdateExtractionStatus.mockResolvedValue(null);
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockRejectedValue(new Error("LLM API error")),
         chatWithTools: vi.fn(),
         toAuditRecord: vi.fn(),
@@ -544,7 +563,7 @@ describe("factExtractor", () => {
         ],
       };
 
-      mockCreateLLMClient.mockReturnValue({
+      mockCreateMemoryLLMClient.mockReturnValue({
         chat: vi.fn().mockResolvedValue({
           content: JSON.stringify(llmResponse),
           model: "gpt-4.1-mini",

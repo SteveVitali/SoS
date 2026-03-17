@@ -11,12 +11,11 @@
 import { v4 as uuidv4 } from "uuid";
 import { createLogger } from "../../../shared/logger.js";
 import type { InteractionEpisode, MemoryConfig, MemoryNote } from "../../../shared/memoryTypes.js";
-import { getModelForRole } from "../../../shared/modelConfig.js";
 import { getEmbeddingProvider } from "../../kb/embeddings.js";
-import { createResearchLLMClient, type LLMClient } from "../../kb/research/llmClient.js";
 import { findEpisode, listEpisodes, updateExtractionStatus } from "../episodeRepo.js";
 import { addToMemoryFTS, deleteFromMemoryFTS } from "../memoryFtsStore.js";
 import { findMemory, insertMemory, invalidateMemory, updateMemory } from "../memoryRepo.js";
+import { buildEmbeddingText, createMemoryLLMClient, distanceToSimilarity } from "../memoryUtils.js";
 import { addToMemoryTable, searchMemoryTable } from "../memoryVectorStore.js";
 import {
   buildBatchedExtractionPrompt,
@@ -94,22 +93,6 @@ interface BatchedExtractionResponse {
 }
 
 // ─── Main Extraction Function ───────────────────────────────────
-
-/**
- * Create a memory LLM client for extraction calls.
- */
-function createMemoryLLMClient(): LLMClient {
-  return createResearchLLMClient({
-    model: getModelForRole("memory"),
-  });
-}
-
-/**
- * Build the embedding text for a memory note.
- */
-function buildEmbeddingText(content: string, context: string, keywords: string[]): string {
-  return `${content} ${context} ${keywords.join(" ")}`;
-}
 
 /**
  * Extract facts from an interaction episode and execute memory operations.
@@ -237,13 +220,15 @@ async function fetchPriorEpisodes(
   episode: InteractionEpisode,
   maxCount: number,
 ): Promise<InteractionEpisode[]> {
-  // Build a filter to find episodes in the same thread/conversation
+  // Fetch a generous window of recent episodes so we can reliably find
+  // same-thread context even if other interactions interleave.
   const { episodes } = await listEpisodes({
     owner: episode.owner,
-    limit: maxCount + 1, // +1 to account for the current episode
+    limit: 50,
   });
 
-  // Filter to same conversation context and before current episode
+  // Filter to same conversation context and before current episode,
+  // then take the most recent N and reverse to chronological order.
   return episodes
     .filter((ep) => {
       if (ep.episode_id === episode.episode_id) return false;
@@ -262,7 +247,8 @@ async function fetchPriorEpisodes(
 
       return false;
     })
-    .slice(0, maxCount);
+    .slice(0, maxCount)
+    .reverse();
 }
 
 /**
@@ -289,7 +275,7 @@ async function fetchRelatedMemories(
   // Fetch full documents for top results with similarity > 0.5
   const memories: MemoryNote[] = [];
   for (const r of vectorResults) {
-    const similarity = 1 / (1 + r._distance);
+    const similarity = distanceToSimilarity(r._distance);
     if (similarity < 0.5) continue;
 
     const memory = await findMemory(r.id);
@@ -458,6 +444,7 @@ async function executeUpdate(
     tags: updatedTags,
     importance: Math.max(existing.importance, op.importance),
     embedding_text: embeddingText,
+    source_episodes: sourceEpisodes,
   });
 
   // Re-embed and re-index

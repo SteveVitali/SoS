@@ -90,6 +90,7 @@ export async function updateMemory(
       | "importance"
       | "confidence"
       | "embedding_text"
+      | "source_episodes"
       | "linked_memory_ids"
       | "link_reasons"
       | "access_count"
