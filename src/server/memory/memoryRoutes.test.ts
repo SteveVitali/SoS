@@ -2,7 +2,7 @@ import express from "express";
 import { type Db, MongoClient } from "mongodb";
 import { MongoMemoryServer } from "mongodb-memory-server";
 import request from "supertest";
-import { afterAll, afterEach, beforeAll, beforeEach, describe, expect, it, vi } from "vitest";
+import { afterAll, afterEach, beforeAll, describe, expect, it, vi } from "vitest";
 import type { InteractionEpisode, MemoryNote } from "../../shared/memoryTypes.js";
 import { _setTestDb } from "../mongo.js";
 import { ensureEpisodeIndexes, insertEpisode } from "./episodeRepo.js";
@@ -50,7 +50,6 @@ vi.mock("./pipelines/reflectionEngine.js", () => ({
     reflections_created: 1,
     profile_updated: true,
   }),
-  getLastReflectionTimestamp: vi.fn().mockResolvedValue(null),
 }));
 
 vi.mock("../kb/embeddings.js", () => ({
@@ -380,6 +379,7 @@ describe("memoryRoutes", () => {
       await insertMemory(makeMemory({ memory_id: "m1" }));
 
       const { addToMemoryTable } = await import("./memoryVectorStore.js");
+      (addToMemoryTable as ReturnType<typeof vi.fn>).mockClear();
 
       const res = await request(app)
         .put("/api/web/memory/memories/m1")
@@ -387,6 +387,8 @@ describe("memoryRoutes", () => {
         .expect(200);
 
       expect(res.body.memory.importance).toBe(0.95);
+      // Should NOT re-embed when only importance changes (no content/tags change)
+      expect(addToMemoryTable).not.toHaveBeenCalled();
     });
   });
 
@@ -499,14 +501,10 @@ describe("memoryRoutes", () => {
       expect(getRes.body.config.retrieval_max_memories).toBe(15);
     });
 
-    it("rejects invalid body", async () => {
-      const res = await request(app)
-        .put("/api/web/memory/config")
-        .send("not-json")
-        .set("Content-Type", "text/plain")
-        .expect(400);
+    it("rejects array body", async () => {
+      const res = await request(app).put("/api/web/memory/config").send([1, 2, 3]).expect(400);
 
-      expect(res.body.error).toBeDefined();
+      expect(res.body.error).toBe("Request body must be a partial MemoryConfig object");
     });
   });
 });

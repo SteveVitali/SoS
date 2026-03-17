@@ -5,7 +5,12 @@
 
 import { type Request, type Response, Router } from "express";
 import { createLogger } from "../../shared/logger.js";
-import type { MemoryConfig, MemorySearchRequest, MemoryType } from "../../shared/memoryTypes.js";
+import type {
+  MemoryConfig,
+  MemoryNote,
+  MemorySearchRequest,
+  MemoryType,
+} from "../../shared/memoryTypes.js";
 import type { ServerConfig } from "../config.js";
 import { getEmbeddingProvider } from "../kb/embeddings.js";
 import { getDb } from "../mongo.js";
@@ -142,11 +147,11 @@ export function createMemoryRoutes(_config: ServerConfig): Router {
       }
 
       // Fetch linked memories
-      let linked: any[] = [];
+      let linked: MemoryNote[] = [];
       if (memory.linked_memory_ids.length > 0) {
         const linkPromises = memory.linked_memory_ids.map((id) => findMemory(id));
         const results = await Promise.all(linkPromises);
-        linked = results.filter(Boolean);
+        linked = results.filter((m): m is MemoryNote => m !== null);
       }
 
       res.json({ memory, linked });
@@ -224,7 +229,9 @@ export function createMemoryRoutes(_config: ServerConfig): Router {
       }
 
       const { content, importance, tags } = req.body;
-      const updates: Record<string, any> = {};
+      const updates: Partial<
+        Pick<MemoryNote, "content" | "importance" | "tags" | "embedding_text">
+      > = {};
       if (content !== undefined) updates.content = content;
       if (importance !== undefined) updates.importance = importance;
       if (tags !== undefined) updates.tags = tags;
@@ -355,7 +362,7 @@ export function createMemoryRoutes(_config: ServerConfig): Router {
   router.put("/config", async (req: Request, res: Response) => {
     try {
       const updates = req.body as Partial<MemoryConfig>;
-      if (!updates || typeof updates !== "object") {
+      if (!updates || typeof updates !== "object" || Array.isArray(updates)) {
         res.status(400).json({ error: "Request body must be a partial MemoryConfig object" });
         return;
       }
