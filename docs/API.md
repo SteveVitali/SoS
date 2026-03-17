@@ -157,7 +157,7 @@ Appends a structured event to the job's event log. Some events trigger Slack upd
 - `WORKTREE_READY { branch }` → sets `branch_name`
 - `CI_FIX_STARTED` → sets status to `FIXING_CI`
 
-**Event types that trigger Slack messages:**
+**Event types that trigger Slack/Discord notifications:**
 `PR_CREATED`, `CI_FAILED`, `CI_STATUS`, `DONE`, `FAILED`, `CANCELED`
 
 ### Complete a Job
@@ -281,6 +281,23 @@ Server fetches the Slack thread on behalf of the worker (workers don't hold Slac
 {
   "messages": [
     { "user": "U...", "text": "fix the auth bug", "ts": "1234567890.123456" }
+  ]
+}
+```
+
+### Fetch Discord Thread (Proxy)
+
+```
+GET /api/worker/discord/thread?channel_id=123...&thread_id=456...
+```
+
+Server fetches a Discord thread on behalf of the worker (workers don't hold Discord tokens). Returns up to 20 messages, each truncated to 2000 chars.
+
+**Response:**
+```json
+{
+  "messages": [
+    { "user": "123456789", "text": "fix the auth bug", "id": "987654321", "files": [] }
   ]
 }
 ```

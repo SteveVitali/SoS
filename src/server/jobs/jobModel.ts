@@ -29,6 +29,35 @@ export const CreateJobFromSlackSchema = z.object({
 });
 export type CreateJobFromSlack = z.infer<typeof CreateJobFromSlackSchema>;
 
+export const CreateJobFromDiscordSchema = z.object({
+  event_id: z.string(),
+  requested_by: z.string(),
+  discord_requester: z.string().optional(),
+  task_text: z.string(),
+  channel_id: z.string(),
+  thread_id: z.string().optional(),
+  message_id: z.string().optional(),
+  guild_id: z.string().optional(),
+  repo_hint: z.string().optional(),
+  test_level: TestLevel.optional(),
+  ci_fix_enabled: z.boolean().optional(),
+  reviewers: z.array(z.string()).optional(),
+  attachments: z
+    .array(
+      z.object({
+        file_id: z.string(),
+        filename: z.string(),
+        mimetype: z.string(),
+        size_bytes: z.number(),
+        base64: z.string(),
+      }),
+    )
+    .optional(),
+  needs_plan: z.boolean().optional(),
+  custom_instructions: z.string().optional(),
+});
+export type CreateJobFromDiscord = z.infer<typeof CreateJobFromDiscordSchema>;
+
 export const CreateJobFromWebSchema = z.object({
   requested_by: z.string().min(1, "requested_by is required"),
   task_text: z.string().min(1, "task_text is required"),

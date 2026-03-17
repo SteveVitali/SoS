@@ -8,7 +8,10 @@ import { createRouter } from "./api/router.js";
 import { ensureImageIndexes } from "./chat/imageStore.js";
 import { initChatTitleGenerator } from "./chat/titleGen.js";
 import { loadServerConfig } from "./config.js";
-import { setSlackPoster } from "./jobs/jobService.js";
+import { createDiscordPoster } from "./discord/discordClient.js";
+import { createDiscordClient, startDiscordBot } from "./discord/gatewayBot.js";
+import { initDiscordUserResolver } from "./discord/userResolver.js";
+import { setNotificationPoster } from "./jobs/jobService.js";
 import { startLeaseReaper, stopLeaseReaper } from "./jobs/leaseReaper.js";
 import { initTitleGenerator } from "./jobs/titleGenerator.js";
 import {
@@ -22,6 +25,7 @@ import {
 import { resetStaleBuildingStatuses } from "./kb/raptor/raptorRepo.js";
 import { createLLMProvider } from "./llm/index.js";
 import { closeMongo, connectMongo } from "./mongo.js";
+import { CompositePoster } from "./notifications/poster.js";
 import { initExecutorLLM } from "./routing/executors.js";
 import { initRoutingConfig } from "./routing/index.js";
 import { initMessageRouter } from "./slack/messageRouter.js";
@@ -77,11 +81,33 @@ async function main() {
   let slackPoster: ReturnType<typeof createSlackPoster> | undefined;
   if (slackEnabled) {
     slackPoster = createSlackPoster(config.slackBotToken, config.slackNotifyUser || undefined);
-    setSlackPoster(slackPoster);
     initUserResolver(config.slackBotToken);
   } else {
     log.warn("Slack tokens not configured — running without Slack integration");
   }
+
+  // Create Discord poster (only if bot token is configured)
+  const discordEnabled = config.discordBotToken.length > 20;
+  let discordPoster: ReturnType<typeof createDiscordPoster> | undefined;
+  let discordClient: Awaited<ReturnType<typeof createDiscordClient>> | undefined;
+  if (discordEnabled) {
+    try {
+      discordClient = await createDiscordClient(config.discordBotToken);
+      discordPoster = createDiscordPoster(discordClient, config.discordNotifyUser || undefined);
+      initDiscordUserResolver(discordClient);
+    } catch (err: unknown) {
+      log.error("Failed to create Discord client", { error: (err as Error).message });
+      log.warn("Server will continue without Discord integration");
+    }
+  } else {
+    log.warn("Discord bot token not configured — running without Discord integration");
+  }
+
+  // Create composite notification poster (fans out to all enabled platforms)
+  const compositePoster = new CompositePoster();
+  if (slackPoster) compositePoster.add(slackPoster);
+  if (discordPoster) compositePoster.add(discordPoster);
+  setNotificationPoster(compositePoster);
 
   // Initialize YAML-driven routing config
   if (config.routingConfigPath) {
@@ -158,7 +184,7 @@ async function main() {
   app.use(express.json());
 
   // API routes
-  const router = createRouter(config, slackPoster);
+  const router = createRouter(config, slackPoster, discordPoster);
   app.use(router);
 
   // Serve static UI files (production build)
@@ -197,7 +223,7 @@ async function main() {
   }
 
   // Start lease reaper (transitions stale RUNNING jobs to FAILED)
-  startLeaseReaper(slackPoster);
+  startLeaseReaper(compositePoster);
 
   // Start Slack Socket Mode (only if tokens are configured)
   if (slackEnabled) {
@@ -207,6 +233,45 @@ async function main() {
     } catch (err: unknown) {
       log.error("Failed to start Slack Socket Mode", { error: (err as Error).message });
       log.warn("Server will continue without Slack integration");
+    }
+  }
+
+  // Start Discord bot gateway (only if client is initialized)
+  if (discordEnabled && discordPoster && discordClient) {
+    try {
+      // Validate bot user ID — must be a 15+ digit Discord snowflake.
+      // Fall back to auto-detection from the client if misconfigured.
+      const configuredId = config.discordBotUserId;
+      const autoDetectedId = discordClient.user?.id || "";
+      const isValidSnowflake = /^\d{15,}$/.test(configuredId);
+      const discordBotUserId = isValidSnowflake ? configuredId : autoDetectedId;
+      if (!isValidSnowflake && configuredId) {
+        log.warn(
+          "DISCORD_BOT_USER_ID does not look like a valid snowflake, using auto-detected ID",
+          {
+            configured: configuredId,
+            autoDetected: autoDetectedId,
+          },
+        );
+      }
+      log.info("Discord bot user ID resolved", { discordBotUserId });
+
+      await startDiscordBot(
+        {
+          discordBotUserId,
+          discordJobOwner: config.discordJobOwner,
+          maxThreadMessages: config.maxThreadMessages,
+          maxAttachmentSizeMb: config.maxAttachmentSizeMb,
+          githubUsername: config.githubUsername || undefined,
+          githubOrg: config.githubOrg || undefined,
+          githubTeamSlug: config.githubTeamSlug || undefined,
+        },
+        discordPoster,
+      );
+      await discordPoster.setPresenceActive();
+    } catch (err: unknown) {
+      log.error("Failed to start Discord bot", { error: (err as Error).message });
+      log.warn("Server will continue without Discord integration");
     }
   }
 
@@ -229,6 +294,12 @@ async function main() {
     await shutdownAllWorkers();
     if (slackPoster) {
       await slackPoster.setPresenceAway();
+    }
+    if (discordPoster) {
+      await discordPoster.setPresenceAway();
+    }
+    if (discordClient) {
+      discordClient.destroy();
     }
     stopLeaseReaper();
     try {

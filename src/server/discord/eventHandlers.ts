@@ -1,75 +1,52 @@
 import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
-import type { ServerConfig } from "../config.js";
-import { executeCommand } from "./commandExecutor.js";
-import type { ThreadMessage } from "./messageRouter.js";
-import { formatRoutingError, routeMessage } from "./messageRouter.js";
-import type { SlackFileInfo, SlackPoster, SlackThreadMessage } from "./slackClient.js";
+import { executeCommand } from "../slack/commandExecutor.js";
+import type { ThreadMessage } from "../slack/messageRouter.js";
+import { formatRoutingError, routeMessage } from "../slack/messageRouter.js";
+import type { DiscordFileInfo, DiscordPoster, DiscordThreadMessage } from "./discordClient.js";
 
 export interface MentionHandlerResult {
   reply: string;
   images?: Array<{ url: string; alt?: string }>;
 }
 
-const log = createLogger("server:slack:events");
+const log = createLogger("server:discord:events");
 
-interface SlackMentionEvent {
-  type: string;
-  user: string;
+interface DiscordMentionEvent {
+  userId: string;
   text: string;
-  channel: string;
-  ts: string;
-  thread_ts?: string;
-  event_ts: string;
-  files?: Array<{ id: string; name: string; mimetype: string; size: number; url_private: string }>;
+  channelId: string;
+  messageId: string;
+  threadId?: string;
+  guildId?: string;
+  files?: Array<{ id: string; name: string; mimetype: string; size: number; url: string }>;
 }
 
-export function parseModifiers(text: string): {
-  repo_hint?: string;
-  test_level?: "fast" | "full" | "none";
-  ci_fix_enabled?: boolean;
-  reviewers?: string[];
-} {
-  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
-  const result: any = {};
-
-  const repoMatch = text.match(/\brepo=(\S+)/i);
-  if (repoMatch) result.repo_hint = repoMatch[1];
-
-  const testsMatch = text.match(/\btests=(fast|full|none)\b/i);
-  if (testsMatch) result.test_level = testsMatch[1].toLowerCase();
-
-  const ciFixMatch = text.match(/\bci_fix=(on|off)\b/i);
-  if (ciFixMatch) result.ci_fix_enabled = ciFixMatch[1].toLowerCase() === "on";
-
-  const reviewMatch = text.match(/\breview=(\S+)/i);
-  if (reviewMatch) {
-    result.reviewers = reviewMatch[1]
-      .split(",")
-      .map((r: string) => r.trim().replace(/^@/, ""))
-      .filter(Boolean);
-  }
-
-  return result;
+export interface DiscordConfig {
+  discordBotUserId: string;
+  discordJobOwner: string;
+  maxThreadMessages: number;
+  maxAttachmentSizeMb: number;
+  githubUsername?: string;
+  githubOrg?: string;
+  githubTeamSlug?: string;
 }
-
-const _IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
 
 async function fetchThreadContext(
-  slackPoster: SlackPoster | undefined,
+  discordPoster: DiscordPoster | undefined,
   channelId: string,
-  threadTs: string,
+  threadId: string,
   botUserId: string,
   maxMessages: number,
-): Promise<{ messages: ThreadMessage[]; rawMessages: SlackThreadMessage[] }> {
-  if (!slackPoster) return { messages: [], rawMessages: [] };
+): Promise<{ messages: ThreadMessage[]; rawMessages: DiscordThreadMessage[] }> {
+  if (!discordPoster) return { messages: [], rawMessages: [] };
 
   try {
-    const rawMessages = await slackPoster.fetchThread(channelId, threadTs, maxMessages);
+    const rawMessages = await discordPoster.fetchThread(channelId, threadId, maxMessages);
     const messages = rawMessages.map((m) => ({
       user: m.user || "unknown",
       text: m.text || "",
-      ts: m.ts || "",
+      ts: m.id || "",
       isBot: m.user === botUserId,
     }));
     return { messages, rawMessages };
@@ -80,8 +57,8 @@ async function fetchThreadContext(
 }
 
 async function downloadThreadAttachments(
-  slackPoster: SlackPoster,
-  rawMessages: SlackThreadMessage[],
+  discordPoster: DiscordPoster,
+  rawMessages: DiscordThreadMessage[],
   maxSizeMb: number,
 ): Promise<JobAttachment[]> {
   const maxSizeBytes = maxSizeMb * 1024 * 1024;
@@ -89,7 +66,7 @@ async function downloadThreadAttachments(
   let totalSize = 0;
 
   // Collect all files from messages, newest-first
-  const allFiles: SlackFileInfo[] = [];
+  const allFiles: DiscordFileInfo[] = [];
   for (let i = rawMessages.length - 1; i >= 0; i--) {
     for (const file of rawMessages[i].files) {
       allFiles.push(file);
@@ -115,7 +92,7 @@ async function downloadThreadAttachments(
     }
 
     try {
-      const buffer = await slackPoster.downloadFile(file.url_private);
+      const buffer = await discordPoster.downloadFile(file.url);
       attachments.push({
         file_id: file.id,
         filename: file.name,
@@ -142,33 +119,35 @@ async function downloadThreadAttachments(
   return attachments;
 }
 
-export function createAppMentionHandler(config: ServerConfig, slackPoster?: SlackPoster) {
-  return async (event: SlackMentionEvent, eventId: string): Promise<MentionHandlerResult> => {
-    log.info("app_mention received", {
-      user: event.user,
-      channel: event.channel,
+export function createDiscordMentionHandler(config: DiscordConfig, discordPoster?: DiscordPoster) {
+  return async (event: DiscordMentionEvent, eventId: string): Promise<MentionHandlerResult> => {
+    log.info("Discord mention received", {
+      user: event.userId,
+      channel: event.channelId,
       event_id: eventId,
     });
 
     // Strip bot mention from text
-    const botMentionRegex = new RegExp(`<@${config.slackBotUserId}>\\s*`, "g");
+    const botMentionRegex = new RegExp(`<@!?${config.discordBotUserId}>\\s*`, "g");
     const cleanText = event.text.replace(botMentionRegex, "").trim();
 
     if (!cleanText) {
       return { reply: "You rang? Try telling me what you need — or ask what I can do." };
     }
 
-    const threadTs = event.thread_ts ?? event.ts;
+    // In Discord, threadId is the thread channel; if not in a thread, use the message's channel
+    const threadId = event.threadId ?? event.channelId;
 
     const ctx = {
-      userId: event.user,
-      ownerId: config.slackJobOwner,
-      source: "slack" as const,
+      userId: event.userId,
+      ownerId: config.discordJobOwner,
+      source: "discord" as const,
       eventId,
-      slack: {
-        channelId: event.channel,
-        threadTs,
-        messageTs: event.ts,
+      discord: {
+        channelId: event.channelId,
+        threadId,
+        messageId: event.messageId,
+        guildId: event.guildId,
       },
     };
 
@@ -176,40 +155,40 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
     let threadMessages: ThreadMessage[] | undefined;
     let attachments: JobAttachment[] | undefined;
 
-    if (event.thread_ts && slackPoster) {
+    if (event.threadId && discordPoster) {
       const { messages, rawMessages } = await fetchThreadContext(
-        slackPoster,
-        event.channel,
-        threadTs,
-        config.slackBotUserId,
+        discordPoster,
+        event.channelId,
+        event.threadId,
+        config.discordBotUserId,
         config.maxThreadMessages,
       );
       if (messages.length > 0) threadMessages = messages;
 
       // Download files from thread, newest-first, up to budget
       const downloaded = await downloadThreadAttachments(
-        slackPoster,
+        discordPoster,
         rawMessages,
         config.maxAttachmentSizeMb,
       );
       if (downloaded.length > 0) attachments = downloaded;
-    } else if (event.files && event.files.length > 0 && slackPoster) {
+    } else if (event.files && event.files.length > 0 && discordPoster) {
       // Top-level message with files — build a synthetic message list
-      const eventFiles: SlackFileInfo[] = event.files
-        .filter((f) => f.url_private)
+      const eventFiles: DiscordFileInfo[] = event.files
+        .filter((f) => f.url)
         .map((f) => ({
           id: f.id,
           name: f.name || "unknown",
           mimetype: f.mimetype || "application/octet-stream",
           size: f.size || 0,
-          url_private: f.url_private,
+          url: f.url,
         }));
       if (eventFiles.length > 0) {
-        const syntheticMessages: SlackThreadMessage[] = [
-          { user: event.user, text: cleanText, ts: event.ts, files: eventFiles },
+        const syntheticMessages: DiscordThreadMessage[] = [
+          { user: event.userId, text: cleanText, id: event.messageId, files: eventFiles },
         ];
         const downloaded = await downloadThreadAttachments(
-          slackPoster,
+          discordPoster,
           syntheticMessages,
           config.maxAttachmentSizeMb,
         );
@@ -219,7 +198,7 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
 
     try {
       // Route through LLM to classify intent and generate response
-      const action = await routeMessage(cleanText, event.user, threadMessages, attachments);
+      const action = await routeMessage(cleanText, event.userId, threadMessages, attachments);
       log.info("Routed action", { command: action.command, event_id: eventId });
 
       if (action.command === "no_op") {

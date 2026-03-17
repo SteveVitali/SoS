@@ -2,7 +2,7 @@ import { createLogger } from "../../shared/logger.js";
 import { nowDate } from "../../shared/time.js";
 import type { JobDoc, JobStatus } from "../../shared/types.js";
 import { getJobsCollection } from "../mongo.js";
-import type { SlackPoster } from "../slack/slackClient.js";
+import type { NotificationPoster } from "../notifications/poster.js";
 
 const log = createLogger("server:leaseReaper");
 
@@ -10,10 +10,10 @@ const REAP_INTERVAL_MS = 60_000; // check every 60s
 const GRACE_PERIOD_MS = 5 * 60_000; // 5 min past lease expiry before reaping
 
 let timer: ReturnType<typeof setInterval> | null = null;
-let slackPoster: SlackPoster | null = null;
+let poster: NotificationPoster | null = null;
 
-export function startLeaseReaper(poster?: SlackPoster) {
-  slackPoster = poster || null;
+export function startLeaseReaper(notificationPoster?: NotificationPoster) {
+  poster = notificationPoster || null;
   if (timer) return;
 
   timer = setInterval(reapStaleJobs, REAP_INTERVAL_MS);
@@ -73,9 +73,9 @@ async function reapStaleJobs() {
           lease_expired_at: job.lease_expires_at?.toISOString(),
         });
 
-        if (slackPoster && result.slack?.channel_id && result.slack?.thread_ts) {
+        if (poster) {
           try {
-            await slackPoster.postFailed(result);
+            await poster.postFailed(result);
           } catch {
             /* best-effort */
           }

@@ -4,15 +4,15 @@
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](.nvmrc)
 
-Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your repos, mention it in Slack (or use the web UI), and it autonomously writes code, runs tests, opens PRs, monitors CI, and fixes failures — all on your own machine. It also provides persistent knowledge bases with advanced hybrid retrieval and multi-strategy RAG research, a GitHub analytics hub, and LLM-powered conversational interfaces. Your code and data never leave your infrastructure.
+Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your repos, mention it in Slack or Discord (or use the web UI), and it autonomously writes code, runs tests, opens PRs, monitors CI, and fixes failures — all on your own machine. It also provides persistent knowledge bases with advanced hybrid retrieval and multi-strategy RAG research, a GitHub analytics hub, and LLM-powered conversational interfaces. Your code and data never leave your infrastructure.
 
 ### Why Son of Steve?
 
 - **Local-first** — runs on your machine; code never sent to a third-party cloud
 - **Full pipeline** — not just code generation: lint → test → self-review → commit → PR → CI → auto-fix CI failures
 - **PR comment review** — point it at any PR and it reads unresolved review threads, fixes each one, pushes, and replies
-- **Slack-native** — LLM-powered intent routing turns @-mentions into jobs, status checks, cancellations, or conversation
-- **Chat interface** — conversational web UI with the same LLM routing as Slack, including job creation, status checks, and inline image generation
+- **Slack & Discord native** — LLM-powered intent routing turns @-mentions into jobs, status checks, cancellations, or conversation on both platforms
+- **Chat interface** — conversational web UI with the same LLM routing as Slack/Discord, including job creation, status checks, and inline image generation
 - **Multi-repo** — a repo registry with per-repo commands, CI providers, and keyword-based detection
 - **Enterprise-ready** — worktree pooling with build cache preservation for large monorepos (Bazel, etc.)
 - **Worker management** — spawn, monitor, and shut down worker processes from the web UI with live log streaming
@@ -32,7 +32,7 @@ Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your re
 
 ```
 Slack ──Socket Mode──▶ sos-server ◀──HTTP+WS──▶ sos-worker (N loops)
-                           │                        │
+Discord ──Gateway──▶       │                        │
                            ▼                        ▼
                         MongoDB               Claude Code CLI
                        LanceDB (vectors)        git / gh
@@ -42,14 +42,14 @@ Slack ──Socket Mode──▶ sos-server ◀──HTTP+WS──▶ sos-worker
                      Web UI (React)
 ```
 
-1. You **@-mention the bot** in Slack (or create a job via the web UI)
+1. You **@-mention the bot** in Slack or Discord (or create a job via the web UI)
 2. An LLM classifies your intent — coding task, status check, cancel, retry, or just chat
 3. Coding tasks are **queued in MongoDB** and a worker claims the job with a lease
 4. The worker **resolves the repo** from the registry, prepares a git worktree, and runs **Claude Code CLI**
 5. After Claude finishes, the worker runs **lint and tests**, then feeds the diff through a **self-review pass** (a second Claude invocation acting as a Staff Engineer code reviewer)
 6. Changes are **committed, pushed, and a PR is opened** via `gh` CLI
 7. The worker **monitors CI** and, if it fails, runs a **bounded fix loop** — Claude reads the failure, fixes the code, pushes, and re-checks CI
-8. **Slack thread updates** are posted at every stage: queued, claimed, PR created, CI status, done/failed
+8. **Slack/Discord thread updates** are posted at every stage: queued, claimed, PR created, CI status, done/failed
 
 See [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) for the full design, data flow, and key decisions.
 
@@ -86,6 +86,7 @@ The AI coding agent space is crowded. Here's where Son of Steve fits:
 - **GitHub CLI** (`gh`) authenticated (`gh auth login`)
 - **Claude Code CLI** (`claude`) installed and configured
 - A **Slack App** with Socket Mode (optional — see [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md))
+- A **Discord Bot** (optional — see [docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md))
 
 ### 1. Install Dependencies
 
@@ -135,9 +136,9 @@ The web UI is available at `http://localhost:3000` (or `http://localhost:5173` i
 
 ## Usage
 
-### Via Slack
+### Via Slack / Discord
 
-Mention the bot in any channel. Messages are routed through an LLM ("Steve" persona) that classifies intent and responds conversationally:
+Mention the bot in any Slack or Discord channel. Messages are routed through an LLM ("Steve" persona) that classifies intent and responds conversationally. Both platforms support the same commands:
 
 ```
 @SonOfSteve fix the broken unit test in the auth module
@@ -172,7 +173,7 @@ The bot will:
 3. Reply in-thread with a natural language response
 4. For coding tasks: a worker claims the job and posts progress (claimed, PR created, CI status, done/failed)
 
-See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack app creation, LLM routing configuration, and thread context / file attachment details.
+See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack setup and [docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md) for Discord setup. Both share the same LLM routing configuration and thread context / file attachment capabilities.
 
 ### Via Web UI
 
@@ -260,6 +261,7 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **[docs/ARCHITECTURE.md](docs/ARCHITECTURE.md)** — system design, data flow, key decisions
 - **[docs/CONFIGURATION.md](docs/CONFIGURATION.md)** — full environment variable reference
 - **[docs/SLACK_SETUP.md](docs/SLACK_SETUP.md)** — Slack app creation, LLM routing, thread context & attachments
+- **[docs/DISCORD_SETUP.md](docs/DISCORD_SETUP.md)** — Discord bot creation, gateway intents, invite setup
 - **[docs/API.md](docs/API.md)** — HTTP API reference for worker and web endpoints
 - **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** — development setup, conventions, and how to add features
 - **[docs/RESEARCH_PIPELINE_DESIGN.md](docs/RESEARCH_PIPELINE_DESIGN.md)** — advanced RAG research pipeline design (strategies, stages, RAPTOR, agent, audit logging)
@@ -274,6 +276,12 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - Check `SLACK_APP_TOKEN` is an app-level token (`xapp-...`), not a bot token
 - Ensure the bot is invited to the channel where you mention it
 - Check server logs for connection errors
+
+### Discord bot not responding
+- Verify **Message Content Intent** is enabled in the Discord Developer Portal (Bot → Privileged Gateway Intents)
+- Check `DISCORD_BOT_TOKEN` is set and the token is valid (not expired/regenerated)
+- Ensure the bot has `Send Messages` and `Read Message History` permissions in the channel
+- Check server logs for "Discord bot gateway connected" or connection errors
 
 ### MongoDB connection issues
 - Verify `MONGO_URI` is correct

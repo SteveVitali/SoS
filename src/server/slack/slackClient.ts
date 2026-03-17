@@ -2,6 +2,7 @@ import { WebClient } from "@slack/web-api";
 import { createLogger } from "../../shared/logger.js";
 import { markdownToSlack } from "../../shared/slackMarkdown.js";
 import type { JobDoc } from "../../shared/types.js";
+import type { NotificationPoster } from "../notifications/poster.js";
 import {
   fmtCanceled,
   fmtClaimed,
@@ -29,15 +30,7 @@ export interface SlackThreadMessage {
   files: SlackFileInfo[];
 }
 
-export interface SlackPoster {
-  postQueued(job: JobDoc): Promise<void>;
-  postClaimed(job: JobDoc): Promise<void>;
-  postDone(job: JobDoc): Promise<void>;
-  postFailed(job: JobDoc): Promise<void>;
-  postCanceled(job: JobDoc): Promise<void>;
-  postPlan(job: JobDoc): Promise<void>;
-  // biome-ignore lint/suspicious/noExplicitAny: Slack API type
-  postEvent(job: JobDoc, type: string, payload?: any): Promise<void>;
+export interface SlackPoster extends NotificationPoster {
   fetchThread(channelId: string, threadTs: string, limit?: number): Promise<SlackThreadMessage[]>;
   downloadFile(urlPrivate: string): Promise<Buffer>;
   uploadFile(
@@ -47,8 +40,6 @@ export interface SlackPoster {
     filename: string,
     title?: string,
   ): Promise<void>;
-  setPresenceActive(): Promise<void>;
-  setPresenceAway(): Promise<void>;
 }
 
 const SLACK_MAX_CHARS = 3900;

@@ -16,10 +16,11 @@ export interface CommandResult {
 export interface CommandContext {
   userId: string;
   ownerId: string;
-  source: "slack" | "web";
+  source: "slack" | "discord" | "web";
   eventId: string;
   attachments?: JobAttachment[];
   slack?: { channelId: string; threadTs: string; messageTs: string };
+  discord?: { channelId: string; threadId: string; messageId: string; guildId?: string };
   web?: { conversationId: string };
   githubUsername?: string;
   githubOrg?: string;
