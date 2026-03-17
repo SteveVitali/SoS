@@ -25,6 +25,7 @@ import {
 import { resetStaleBuildingStatuses } from "./kb/raptor/raptorRepo.js";
 import { createLLMProvider } from "./llm/index.js";
 import { closeMongo, connectMongo } from "./mongo.js";
+import { CompositePoster } from "./notifications/poster.js";
 import { initExecutorLLM } from "./routing/executors.js";
 import { initRoutingConfig } from "./routing/index.js";
 import { initMessageRouter } from "./slack/messageRouter.js";
@@ -103,13 +104,10 @@ async function main() {
   }
 
   // Create composite notification poster (fans out to all enabled platforms)
-  {
-    const { CompositePoster } = await import("./notifications/poster.js");
-    const composite = new CompositePoster();
-    if (slackPoster) composite.add(slackPoster);
-    if (discordPoster) composite.add(discordPoster);
-    setNotificationPoster(composite);
-  }
+  const compositePoster = new CompositePoster();
+  if (slackPoster) compositePoster.add(slackPoster);
+  if (discordPoster) compositePoster.add(discordPoster);
+  setNotificationPoster(compositePoster);
 
   // Initialize YAML-driven routing config
   if (config.routingConfigPath) {
@@ -225,13 +223,7 @@ async function main() {
   }
 
   // Start lease reaper (transitions stale RUNNING jobs to FAILED)
-  {
-    const { CompositePoster } = await import("./notifications/poster.js");
-    const reaperPoster = new CompositePoster();
-    if (slackPoster) reaperPoster.add(slackPoster);
-    if (discordPoster) reaperPoster.add(discordPoster);
-    startLeaseReaper(reaperPoster);
-  }
+  startLeaseReaper(compositePoster);
 
   // Start Slack Socket Mode (only if tokens are configured)
   if (slackEnabled) {

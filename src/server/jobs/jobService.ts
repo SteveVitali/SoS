@@ -634,6 +634,8 @@ export async function retry(taskId: string): Promise<JobDoc | null> {
     created_at: now,
     updated_at: now,
     slack: original.slack,
+    discord: original.discord,
+    discord_requester: original.discord_requester,
     title: original.title,
     task_text: original.task_text,
     repo_hint: original.repo_hint,

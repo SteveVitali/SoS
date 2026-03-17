@@ -85,11 +85,8 @@ export async function startDiscordBot(
               continue;
             }
             const buf = Buffer.from(doc.base64, "base64");
-            const targetChannelId = message.channel.isThread()
-              ? message.channelId
-              : message.channelId;
             await discordPoster.uploadFile(
-              targetChannelId,
+              message.channelId,
               message.channel.isThread() ? message.channelId : "",
               buf,
               "generated-image.png",

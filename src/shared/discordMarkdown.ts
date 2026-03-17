@@ -24,11 +24,10 @@ export function discordToMarkdown(text: string): string {
  */
 export function markdownToDiscord(text: string): string {
   // Discord supports standard markdown natively — no conversion needed.
-  // Just ensure Slack-style formatting doesn't leak through.
+  // Just ensure Slack-style link syntax doesn't leak through.
   return (
     text
-      // Slack bold *text* (single asterisks that aren't already markdown bold)
-      // Leave **text** alone since Discord handles it natively
+      // Slack links <url|label> → markdown [label](url)
       .replace(/<(https?:\/\/[^|>]+)\|([^>]+)>/g, "[$2]($1)")
       // Bare Slack links <url> → markdown [url](url)
       .replace(/<(https?:\/\/[^>]+)>/g, "[$1]($1)")

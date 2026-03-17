@@ -32,8 +32,6 @@ export interface DiscordConfig {
   githubTeamSlug?: string;
 }
 
-const _IMAGE_MIMETYPES = new Set(["image/png", "image/jpeg", "image/gif", "image/webp"]);
-
 async function fetchThreadContext(
   discordPoster: DiscordPoster | undefined,
   channelId: string,
