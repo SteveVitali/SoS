@@ -175,10 +175,51 @@ export function createMemoryRoutes(config: ServerConfig): Router {
   // ─── POST /reflect ─────────────────────────────────────────────
   router.post("/reflect", async (req: Request, res: Response) => {
     try {
-      const owner = (req.body.owner as string) || config.slackJobOwner || "global";
       const effectiveConfig = await getEffectiveConfig();
-      const result = await runReflection(owner, effectiveConfig);
-      res.json({ result });
+      const requestedOwner = req.body.owner as string | undefined;
+
+      // Manual trigger always uses force: true to process ALL episodes,
+      // not just those since the last reflection timestamp
+      const force = req.body.force !== false;
+
+      if (requestedOwner) {
+        // Run for a specific owner
+        const result = await runReflection(requestedOwner, effectiveConfig, { force });
+        res.json({ result });
+        return;
+      }
+
+      // No owner specified: run for ALL known owners (same logic as periodic scheduler)
+      const { episodes } = await listEpisodes({ limit: 100 });
+      const owners = [...new Set(episodes.map((ep) => ep.owner))];
+
+      if (owners.length === 0) {
+        res.json({
+          result: {
+            episodes_reviewed: 0,
+            clusters_found: 0,
+            reflections_created: 0,
+            profile_updated: false,
+          },
+        });
+        return;
+      }
+
+      // Aggregate results across all owners
+      const combined = {
+        episodes_reviewed: 0,
+        clusters_found: 0,
+        reflections_created: 0,
+        profile_updated: false,
+      };
+      for (const owner of owners) {
+        const r = await runReflection(owner, effectiveConfig, { force });
+        combined.episodes_reviewed += r.episodes_reviewed;
+        combined.clusters_found += r.clusters_found;
+        combined.reflections_created += r.reflections_created;
+        if (r.profile_updated) combined.profile_updated = true;
+      }
+      res.json({ result: combined });
     } catch (err) {
       log.warn("Reflection trigger failed", { error: (err as Error).message });
       res.status(500).json({ error: "Reflection failed" });

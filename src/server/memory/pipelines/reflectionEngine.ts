@@ -492,6 +492,7 @@ async function synthesizeUserProfile(owner: string, config: MemoryConfig): Promi
 export async function runReflection(
   owner: string,
   config: MemoryConfig,
+  options?: { force?: boolean },
 ): Promise<{
   episodes_reviewed: number;
   clusters_found: number;
@@ -507,8 +508,8 @@ export async function runReflection(
 
   if (!config.reflection_enabled) return result;
 
-  // 1. Fetch episodes since last reflection
-  const lastReflection = await getLastReflectionTimestamp(owner);
+  // 1. Fetch episodes — when force is true, include ALL episodes (not just since last reflection)
+  const lastReflection = options?.force ? null : await getLastReflectionTimestamp(owner);
   const { episodes: allEpisodes } = await listEpisodes({ owner, limit: 200 });
 
   const episodes = lastReflection
