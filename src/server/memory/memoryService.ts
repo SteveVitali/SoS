@@ -13,12 +13,14 @@ import type {
   MemoryConfig,
 } from "../../shared/memoryTypes.js";
 import type { ServerConfig } from "../config.js";
+import { buildMemoryContext, buildUserContext } from "./contextBuilder.js";
 import { ensureEpisodeIndexes } from "./episodeRepo.js";
 import { loadMemoryConfig } from "./memoryConfig.js";
 import { closeMemoryFtsStore, initMemoryFtsStore } from "./memoryFtsStore.js";
 import { ensureMemoryNoteIndexes } from "./memoryRepo.js";
 import { closeMemoryVectorStore, initMemoryVectorStore } from "./memoryVectorStore.js";
 import { recordEpisode } from "./pipelines/episodeRecorder.js";
+import { extractFactsFromEpisode } from "./pipelines/factExtractor.js";
 
 const log = createLogger("server:memory:service");
 
@@ -80,7 +82,8 @@ export async function shutdownMemorySystem(): Promise<void> {
 
 /**
  * Called after every interaction completes.
- * Records the episode asynchronously (Pipeline A).
+ * Records the episode (Pipeline A) then triggers fact extraction (Pipeline B)
+ * as fire-and-forget.
  */
 export async function onInteractionComplete(params: {
   owner: string;
@@ -95,21 +98,35 @@ export async function onInteractionComplete(params: {
 }): Promise<void> {
   if (!memoryConfig?.enabled) return;
 
-  await recordEpisode(params);
+  const episodeId = await recordEpisode(params);
+
+  // Pipeline B: extract facts asynchronously (fire-and-forget)
+  if (memoryConfig && initialized) {
+    extractFactsFromEpisode(episodeId, memoryConfig).catch((err) => {
+      log.warn("Fact extraction failed", {
+        episodeId,
+        error: (err as Error).message,
+      });
+    });
+  }
 }
 
 /**
  * Get memory context for injection into the system prompt.
- * Phase 1 stub: returns empty strings. Phase 2 will implement real retrieval.
+ * Calls real hybrid search and user profile retrieval.
  */
 export async function getMemoryContext(
-  _userMessage: string,
-  _owner: string,
+  userMessage: string,
+  owner: string,
 ): Promise<{ memoryContext: string; userContext: string }> {
   if (!memoryConfig?.enabled || !initialized) {
     return { memoryContext: "", userContext: "" };
   }
 
-  // Phase 1 stub — returns empty context
-  return { memoryContext: "", userContext: "" };
+  const [memoryContext, userContext] = await Promise.all([
+    buildMemoryContext(userMessage, owner, memoryConfig),
+    buildUserContext(owner),
+  ]);
+
+  return { memoryContext, userContext };
 }
