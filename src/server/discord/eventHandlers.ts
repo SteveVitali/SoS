@@ -2,7 +2,7 @@ import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
 import { executeCommand } from "../slack/commandExecutor.js";
 import type { ThreadMessage } from "../slack/messageRouter.js";
-import { routeMessage } from "../slack/messageRouter.js";
+import { formatRoutingError, routeMessage } from "../slack/messageRouter.js";
 import type { DiscordFileInfo, DiscordPoster, DiscordThreadMessage } from "./discordClient.js";
 
 export interface MentionHandlerResult {
@@ -218,14 +218,14 @@ export function createDiscordMentionHandler(config: DiscordConfig, discordPoster
 
       return { reply: result.reply, images: result.images };
     } catch (err: unknown) {
+      const errMsg = (err as Error).message || "unknown error";
       log.error("Message routing failed", {
-        error: (err as Error).message,
+        error: errMsg,
         event_id: eventId,
       });
 
       return {
-        reply:
-          "Sorry, I can't process that right now — LLM routing is unavailable. Please try again later.",
+        reply: formatRoutingError(errMsg),
       };
     }
   };

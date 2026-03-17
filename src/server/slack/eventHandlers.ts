@@ -3,7 +3,7 @@ import type { JobAttachment } from "../../shared/types.js";
 import type { ServerConfig } from "../config.js";
 import { executeCommand } from "./commandExecutor.js";
 import type { ThreadMessage } from "./messageRouter.js";
-import { routeMessage } from "./messageRouter.js";
+import { formatRoutingError, routeMessage } from "./messageRouter.js";
 import type { SlackFileInfo, SlackPoster, SlackThreadMessage } from "./slackClient.js";
 
 export interface MentionHandlerResult {
@@ -239,14 +239,14 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
 
       return { reply: result.reply, images: result.images };
     } catch (err: unknown) {
+      const errMsg = (err as Error).message || "unknown error";
       log.error("Message routing failed", {
-        error: (err as Error).message,
+        error: errMsg,
         event_id: eventId,
       });
 
       return {
-        reply:
-          "Sorry, I can't process that right now — LLM routing is unavailable. Please try again later.",
+        reply: formatRoutingError(errMsg),
       };
     }
   };

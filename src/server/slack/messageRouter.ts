@@ -343,3 +343,40 @@ export async function routeMessage(
     throw new Error(`LLM routing unavailable: ${(err as Error).message}`);
   }
 }
+
+/**
+ * Extract a user-friendly error message from an LLM routing failure.
+ * Parses common API error patterns (credit balance, rate limits, auth, etc.)
+ * and returns a concise explanation instead of a generic "unavailable" message.
+ */
+export function formatRoutingError(errMsg: string): string {
+  const lower = errMsg.toLowerCase();
+
+  if (lower.includes("credit balance") || lower.includes("purchase credits")) {
+    return "⚠️ Anthropic API credits have run out. Please top up at https://console.anthropic.com/settings/plans and try again.";
+  }
+  if (lower.includes("rate limit") || lower.includes("rate_limit")) {
+    return "⚠️ LLM API rate limit hit. Please wait a moment and try again.";
+  }
+  if (
+    lower.includes("authentication") ||
+    lower.includes("invalid.*api.key") ||
+    lower.includes("401")
+  ) {
+    return "⚠️ LLM API authentication failed — the API key may be invalid or expired. Check your server configuration.";
+  }
+  if (lower.includes("overloaded") || lower.includes("529") || lower.includes("capacity")) {
+    return "⚠️ The LLM API is currently overloaded. Please try again in a few minutes.";
+  }
+  if (
+    lower.includes("context length") ||
+    lower.includes("too many tokens") ||
+    lower.includes("max_tokens")
+  ) {
+    return "⚠️ Message too long for the LLM context window. Try a shorter message.";
+  }
+
+  // Fallback: include a truncated version of the actual error
+  const cleaned = errMsg.replace(/^LLM routing unavailable:\s*/i, "").slice(0, 200);
+  return `⚠️ LLM routing failed: ${cleaned}`;
+}
