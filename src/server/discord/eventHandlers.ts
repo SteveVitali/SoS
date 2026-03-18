@@ -132,7 +132,10 @@ export function createDiscordMentionHandler(config: DiscordConfig, discordPoster
     const botMentionRegex = new RegExp(`<@!?${config.discordBotUserId}>\\s*`, "g");
     const cleanText = event.text.replace(botMentionRegex, "").trim();
 
-    if (!cleanText) {
+    // If no text and not in a thread, return a canned response.
+    // In a thread, we still want to fetch context and route through the LLM
+    // so the bot can respond based on the conversation history.
+    if (!cleanText && !event.threadId) {
       return { reply: "You rang? Try telling me what you need — or ask what I can do." };
     }
 
