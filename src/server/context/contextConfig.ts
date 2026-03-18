@@ -32,7 +32,7 @@ export function loadContextConfig(): ContextConfig {
     ),
   };
 
-  log.info("Context config loaded", {
+  log.debug("Context config loaded", {
     rerankerEnabled: config.rerankerEnabled,
     deepEscalationEnabled: config.deepEscalationEnabled,
     maxTokens: config.maxTokens,
