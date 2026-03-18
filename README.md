@@ -16,6 +16,7 @@ Son of Steve is a **self-hosted coding agent orchestrator**. Point it at your re
 - **Multi-repo** — a repo registry with per-repo commands, CI providers, and keyword-based detection
 - **Enterprise-ready** — worktree pooling with build cache preservation for large monorepos (Bazel, etc.)
 - **Worker management** — spawn, monitor, and shut down worker processes from the web UI with live log streaming
+- **Persistent memory** — learns from every interaction (chat, research, jobs, GitHub queries), extracts facts via LLM, builds user profiles, and self-organizes with periodic reflection; memories are injected into future conversations alongside KB context
 - **Knowledge bases** — upload documents (text, PDF, archives) or entire folders, chunk and embed them locally with hierarchical path metadata, and inject relevant context into LLM calls; real-time per-file ingestion progress
 - **Hybrid search** — vector similarity (LanceDB) + keyword search (SQLite FTS5) merged via Reciprocal Rank Fusion; keyword-only hits get full metadata for rich results even without vector matches
 - **Advanced research pipeline** — multi-stage RAG with three strategy profiles (simple/deep/agent): LLM-driven query analysis and decomposition, HyDE expansion, CRAG evaluation, IRCoT iterative reasoning, and a ReAct research agent with keyword search tool — all with full audit logging, NDJSON streaming, and a Research Playground UI
@@ -66,6 +67,7 @@ The AI coding agent space is crowded. Here's where Son of Steve fits:
 | **Full pipeline** (test → PR → CI → fix) | ✅ | Partial | ✅ | ❌ | ❌ |
 | **Self-review pass** | ✅ | ❌ | ❌ | ❌ | ❌ |
 | **CI fix loop** | ✅ (bounded, configurable) | ❌ | Varies | ❌ | ❌ |
+| **Persistent memory** | ✅ (learns from interactions, user profiles) | ❌ | ❌ | ❌ | ❌ |
 | **Knowledge bases + RAG** | ✅ (hybrid search, RAPTOR, research agent) | ❌ | ❌ | ❌ | ❌ |
 | **Worktree pooling / build cache** | ✅ | ❌ (ephemeral runners) | ❌ | ❌ | ❌ |
 | **Custom CI providers** | Pluggable (GH Actions, Jenkins, …) | GitHub Actions only | Proprietary | N/A | N/A |
@@ -186,6 +188,7 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack setup and [docs/DISCORD
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
    - **Repos** — edit the repo registry (YAML) directly from the browser
    - **Knowledge** — create knowledge bases, upload documents or folders (with real-time progress), test semantic search in the playground, configure scopes and chunking, RAPTOR tree visualization and build management
+   - **Memory** — browse and search persistent memories (facts, reflections, user profiles), view interaction episodes with extracted memories and feedback signals, manually edit or invalidate memories, trigger reflection, configure memory system parameters
    - **Research** — global research config (chat/Slack strategy, max context tokens), Research Playground (run queries with simple/deep/agent strategies, real-time pipeline timeline, model selector), Strategy Comparison (side-by-side benchmark), Research History (session browser with timeline drill-down)
    - **Routing** — visual editor for LLM action routing config (parameters, execution types, reply templates) with raw YAML fallback
    - **Models** — view and override model assignments for all roles with autocomplete from available models
