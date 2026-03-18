@@ -62,6 +62,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 - **`src/server/kb/`** — knowledge base module: vector store, FTS5 keyword index, hybrid search, chunker, embeddings, ingestion, MongoDB repo, service, API routes
 - **`src/server/kb/research/`** — advanced RAG research pipeline: pipeline runner, LLM client, audit logging, strategy profiles, and stages (queryAnalyzer, queryExpander, retriever, evaluator, reasoner, synthesizer) + agent/ (ReAct agent loop with keyword_search tool, prompts)
 - **`src/server/kb/raptor/`** — RAPTOR tree preprocessing: k-means clustering, LLM summarization, recursive tree building, MongoDB metadata
+- **`src/server/memory/`** — persistent memory system: episode recording, fact extraction, signal collection, reflection, memory evolution, hybrid search, context building, API routes
 - **`src/worker/`** — worker-only code (never imported by server)
 - **`src/ui/`** — React SPA with its own `tsconfig.json` (excluded from server compilation)
 
@@ -79,7 +80,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 1. Add to `JobDoc` interface in `src/shared/types.ts`
 2. Add Zod validation if it's an API input (`src/server/jobs/jobModel.ts`)
-3. Set it during creation in `jobService.ts` (`createJobFromSlack` / `createJobFromDiscord` / `createJobFromWeb`)
+3. Set it during creation in `jobService.ts` (`createJobFromSlack` / `createJobFromDiscord` / `createJobFromWeb`) and in the Discord handler (`discord/eventHandlers.ts`)
 4. Display it in the web UI (`src/ui/src/components/jobs/JobDetail.tsx`)
 5. If it comes from Slack, parse it in `eventHandlers.ts` (`parseModifiers`)
 

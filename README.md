@@ -269,6 +269,7 @@ Workers claim jobs atomically with a lease. Heartbeats extend the lease every 15
 - **[docs/CONTRIBUTING.md](docs/CONTRIBUTING.md)** — development setup, conventions, and how to add features
 - **[docs/RESEARCH_PIPELINE_DESIGN.md](docs/RESEARCH_PIPELINE_DESIGN.md)** — advanced RAG research pipeline design (strategies, stages, RAPTOR, agent, audit logging)
 - **[docs/GITHUB_HUB_DESIGN.md](docs/GITHUB_HUB_DESIGN.md)** — GitHub Hub sync engine design (chunked backfill, rate limiting, MongoDB cache, REST API)
+- **[docs/MEMORY_SYSTEM_DESIGN.md](docs/MEMORY_SYSTEM_DESIGN.md)** — persistent memory system design (interaction episodes, fact extraction, signal collection, reflection, memory evolution)
 
 ---
 

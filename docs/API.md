@@ -755,7 +755,7 @@ DELETE /api/web/chats/:id
 GET /api/web/models
 ```
 
-Returns the active model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding).
+Returns the active model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration, memory).
 
 **Response:**
 ```json
@@ -765,7 +765,9 @@ Returns the active model assignments for all roles (routing, titleGeneration, re
     "titleGeneration": { "model": "claude-opus-4.5", "envVar": "SOS_TITLE_MODEL" },
     "research": { "model": "claude-opus-4.5", "envVar": "SOS_RESEARCH_LLM_MODEL" },
     "raptorSummarization": { "model": "claude-opus-4.5", "envVar": "SOS_RAPTOR_MODEL" },
-    "embedding": { "model": "text-embedding-3-small", "envVar": "SOS_EMBEDDING_MODEL" }
+    "embedding": { "model": "text-embedding-3-small", "envVar": "SOS_EMBEDDING_MODEL" },
+    "imageGeneration": { "model": "gpt-image-1", "envVar": "SOS_IMAGE_MODEL" },
+    "memory": { "model": "gpt-4.1-mini", "envVar": "SOS_MEMORY_MODEL" }
   }
 }
 ```
@@ -781,7 +783,9 @@ Proxies the LiteLLM `/model/info` endpoint to return available chat models. Resu
 **Response:**
 ```json
 {
-  "models": ["claude-opus-4.5", "claude-sonnet-4-20250514", "gpt-4o", ...]
+  "models": ["claude-opus-4.5", "claude-sonnet-4-20250514", "gpt-4o", ...],
+  "imageModels": ["gpt-image-1", ...],
+  "provider": "openai_compatible"
 }
 ```
 
@@ -1780,8 +1784,8 @@ interface JobDoc {
   task_id: string;                    // UUID, unique
   job_type?: "create" | "respond_to_pr_comments" | "self_review_pr" | "add_pr_review_comments";  // default: "create"
   source: {
-    type: "slack_app_mention" | "web_create";
-    event_id?: string;                // Slack event ID (unique when present)
+    type: "slack_app_mention" | "discord_mention" | "web_create";
+    event_id?: string;                // Slack/Discord event ID (unique when present)
   };
   requested_by: string;               // Slack user ID or username
   slack_requester?: string;           // Original Slack user (when job owner differs)
