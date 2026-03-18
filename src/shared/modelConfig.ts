@@ -11,11 +11,14 @@
  * ┌──────────────────────┬──────────────────────────────┬──────────────────────────────────┐
  * │ Role                 │ Default model                │ Env override                     │
  * ├──────────────────────┼──────────────────────────────┼──────────────────────────────────┤
- * │ routing              │ claude-opus-4.5     │ SOS_LLM_MODEL                    │
+ * │ routing              │ claude-opus-4.5              │ SOS_LLM_MODEL                    │
  * │ titleGeneration      │ (inherits routing)           │ SOS_TITLE_MODEL                  │
- * │ research             │ claude-opus-4.5     │ SOS_RESEARCH_LLM_MODEL           │
+ * │ research             │ claude-opus-4.5              │ SOS_RESEARCH_LLM_MODEL           │
  * │ raptorSummarization  │ (inherits research)          │ SOS_RAPTOR_MODEL                 │
  * │ embedding            │ text-embedding-3-small       │ SOS_EMBEDDING_MODEL              │
+ * │ imageGeneration      │ gpt-image-1                  │ SOS_IMAGE_MODEL                  │
+ * │ memory               │ gpt-4.1-mini                 │ SOS_MEMORY_MODEL                 │
+ * │ context              │ gpt-4.1-mini                 │ SOS_CONTEXT_LLM_API_KEY (model)  │
  * └──────────────────────┴──────────────────────────────┴──────────────────────────────────┘
  */
 

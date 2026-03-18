@@ -16,6 +16,13 @@ and this project adheres to [Semantic Versioning](https://semver.org/spec/v2.0.0
   - HTTP API: 12 endpoints under `/api/web/memory/` for stats, listing, search, manual editing, reflection triggers, episode browsing, and runtime config
   - MongoDB collections: `memories` (facts, reflections, user profiles) and `interaction_episodes` (interaction records with outcome signals)
   - New `memory` model role (default: `gpt-4.1-mini`) for extraction, curation, reflection, and evolution
+- **Unified context assembly layer** (`src/server/context/`) — searches KB and Memory in parallel, normalizes results into a common `ContextItem` format, cross-ranks via an LLM listwise reranker (RankRAG/EverMemOS/CRAG-inspired), evaluates context sufficiency, and automatically escalates to deep research when insufficient
+  - New `{CONTEXT}` system prompt placeholder for unified KB + Memory context (with fallback to legacy `{KB_CONTEXT}` + `{MEMORY_CONTEXT}`)
+  - LLM reranker with sufficiency assessment and follow-up query suggestion for deep escalation
+  - Position-aware serialization within a shared token budget
+  - Worker-facing HTTP endpoint: `POST /api/worker/context`
+  - New `context` model role (default: `gpt-4.1-mini`) for the reranker LLM
+  - 7 new `SOS_CONTEXT_*` environment variables for configuration
 - **Hybrid search (FTS5 + vector + RRF)** — each knowledge base now has a parallel SQLite FTS5 keyword index alongside its LanceDB vector store; `hybridSearch()` merges vector similarity and BM25 keyword results via Reciprocal Rank Fusion (k=60); the ReAct research agent gains a `keyword_search` tool; FTS indexes are auto-created on ingestion and support lazy schema migration via `user_version` pragma; new API endpoints `GET /api/web/kb/:id/fts/status` and `POST /api/web/kb/:id/fts/rebuild`
 - **FTS metadata columns** — FTS5 index stores `section`, `page`, `file_path`, and `parent_dir` as `UNINDEXED` columns so keyword-only hits carry the same rich metadata as vector results; `FTSSearchResult` and `FTSRecord` interfaces expanded; schema version migration auto-rebuilds old indexes
 - **Image generation** — new `generate_image` execution type with text-to-image via OpenAI-compatible APIs (gpt-image-1 default); images stored in MongoDB `generated_images` collection with 90-day TTL; optional KB-enriched prompts (vector search → evaluator filtering → LLM rewriting); new `imageGeneration` model role; inline image rendering in chat UI
