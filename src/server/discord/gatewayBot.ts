@@ -28,6 +28,12 @@ export async function startDiscordBot(
   const client = discordPoster.getClient();
   const handleMention = createDiscordMentionHandler(config, discordPoster);
 
+  // Dedup guard: Discord.js can deliver messageCreate more than once during
+  // reconnections or shard resumption. Track recently-processed message IDs
+  // to prevent duplicate responses.
+  const processedMessages = new Set<string>();
+  const DEDUP_TTL_MS = 60_000; // forget after 60s
+
   client.on("messageCreate", async (message: Message) => {
     // Ignore messages from bots (including self)
     if (message.author.bot) return;
@@ -35,14 +41,26 @@ export async function startDiscordBot(
     // Only respond when mentioned
     if (!message.mentions.has(config.discordBotUserId)) return;
 
+    // Dedup: skip if we've already processed this message
+    if (processedMessages.has(message.id)) {
+      log.warn("Duplicate messageCreate event, skipping", {
+        messageId: message.id,
+        channel: message.channelId,
+      });
+      return;
+    }
+    processedMessages.add(message.id);
+    setTimeout(() => processedMessages.delete(message.id), DEDUP_TTL_MS);
+
     const eventId = `${message.channelId}-${message.id}`;
 
+    const isThread = message.channel.isThread();
     const event = {
       userId: message.author.id,
       text: message.content,
-      channelId: message.channelId,
+      channelId: isThread ? (message.channel.parentId ?? message.channelId) : message.channelId,
       messageId: message.id,
-      threadId: message.channel.isThread() ? message.channelId : undefined,
+      threadId: isThread ? message.channelId : undefined,
       guildId: message.guildId ?? undefined,
       files: [...message.attachments.values()].map((a) => ({
         id: a.id,

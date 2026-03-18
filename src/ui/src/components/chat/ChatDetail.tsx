@@ -1,6 +1,7 @@
 import { useCallback, useEffect, useRef, useState } from "react";
 import { Link, useNavigate, useParams } from "react-router-dom";
 import {
+  type ChatMemoryMeta,
   type Conversation,
   type ConversationMessage,
   deleteConversation,
@@ -187,6 +188,62 @@ function MessageBubble({ msg }: { msg: ConversationMessage }) {
   );
 }
 
+function MemoryContextIndicator({ meta }: { meta: ChatMemoryMeta }) {
+  const [expanded, setExpanded] = useState(false);
+  const parts: string[] = [];
+  if (meta.facts_used > 0) parts.push(`${meta.facts_used} fact${meta.facts_used !== 1 ? "s" : ""}`);
+  if (meta.reflections_used > 0)
+    parts.push(`${meta.reflections_used} reflection${meta.reflections_used !== 1 ? "s" : ""}`);
+  if (meta.profile_loaded) parts.push("profile loaded");
+  const summary = parts.length > 0 ? parts.join(", ") : `${meta.memories_used} memories`;
+
+  return (
+    <div style={{ margin: "0 0 6px 12px" }}>
+      <button
+        type="button"
+        onClick={() => setExpanded(!expanded)}
+        style={{
+          background: "none",
+          border: "none",
+          padding: "2px 8px",
+          borderRadius: 8,
+          fontSize: 11,
+          color: "var(--fg3)",
+          cursor: "pointer",
+          display: "flex",
+          alignItems: "center",
+          gap: 4,
+        }}
+      >
+        <span>🧠</span>
+        <span>
+          {meta.memories_used} memories used ({summary})
+        </span>
+        <span style={{ fontSize: 9 }}>{expanded ? "▲" : "▼"}</span>
+      </button>
+      {expanded && meta.memory_context && (
+        <pre
+          style={{
+            background: "var(--bg)",
+            border: "1px solid var(--border)",
+            borderRadius: 6,
+            padding: "8px 10px",
+            fontSize: 11,
+            color: "var(--fg2)",
+            whiteSpace: "pre-wrap",
+            marginTop: 4,
+            marginLeft: 8,
+            maxHeight: 200,
+            overflow: "auto",
+          }}
+        >
+          {meta.memory_context}
+        </pre>
+      )}
+    </div>
+  );
+}
+
 export function ChatDetail() {
   const { id } = useParams<{ id: string }>();
   const navigate = useNavigate();
@@ -195,6 +252,7 @@ export function ChatDetail() {
   const [error, setError] = useState("");
   const [inputText, setInputText] = useState("");
   const [sending, setSending] = useState(false);
+  const [memoryMetaMap, setMemoryMetaMap] = useState<Record<string, ChatMemoryMeta>>({});
   const messagesEndRef = useRef<HTMLDivElement>(null);
   const lastPollRef = useRef<string>("");
   const inputRef = useRef<HTMLTextAreaElement>(null);
@@ -295,6 +353,11 @@ export function ChatDetail() {
         lastPollRef.current = res.assistantMessage.at;
         return updated;
       });
+      // Store memory metadata for this assistant message
+      if (res.memoryMeta) {
+        const meta = res.memoryMeta;
+        setMemoryMetaMap((prev) => ({ ...prev, [res.assistantMessage.id]: meta }));
+      }
       // Refresh to get title
       if (!conversation?.title) {
         setTimeout(async () => {
@@ -427,7 +490,12 @@ export function ChatDetail() {
           </div>
         )}
         {conversation.messages.map((msg) => (
-          <MessageBubble key={msg.id} msg={msg} />
+          <div key={msg.id}>
+            <MessageBubble msg={msg} />
+            {msg.role === "assistant" && memoryMetaMap[msg.id] && (
+              <MemoryContextIndicator meta={memoryMetaMap[msg.id]} />
+            )}
+          </div>
         ))}
         {sending && (
           <div

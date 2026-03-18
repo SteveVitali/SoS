@@ -81,7 +81,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 
 1. Add to `JobDoc` interface in `src/shared/types.ts`
 2. Add Zod validation if it's an API input (`src/server/jobs/jobModel.ts`)
-3. Set it during creation in `jobService.ts` (`createJobFromSlack` / `createJobFromDiscord` / `createJobFromWeb`)
+3. Set it during creation in `jobService.ts` (`createJobFromSlack` / `createJobFromDiscord` / `createJobFromWeb`) and in the Discord handler (`discord/eventHandlers.ts`)
 4. Display it in the web UI (`src/ui/src/components/jobs/JobDetail.tsx`)
 5. If it comes from Slack, parse it in `eventHandlers.ts` (`parseModifiers`)
 

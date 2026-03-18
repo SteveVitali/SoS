@@ -13,7 +13,7 @@ import type { RoutedAction } from "./messageRouter.js";
 let mongod: MongoMemoryServer;
 
 const ctx = {
-  userId: "U_USER",
+  userId: "U_OWNER",
   ownerId: "U_OWNER",
   source: "slack" as const,
   eventId: "evt_cmd_test",
@@ -188,6 +188,87 @@ describe("executeCommand", () => {
       );
       expect(result.reply).toBe("Hey there!");
       expect(result.actionTaken).toBe("chat");
+    });
+  });
+
+  describe("owner-only guard", () => {
+    const nonOwnerCtx = {
+      ...ctx,
+      userId: "U_SOMEONE_ELSE",
+    };
+
+    it("denies create_job for non-owner on Slack", async () => {
+      const action: RoutedAction = {
+        command: "create_job",
+        args: { task_text: "hack the planet" },
+        reply: "On it.",
+      };
+      const result = await executeCommand(action, {
+        ...nonOwnerCtx,
+        eventId: "evt_deny_1",
+      });
+      expect(result.actionTaken).toBe("owner_only: denied");
+      expect(result.reply).toContain("only the primary user");
+    });
+
+    it("denies cancel_job for non-owner on Slack", async () => {
+      // First create a job as owner
+      const createResult = await executeCommand(
+        { command: "create_job", args: { task_text: "cancel guard" }, reply: "ok" },
+        { ...ctx, eventId: "evt_deny_cancel_1" },
+      );
+      const taskId = createResult.actionTaken.match(/created job (.+)/)?.[1];
+
+      const result = await executeCommand(
+        { command: "cancel_job", args: { task_id: taskId }, reply: "" },
+        nonOwnerCtx,
+      );
+      expect(result.actionTaken).toBe("owner_only: denied");
+    });
+
+    it("denies create_job for non-owner on Discord", async () => {
+      const discordNonOwner = {
+        userId: "DISCORD_OTHER",
+        ownerId: "DISCORD_OWNER",
+        source: "discord" as const,
+        eventId: "evt_deny_discord_1",
+        discord: { channelId: "ch1", threadId: "th1", messageId: "m1" },
+      };
+      const result = await executeCommand(
+        { command: "create_job", args: { task_text: "nope" }, reply: "" },
+        discordNonOwner,
+      );
+      expect(result.actionTaken).toBe("owner_only: denied");
+    });
+
+    it("allows job actions for the owner", async () => {
+      const action: RoutedAction = {
+        command: "create_job",
+        args: { task_text: "owner is fine" },
+        reply: "ok",
+      };
+      const result = await executeCommand(action, {
+        ...ctx,
+        eventId: "evt_allow_owner_1",
+      });
+      expect(result.actionTaken).toContain("created job");
+    });
+
+    it("allows non-owner to use read-only job_status", async () => {
+      const result = await executeCommand(
+        { command: "job_status", args: { task_id: "nonexistent" }, reply: "" },
+        nonOwnerCtx,
+      );
+      expect(result.actionTaken).toContain("not found");
+      expect(result.actionTaken).not.toBe("owner_only: denied");
+    });
+
+    it("allows non-owner to use list_jobs", async () => {
+      const result = await executeCommand(
+        { command: "list_jobs", args: {}, reply: "" },
+        nonOwnerCtx,
+      );
+      expect(result.actionTaken).not.toBe("owner_only: denied");
     });
   });
 });

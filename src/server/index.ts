@@ -24,9 +24,10 @@ import {
 } from "./kb/index.js";
 import { resetStaleBuildingStatuses } from "./kb/raptor/raptorRepo.js";
 import { createLLMProvider } from "./llm/index.js";
+import { OpenAICompatibleProvider } from "./llm/openaiProvider.js";
 import { closeMongo, connectMongo } from "./mongo.js";
 import { CompositePoster } from "./notifications/poster.js";
-import { initExecutorLLM } from "./routing/executors.js";
+import { initExecutorLLM, initImageGenProvider } from "./routing/executors.js";
 import { initRoutingConfig } from "./routing/index.js";
 import { initMessageRouter } from "./slack/messageRouter.js";
 import { createSlackPoster } from "./slack/slackClient.js";
@@ -74,6 +75,17 @@ async function main() {
     await resetStaleBuildingStatuses();
   } catch (err: any) {
     log.warn("Failed to initialize knowledge base subsystem (non-fatal)", { error: err.message });
+  }
+
+  // Initialize memory system
+  try {
+    const { initMemorySystem } = await import("./memory/index.js");
+    await initMemorySystem(config);
+    log.info("Memory system initialized");
+  } catch (err: unknown) {
+    log.warn("Failed to initialize memory system (non-fatal)", {
+      error: (err as Error).message,
+    });
   }
 
   // Create Slack poster (only if real tokens are configured, not placeholders)
@@ -177,6 +189,26 @@ async function main() {
     log.warn(
       "No LLM API key configured (SOS_LLM_API_KEY / ANTHROPIC_API_KEY) — message routing disabled",
     );
+  }
+
+  // Initialize separate image generation provider (needs OpenAI-compatible API)
+  {
+    const imageApiKey = process.env.SOS_IMAGE_API_KEY || process.env.OPENAI_API_KEY || "";
+    const imageBaseUrl = process.env.SOS_IMAGE_BASE_URL || "https://api.openai.com/v1";
+    if (imageApiKey) {
+      try {
+        const imageProvider = new OpenAICompatibleProvider(imageApiKey, imageBaseUrl);
+        initImageGenProvider(imageProvider);
+      } catch (err: unknown) {
+        log.warn("Failed to initialize image generation provider (non-fatal)", {
+          error: (err as Error).message,
+        });
+      }
+    } else {
+      log.warn(
+        "No image API key configured (SOS_IMAGE_API_KEY / OPENAI_API_KEY) — image generation disabled",
+      );
+    }
   }
 
   // Start Express server
@@ -305,6 +337,12 @@ async function main() {
     try {
       const { getGitHubSyncService } = await import("./githubSync/index.js");
       getGitHubSyncService().stop();
+    } catch {
+      /* best effort */
+    }
+    try {
+      const { shutdownMemorySystem } = await import("./memory/index.js");
+      await shutdownMemorySystem();
     } catch {
       /* best effort */
     }

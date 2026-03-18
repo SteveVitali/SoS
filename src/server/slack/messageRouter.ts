@@ -4,9 +4,11 @@ import { createLogger } from "../../shared/logger.js";
 import { getModelForRole } from "../../shared/modelConfig.js";
 import type { ResearchStrategy } from "../../shared/researchTypes.js";
 import type { JobAttachment } from "../../shared/types.js";
+import { assembleContext } from "../context/index.js";
 import { queryJobs } from "../jobs/jobService.js";
 import { researchKnowledgeBases, searchKnowledgeBases } from "../kb/kbService.js";
 import type { ContentBlock, LLMProvider, ToolDefinition } from "../llm/index.js";
+import { getMemoryContext } from "../memory/index.js";
 import {
   buildActionsPromptSection,
   buildToolsFromConfig,
@@ -15,11 +17,20 @@ import {
 
 const log = createLogger("server:slack:router");
 
+export interface MemoryMeta {
+  memories_used: number;
+  facts_used: number;
+  reflections_used: number;
+  profile_loaded: boolean;
+  memory_context?: string;
+}
+
 export interface RoutedAction {
   command: string;
   // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   args: Record<string, any>;
   reply: string;
+  memoryMeta?: MemoryMeta;
 }
 
 /**
@@ -219,11 +230,52 @@ export async function routeMessage(
     throw new Error("LLM provider not initialized — cannot route message");
   }
 
-  const jobsContext = await buildJobsContext();
   const { systemPromptTemplate, tools: configTools, model } = buildSystemPromptAndTools();
-  const kbContext = await buildKBContext(userMessage, ["chat", "all"]);
+
+  // Unified context assembly — searches KB + Memory in parallel, cross-ranks,
+  // and auto-escalates to deep retrieval when context is insufficient.
+  const [jobsContext, contextResult] = await Promise.all([
+    buildJobsContext(),
+    assembleContext({
+      query: userMessage,
+      owner: slackUserId,
+      scopes: ["chat", "all"],
+    }).catch((err) => {
+      log.warn("Unified context assembly failed, falling back to legacy", {
+        error: (err as Error).message,
+      });
+      return null;
+    }),
+  ]);
+
   let systemPrompt = systemPromptTemplate.replace("{JOBS_CONTEXT}", jobsContext);
-  systemPrompt = systemPrompt.replace("{KB_CONTEXT}", kbContext);
+
+  // memoryResult is used later to build memoryMeta for the chat UI
+  let memoryResult = { memoryContext: "", userContext: "" };
+
+  // Legacy fallback: if unified context failed or template uses old placeholders
+  if (!contextResult || !systemPromptTemplate.includes("{CONTEXT}")) {
+    // Fall back to legacy independent KB + memory context
+    const [kbContext, legacyMemory] = await Promise.all([
+      buildKBContext(userMessage, ["chat", "all"]),
+      getMemoryContext(userMessage, slackUserId).catch(() => ({
+        memoryContext: "",
+        userContext: "",
+      })),
+    ]);
+    systemPrompt = systemPrompt.replace("{KB_CONTEXT}", kbContext);
+    systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", legacyMemory.memoryContext);
+    systemPrompt = systemPrompt.replace("{USER_CONTEXT}", legacyMemory.userContext);
+    memoryResult = legacyMemory;
+  } else {
+    // Unified path — single {CONTEXT} + {USER_CONTEXT}
+    systemPrompt = systemPrompt.replace("{CONTEXT}", contextResult.context);
+    systemPrompt = systemPrompt.replace("{USER_CONTEXT}", contextResult.profile);
+    // Also replace legacy placeholders with empty strings in case template has both
+    systemPrompt = systemPrompt.replace("{KB_CONTEXT}", "");
+    systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", "");
+    memoryResult = { memoryContext: contextResult.context, userContext: contextResult.profile };
+  }
   const activeModel = model || configuredModel;
 
   // Build message history from thread context
@@ -337,7 +389,23 @@ export async function routeMessage(
       reply: reply.slice(0, 100),
     });
 
-    return { command, reply, args };
+    // Build memory metadata for chat UI transparency
+    const memCtx = memoryResult.memoryContext;
+    const memLines = memCtx ? memCtx.split("\n").filter((l) => l.trim()) : [];
+    const factsUsed = memLines.filter((l) => l.includes("[fact")).length;
+    const reflectionsUsed = memLines.filter((l) => l.includes("[reflection")).length;
+    const memoryMeta: MemoryMeta | undefined =
+      memLines.length > 0 || memoryResult.userContext
+        ? {
+            memories_used: memLines.length,
+            facts_used: factsUsed,
+            reflections_used: reflectionsUsed,
+            profile_loaded: !!memoryResult.userContext,
+            memory_context: memCtx || undefined,
+          }
+        : undefined;
+
+    return { command, reply, args, memoryMeta };
   } catch (err: unknown) {
     log.error("LLM routing failed", { error: (err as Error).message });
     throw new Error(`LLM routing unavailable: ${(err as Error).message}`);

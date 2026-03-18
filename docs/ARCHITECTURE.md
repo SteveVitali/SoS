@@ -93,7 +93,7 @@ Workers are **stateless** — all persistent state lives in MongoDB via the serv
 
 ### MongoDB
 
-Thirteen collections:
+Seventeen collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
@@ -109,6 +109,9 @@ Thirteen collections:
 - **`github_sync_log`** — Timestamped sync activity log (displayed in UI via SSE stream).
 - **`github_settings`** — UI-editable GitHub Hub configuration (org, team, sync toggles, etc.).
 - **`generated_images`** — Stored generated images (base64 data, metadata, 90-day TTL index).
+- **`memories`** — Memory notes: facts extracted from interactions, reflections consolidated from episode clusters, and user profiles synthesized from accumulated knowledge. Each note has content, context, keywords, tags, temporal validity (`valid_from`/`invalidated_at`), bidirectional links to related memories, and scoring fields (`importance`, `confidence`, `access_count`).
+- **`interaction_episodes`** — Records of every user interaction across Slack, Discord, and web chat. Each episode captures the user message, routed action, response summary, downstream effects (task IDs), outcome signals (gratitude, correction, rephrase, job outcomes), and extraction processing state.
+- **`memory_config`** — Persisted memory system configuration overrides (from the web UI config editor), merged with environment-variable defaults at runtime.
 
 **Key indexes:**
 - `source.event_id` — unique partial (idempotency for Slack/Discord events)
@@ -118,6 +121,15 @@ Thirteen collections:
 - `kb_id` — unique (knowledge base lookup)
 - `{ kb_id, name }` — compound unique (document dedup within a KB)
 - `{ org, data_type, chunk_start }` — compound (GitHub sync chunk lookup)
+- `memory_id` — unique (memory note lookup)
+- `{ owner, memory_type, updated_at }` — compound (memory listing by owner/type, sorted by recency)
+- `{ owner, invalidated_at }` — compound (active/invalidated memory filtering)
+- `{ owner, tags }` — compound (tag-based memory filtering)
+- `source_episodes` — multikey (find memories extracted from a given episode)
+- `episode_id` — unique (episode lookup)
+- `{ owner, timestamp }` — compound (episode listing by owner, sorted by recency)
+- `{ owner, extraction_status }` — compound (pending extraction queue)
+- `task_id` — (episode → job linking)
 
 ### Web UI (`src/ui/`)
 
@@ -132,7 +144,7 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 - **Knowledge** — create/manage knowledge bases, upload documents or folders (with real-time per-file progress), test semantic search in the KBPlayground, configure scopes and chunking parameters, **RAPTOR tree** visualization (build/rebuild indices, interactive cluster hierarchy explorer)
 - **Research** — global research config controls (chat/Slack strategy, max context tokens persisted to routing-config.yaml), **Research Playground** (run queries with simple/deep/agent strategies, real-time NDJSON-streamed pipeline timeline, model selector), **Strategy Comparison** (side-by-side all-strategies benchmark), **Research History** (paginated session browser with timeline drill-down), and per-job **Research Audit** sections on the Jobs detail page
 - **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 13 execution types, reply template management, with a raw YAML fallback view
-- **Models** — view and override model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding) with autocomplete from available models
+- **Models** — view and override model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration, memory) with autocomplete from available models
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
 
@@ -513,6 +525,25 @@ son-of-steve/
 │   │   │       ├── summarizer.ts      # LLM-based cluster summarization
 │   │   │       ├── treeBuilder.ts     # Recursive tree construction orchestrator
 │   │   │       └── raptorRepo.ts      # MongoDB metadata for RAPTOR build status
+│   │   ├── memory/              # Persistent memory system
+│   │   │   ├── index.ts              # Barrel export of public API
+│   │   │   ├── memoryConfig.ts       # Config loading from env vars with defaults
+│   │   │   ├── memoryService.ts      # Orchestration: init, shutdown, interaction hooks, context retrieval
+│   │   │   ├── memoryRepo.ts         # MongoDB CRUD for `memories` collection
+│   │   │   ├── episodeRepo.ts        # MongoDB CRUD for `interaction_episodes` collection
+│   │   │   ├── memoryVectorStore.ts  # LanceDB wrapper for memory embeddings (per-owner tables)
+│   │   │   ├── memoryFtsStore.ts     # SQLite FTS5 wrapper for memory keyword search
+│   │   │   ├── memorySearch.ts       # Hybrid search (vector + keyword + RRF + composite scoring)
+│   │   │   ├── contextBuilder.ts     # Build {MEMORY_CONTEXT} and {USER_CONTEXT} for prompt injection
+│   │   │   ├── memoryRoutes.ts       # Express routes for /api/web/memory/* (UI integration)
+│   │   │   ├── memoryUtils.ts        # Shared utilities (distance conversion, LLM client, embedding text builder)
+│   │   │   ├── prompts.ts            # LLM prompt templates for extraction, curation, reflection, evolution
+│   │   │   └── pipelines/
+│   │   │       ├── episodeRecorder.ts    # Pipeline A: record interaction episodes (zero LLM)
+│   │   │       ├── factExtractor.ts      # Pipeline B: Mem0-style fact extraction + curation (1-2 LLM calls)
+│   │   │       ├── signalCollector.ts    # Pipeline C: implicit feedback signal detection (zero LLM)
+│   │   │       ├── reflectionEngine.ts   # Pipeline D: periodic reflection + user profile synthesis (N LLM calls)
+│   │   │       └── memoryEvolver.ts      # Pipeline E: A-MEM-style memory linking + evolution (0-1 LLM calls)
 │   │   └── api/
 │   │       ├── router.ts        # Mount worker + web + chat + KB + GitHub routes with auth
 │   │       ├── workerRoutes.ts  # /api/worker/* (jobs + registration)

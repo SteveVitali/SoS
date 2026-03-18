@@ -64,7 +64,14 @@ let imageGenProvider: LLMProvider | null = null;
 export function initExecutorLLM(provider: LLMProvider): void {
   recapLlmProvider = provider;
   imageGenProvider = provider;
-  log.info("Executor LLM provider initialized (inline recaps + image gen enabled)");
+  log.info("Executor LLM provider initialized (inline recaps enabled)");
+}
+
+export function initImageGenProvider(provider: LLMProvider): void {
+  imageGenProvider = provider;
+  log.info("Image generation provider initialized", {
+    supportsImageGen: typeof provider.generateImage === "function",
+  });
 }
 
 // --- Shared helpers ---
@@ -1058,6 +1065,31 @@ async function executeDispatch(
   return executeAction(action, ctx, subExecDef);
 }
 
+// --- Owner-only guard for job-mutating actions ---
+
+const OWNER_ONLY_EXEC_TYPES = new Set([
+  "create_job",
+  "job_action",
+  "create_respond_job",
+  "agent_task",
+]);
+
+function requireOwner(ctx: CommandContext, execDef: ExecutionDef): CommandResult | null {
+  if (!OWNER_ONLY_EXEC_TYPES.has(execDef.type)) return null;
+  if (ctx.source === "web") return null; // web chat is always the owner
+  if (ctx.userId === ctx.ownerId) return null;
+  log.warn("Non-owner attempted job action", {
+    userId: ctx.userId,
+    ownerId: ctx.ownerId,
+    source: ctx.source,
+    execType: execDef.type,
+  });
+  return {
+    reply: "⛔ Sorry, only the primary user can create or manage jobs.",
+    actionTaken: "owner_only: denied",
+  };
+}
+
 // --- Main dispatch function ---
 
 /**
@@ -1069,6 +1101,9 @@ export async function executeAction(
   ctx: CommandContext,
   execDef: ExecutionDef,
 ): Promise<CommandResult> {
+  const denied = requireOwner(ctx, execDef);
+  if (denied) return denied;
+
   switch (execDef.type) {
     case "reply":
       return executeReply(action, ctx, execDef);

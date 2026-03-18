@@ -254,45 +254,65 @@ export async function runJob(
       }
     }
 
-    // 4) Fetch KB context via research pipeline (non-fatal, falls back to simple search)
+    // 4) Fetch unified context (KB + Memory) via context assembly layer.
+    //    Falls back to legacy KB-only research pipeline if unified endpoint unavailable.
     let kbContext: string | undefined;
     try {
       const scope = job.plan?.summary ? "create_job" : "agent_task";
-      const research = await api.researchKnowledgeBases({
+      const unified = await api.getUnifiedContext({
         query: job.task_text,
+        owner: job.requested_by || "system",
         scopes: [scope, "all"],
-        strategy: "deep",
-        consumer: { type: "worker_job", id: job.task_id },
+        allowDeep: false, // Workers use fast path for latency
       });
-      if (research.context) {
-        kbContext = research.context;
-        log.info("KB research context fetched for job", {
+      if (unified.context) {
+        kbContext = unified.context;
+        log.info("Unified context fetched for job", {
           task_id: job.task_id,
-          session_id: research.session_id,
-          chunks: research.metrics.chunks_used,
-          llm_calls: research.metrics.llm_calls,
-          duration_ms: research.metrics.total_duration_ms,
+          kb_items: unified.metadata.kb_items_used,
+          memory_items: unified.metadata.memory_items_used,
+          reranker: unified.metadata.reranker_called,
+          duration_ms: unified.metadata.total_duration_ms,
         });
       }
     } catch {
-      // Fall back to legacy simple search
+      // Fall back to legacy KB-only research pipeline
       try {
         const scope = job.plan?.summary ? "create_job" : "agent_task";
-        const kbResults = await api.searchKnowledgeBases(job.task_text, [scope, "all"]);
-        if (kbResults.length > 0) {
-          kbContext = kbResults
-            .map(
-              (r) =>
-                `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
-            )
-            .join("\n\n---\n\n");
-          log.info("KB context fetched via fallback", {
+        const research = await api.researchKnowledgeBases({
+          query: job.task_text,
+          scopes: [scope, "all"],
+          strategy: "deep",
+          consumer: { type: "worker_job", id: job.task_id },
+        });
+        if (research.context) {
+          kbContext = research.context;
+          log.info("KB research context fetched for job (legacy fallback)", {
             task_id: job.task_id,
-            chunks: kbResults.length,
+            session_id: research.session_id,
+            chunks: research.metrics.chunks_used,
           });
         }
       } catch {
-        // Non-fatal
+        // Fall back to simple search
+        try {
+          const scope = job.plan?.summary ? "create_job" : "agent_task";
+          const kbResults = await api.searchKnowledgeBases(job.task_text, [scope, "all"]);
+          if (kbResults.length > 0) {
+            kbContext = kbResults
+              .map(
+                (r) =>
+                  `[${r.kb_name}${r.metadata.section ? ` > ${r.metadata.section}` : ""}] (${r.source_file}, score: ${r.score.toFixed(2)}):\n${r.content}`,
+              )
+              .join("\n\n---\n\n");
+            log.info("KB context fetched via simple search fallback", {
+              task_id: job.task_id,
+              chunks: kbResults.length,
+            });
+          }
+        } catch {
+          // Non-fatal
+        }
       }
     }
 

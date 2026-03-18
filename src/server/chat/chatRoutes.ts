@@ -3,6 +3,7 @@ import { v4 as uuidv4 } from "uuid";
 import { createLogger } from "../../shared/logger.js";
 import { slackToMarkdown } from "../../shared/slackMarkdown.js";
 import type { ServerConfig } from "../config.js";
+import { onInteractionComplete } from "../memory/index.js";
 import type { CommandContext } from "../slack/commandExecutor.js";
 import { executeCommand } from "../slack/commandExecutor.js";
 import type { ThreadMessage } from "../slack/messageRouter.js";
@@ -146,6 +147,19 @@ export function createChatRoutes(config: ServerConfig): Router {
         await linkJob(conversation.conversation_id, result.taskId);
       }
 
+      onInteractionComplete({
+        owner: config.slackJobOwner,
+        source: "web_chat",
+        sourceRef: { conversation_id: conversation.conversation_id },
+        userMessage: text.trim(),
+        routedAction: action.command,
+        actionArgs: action.args,
+        responseSummary: slackToMarkdown(result.reply).slice(0, 500),
+        taskId: result.taskId,
+      }).catch((err) =>
+        log.warn("Memory episode recording failed", { error: (err as Error).message }),
+      );
+
       // Auto-generate title from first user message
       if (conversation.messages.length === 0 && !conversation.title) {
         generateConversationTitle(conversation.conversation_id, text.trim()).catch(() => {});
@@ -155,6 +169,7 @@ export function createChatRoutes(config: ServerConfig): Router {
         userMessage,
         assistantMessage,
         action: { command: action.command, taskId: result.taskId },
+        memoryMeta: action.memoryMeta || undefined,
       });
     } catch (err: unknown) {
       log.error("Send message error", {

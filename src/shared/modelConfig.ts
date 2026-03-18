@@ -54,7 +54,9 @@ export type ModelRoleName =
   | "research"
   | "raptorSummarization"
   | "embedding"
-  | "imageGeneration";
+  | "imageGeneration"
+  | "memory"
+  | "context";
 
 export type LLMProviderType = "anthropic" | "openai_compatible";
 
@@ -79,6 +81,8 @@ const DEFAULT_ROUTING_MODEL = "claude-opus-4.5";
 const DEFAULT_RESEARCH_MODEL = "claude-opus-4.5";
 const DEFAULT_EMBEDDING_MODEL = "text-embedding-3-small";
 const DEFAULT_IMAGE_MODEL = "gpt-image-1";
+const DEFAULT_MEMORY_MODEL = "gpt-4.1-mini";
+const DEFAULT_CONTEXT_MODEL = "gpt-4.1-mini";
 
 const VALID_ROLES: ModelRoleName[] = [
   "routing",
@@ -87,6 +91,8 @@ const VALID_ROLES: ModelRoleName[] = [
   "raptorSummarization",
   "embedding",
   "imageGeneration",
+  "memory",
+  "context",
 ];
 
 // ─── File-based override layer ──────────────────────────────────
@@ -417,7 +423,32 @@ export function getModelRegistry(): Record<ModelRoleName, ModelRole> {
     DEFAULT_IMAGE_MODEL,
   );
 
-  return { routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration };
+  const memory = resolveRole(
+    "SOS_MEMORY_MODEL",
+    "memory",
+    DEFAULT_MEMORY_MODEL,
+    "Memory extraction, curation, reflection, and evolution",
+    DEFAULT_MEMORY_MODEL,
+  );
+
+  const context = resolveRole(
+    "SOS_CONTEXT_MODEL",
+    "context",
+    DEFAULT_CONTEXT_MODEL,
+    "Unified context assembly reranking and sufficiency evaluation",
+    DEFAULT_CONTEXT_MODEL,
+  );
+
+  return {
+    routing,
+    titleGeneration,
+    research,
+    raptorSummarization,
+    embedding,
+    imageGeneration,
+    memory,
+    context,
+  };
 }
 
 /**

@@ -90,11 +90,9 @@ function buildContextSections(
   }
 
   if (kbContext) {
-    lines.push(`${headingLevel} Knowledge Base Context`);
+    lines.push(`${headingLevel} Knowledge Context`);
     lines.push("");
-    lines.push(
-      "The following context was retrieved from the user's knowledge bases via semantic search.",
-    );
+    lines.push("The following context was retrieved from knowledge bases and past interactions.");
     lines.push("Use it to inform your implementation when relevant.");
     lines.push("");
     lines.push(kbContext);

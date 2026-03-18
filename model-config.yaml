@@ -2,4 +2,6 @@ routing: claude-opus-4.5
 titleGeneration: claude-opus-4.5
 research: claude-opus-4.5
 raptorSummarization: claude-opus-4.5
-embedding: bedrock/amazon.titan-embed-text-v2:0
+embedding: text-embedding-3-large
+imageGeneration: gpt-image-1
+memory: gpt-4.1-mini
