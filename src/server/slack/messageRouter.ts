@@ -250,10 +250,13 @@ export async function routeMessage(
 
   let systemPrompt = systemPromptTemplate.replace("{JOBS_CONTEXT}", jobsContext);
 
+  // memoryResult is used later to build memoryMeta for the chat UI
+  let memoryResult = { memoryContext: "", userContext: "" };
+
   // Legacy fallback: if unified context failed or template uses old placeholders
   if (!contextResult || !systemPromptTemplate.includes("{CONTEXT}")) {
     // Fall back to legacy independent KB + memory context
-    const [kbContext, memoryResult] = await Promise.all([
+    const [kbContext, legacyMemory] = await Promise.all([
       buildKBContext(userMessage, ["chat", "all"]),
       getMemoryContext(userMessage, slackUserId).catch(() => ({
         memoryContext: "",
@@ -261,8 +264,9 @@ export async function routeMessage(
       })),
     ]);
     systemPrompt = systemPrompt.replace("{KB_CONTEXT}", kbContext);
-    systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", memoryResult.memoryContext);
-    systemPrompt = systemPrompt.replace("{USER_CONTEXT}", memoryResult.userContext);
+    systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", legacyMemory.memoryContext);
+    systemPrompt = systemPrompt.replace("{USER_CONTEXT}", legacyMemory.userContext);
+    memoryResult = legacyMemory;
   } else {
     // Unified path — single {CONTEXT} + {USER_CONTEXT}
     systemPrompt = systemPrompt.replace("{CONTEXT}", contextResult.context);
@@ -270,12 +274,8 @@ export async function routeMessage(
     // Also replace legacy placeholders with empty strings in case template has both
     systemPrompt = systemPrompt.replace("{KB_CONTEXT}", "");
     systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", "");
+    memoryResult = { memoryContext: contextResult.context, userContext: contextResult.profile };
   }
-
-  // Store context result for memory metadata extraction later
-  const memoryResult = contextResult
-    ? { memoryContext: contextResult.context, userContext: contextResult.profile }
-    : { memoryContext: "", userContext: "" };
   const activeModel = model || configuredModel;
 
   // Build message history from thread context

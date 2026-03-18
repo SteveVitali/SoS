@@ -1,6 +1,6 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
 import type { ContextConfig } from "./contextConfig.js";
-import { rerankAndEvaluate, shouldRunReranker } from "./contextReranker.js";
+import { parseRerankerResponse, rerankAndEvaluate, shouldRunReranker } from "./contextReranker.js";
 import type { ContextItem } from "./contextTypes.js";
 
 function makeItem(overrides?: Partial<ContextItem>): ContextItem {
@@ -92,5 +92,118 @@ describe("rerankAndEvaluate", () => {
     // Restore
     if (origKey) process.env.OPENAI_API_KEY = origKey;
     if (origContextKey) process.env.SOS_CONTEXT_LLM_API_KEY = origContextKey;
+  });
+});
+
+describe("parseRerankerResponse", () => {
+  const items = [
+    makeItem({ id: "a", raw_score: 0.9 }),
+    makeItem({ id: "b", raw_score: 0.7 }),
+    makeItem({ id: "c", raw_score: 0.5 }),
+  ];
+
+  it("parses a valid response with correct ranking", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [2, 0],
+      dropped_indices: [1],
+      sufficiency: "sufficient",
+      follow_up_queries: null,
+      reasoning: "C is most relevant, A is second",
+    });
+    const result = parseRerankerResponse(raw, items);
+    expect(result.ranked_items).toHaveLength(2);
+    expect(result.ranked_items[0].id).toBe("c");
+    expect(result.ranked_items[1].id).toBe("a");
+    expect(result.dropped_items).toHaveLength(1);
+    expect(result.dropped_items[0].id).toBe("b");
+    expect(result.sufficiency).toBe("sufficient");
+    expect(result.follow_up_queries).toBeNull();
+    expect(result.reasoning).toBe("C is most relevant, A is second");
+  });
+
+  it("falls back to raw score ordering for invalid JSON", () => {
+    const result = parseRerankerResponse("not json at all", items);
+    expect(result.ranked_items).toHaveLength(3);
+    expect(result.ranked_items[0].id).toBe("a"); // highest raw_score
+    expect(result.sufficiency).toBe("sufficient");
+    expect(result.reasoning).toContain("Fallback");
+  });
+
+  it("recovers items missing from ranked_indices", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [0],
+      dropped_indices: [],
+      sufficiency: "sufficient",
+    });
+    const result = parseRerankerResponse(raw, items);
+    // Item 0 is ranked, items 1 and 2 should be appended defensively
+    expect(result.ranked_items).toHaveLength(3);
+    expect(result.ranked_items[0].id).toBe("a");
+  });
+
+  it("ignores out-of-range indices", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [0, 99, -1, 1],
+      dropped_indices: [],
+      sufficiency: "sufficient",
+    });
+    const result = parseRerankerResponse(raw, items);
+    // Only indices 0 and 1 are valid; item 2 appended defensively
+    expect(result.ranked_items).toHaveLength(3);
+    expect(result.ranked_items[0].id).toBe("a");
+    expect(result.ranked_items[1].id).toBe("b");
+    expect(result.ranked_items[2].id).toBe("c");
+  });
+
+  it("deduplicates repeated indices", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [0, 0, 1, 1],
+      dropped_indices: [],
+      sufficiency: "sufficient",
+    });
+    const result = parseRerankerResponse(raw, items);
+    expect(result.ranked_items).toHaveLength(3);
+  });
+
+  it("validates sufficiency to known values", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [0, 1, 2],
+      sufficiency: "bogus_value",
+    });
+    const result = parseRerankerResponse(raw, items);
+    expect(result.sufficiency).toBe("sufficient"); // defaults to sufficient
+  });
+
+  it("parses insufficient with follow-up queries", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [0, 1, 2],
+      sufficiency: "insufficient",
+      follow_up_queries: ["deployment docs", "CI config"],
+      reasoning: "Missing deployment info",
+    });
+    const result = parseRerankerResponse(raw, items);
+    expect(result.sufficiency).toBe("insufficient");
+    expect(result.follow_up_queries).toEqual(["deployment docs", "CI config"]);
+  });
+
+  it("nullifies follow_up_queries when sufficiency is not insufficient", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [0, 1, 2],
+      sufficiency: "sufficient",
+      follow_up_queries: ["should be ignored"],
+    });
+    const result = parseRerankerResponse(raw, items);
+    expect(result.follow_up_queries).toBeNull();
+  });
+
+  it("handles empty ranked_indices gracefully", () => {
+    const raw = JSON.stringify({
+      ranked_indices: [],
+      sufficiency: "not_knowledge_query",
+    });
+    const result = parseRerankerResponse(raw, items);
+    // All items appended defensively
+    expect(result.ranked_items).toHaveLength(3);
+    expect(result.sufficiency).toBe("not_knowledge_query");
   });
 });

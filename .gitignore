@@ -32,3 +32,8 @@ coverage/
 .sonofsteve/
 .sos-lock
 repo-registry.yaml
+
+# Demiurge tooling
+.demiurge/
+demiurge.yaml
+requirements.yaml

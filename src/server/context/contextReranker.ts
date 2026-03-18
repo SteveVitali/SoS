@@ -146,7 +146,7 @@ interface RawRerankerResponse {
   reasoning?: string;
 }
 
-function parseRerankerResponse(raw: string, items: ContextItem[]): RerankerResult {
+export function parseRerankerResponse(raw: string, items: ContextItem[]): RerankerResult {
   let parsed: RawRerankerResponse;
   try {
     parsed = JSON.parse(raw) as RawRerankerResponse;

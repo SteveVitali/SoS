@@ -8,7 +8,7 @@
 export { assembleContext } from "./contextAssembler.js";
 export { loadContextConfig } from "./contextConfig.js";
 export { normalizeKBResults, normalizeMemoryResults } from "./contextNormalizer.js";
-export { rerankAndEvaluate, shouldRunReranker } from "./contextReranker.js";
+export { parseRerankerResponse, rerankAndEvaluate, shouldRunReranker } from "./contextReranker.js";
 export { estimateTokens, serializeContext } from "./contextSerializer.js";
 export type {
   AssembleContextParams,

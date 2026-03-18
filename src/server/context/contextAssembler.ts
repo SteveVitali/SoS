@@ -23,7 +23,7 @@ import { researchKnowledgeBases, searchKnowledgeBases } from "../kb/kbService.js
 import { buildUserContext } from "../memory/contextBuilder.js";
 import { loadMemoryConfig } from "../memory/memoryConfig.js";
 import { searchMemories } from "../memory/memorySearch.js";
-import { type ContextConfig, loadContextConfig } from "./contextConfig.js";
+import { loadContextConfig } from "./contextConfig.js";
 import { normalizeKBResults, normalizeMemoryResults } from "./contextNormalizer.js";
 import { rerankAndEvaluate, shouldRunReranker } from "./contextReranker.js";
 import { serializeContext } from "./contextSerializer.js";
