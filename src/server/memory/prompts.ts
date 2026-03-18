@@ -175,6 +175,79 @@ Return JSON: { "decisions": [{ "memory_id": "<id>", "create_link": true|false,
   "update_keywords": null|["..."], "update_tags": null|["..."] }] }`;
 }
 
+// ─── §8.5 Reflection Prompt ─────────────────────────────────────
+
+export interface ReflectionInput {
+  cluster_size: number;
+  topic_summary: string;
+  episodes: Array<{
+    timestamp: string;
+    user_message: string;
+    routed_action: string;
+    signals_summary: string;
+  }>;
+  related_memories: Array<{
+    memory_type: string;
+    content: string;
+  }>;
+}
+
+export function buildReflectionPrompt(input: ReflectionInput): string {
+  const episodesList = input.episodes
+    .map(
+      (ep) =>
+        `- [${ep.timestamp}] User: ${ep.user_message} → ${ep.routed_action} | Signals: ${ep.signals_summary}`,
+    )
+    .join("\n");
+
+  const memoriesList =
+    input.related_memories.length > 0
+      ? input.related_memories.map((m) => `- [${m.memory_type}] ${m.content}`).join("\n")
+      : "(none)";
+
+  return `Review this cluster of recent interactions. Identify patterns and higher-level insights.
+
+## Cluster (${input.cluster_size} episodes, topic: ${input.topic_summary})
+${episodesList}
+
+## Related existing memories
+${memoriesList}
+
+Generate 1–3 reflections — higher-level insights, NOT restatements. Focus on:
+- Patterns in what the user asks about
+- What approaches work well vs. poorly
+- Recurring themes or knowledge gaps
+
+Return JSON: { "reflections": [{ "content": "...", "importance": 0.7,
+  "keywords": ["..."], "tags": ["..."] }] }`;
+}
+
+// ─── §8.6 User Profile Synthesis Prompt ─────────────────────────
+
+export interface ProfileSynthesisInput {
+  memory_count: number;
+  memories: Array<{
+    memory_type: string;
+    importance: number;
+    content: string;
+  }>;
+}
+
+export function buildProfileSynthesisPrompt(input: ProfileSynthesisInput): string {
+  const memoriesList = input.memories
+    .map((m) => `- [${m.memory_type}, imp=${m.importance}] ${m.content}`)
+    .join("\n");
+
+  return `Synthesize a user profile from accumulated memories.
+
+## Active memories (${input.memory_count} total)
+${memoriesList}
+
+Write a concise profile (200–400 words) covering: preferences, expertise areas,
+common repos/projects, interaction patterns, notable corrections.
+Write in third person. Be factual — do not speculate.`;
+}
+
 // ─── Helpers ─────────────────────────────────────────────────────
 
 /**

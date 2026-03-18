@@ -5,6 +5,8 @@ import {
   buildFactExtractionPrompt,
   buildMemoryCurationPrompt,
   buildMemoryEvolutionPrompt,
+  buildProfileSynthesisPrompt,
+  buildReflectionPrompt,
   formatMemoriesForPrompt,
   formatPriorEpisodes,
 } from "./prompts.js";
@@ -216,6 +218,88 @@ describe("prompts", () => {
 
     it("returns empty string for no episodes", () => {
       expect(formatPriorEpisodes([])).toBe("");
+    });
+  });
+
+  describe("buildReflectionPrompt", () => {
+    it("renders reflection prompt with episodes and related memories", () => {
+      const prompt = buildReflectionPrompt({
+        cluster_size: 3,
+        topic_summary: "TypeScript configuration",
+        episodes: [
+          {
+            timestamp: "2025-03-15T10:00:00Z",
+            user_message: "How do I enable strict mode?",
+            routed_action: "chat",
+            signals_summary: "gratitude(0.8)",
+          },
+          {
+            timestamp: "2025-03-15T10:05:00Z",
+            user_message: "What about noImplicitAny?",
+            routed_action: "chat",
+            signals_summary: "none",
+          },
+        ],
+        related_memories: [{ memory_type: "fact", content: "User prefers strict TypeScript" }],
+      });
+
+      expect(prompt).toContain("3 episodes");
+      expect(prompt).toContain("TypeScript configuration");
+      expect(prompt).toContain("How do I enable strict mode?");
+      expect(prompt).toContain("gratitude(0.8)");
+      expect(prompt).toContain("[fact] User prefers strict TypeScript");
+      expect(prompt).toContain("1–3 reflections");
+    });
+
+    it("renders with no related memories", () => {
+      const prompt = buildReflectionPrompt({
+        cluster_size: 5,
+        topic_summary: "test",
+        episodes: [
+          {
+            timestamp: "2025-03-15T10:00:00Z",
+            user_message: "test msg",
+            routed_action: "chat",
+            signals_summary: "none",
+          },
+        ],
+        related_memories: [],
+      });
+
+      expect(prompt).toContain("(none)");
+      expect(prompt).toContain("5 episodes");
+    });
+  });
+
+  describe("buildProfileSynthesisPrompt", () => {
+    it("renders profile synthesis prompt with memories", () => {
+      const prompt = buildProfileSynthesisPrompt({
+        memory_count: 25,
+        memories: [
+          { memory_type: "fact", importance: 0.8, content: "User prefers dark mode" },
+          {
+            memory_type: "reflection",
+            importance: 0.7,
+            content: "Frequently asks about TypeScript",
+          },
+        ],
+      });
+
+      expect(prompt).toContain("25 total");
+      expect(prompt).toContain("[fact, imp=0.8] User prefers dark mode");
+      expect(prompt).toContain("[reflection, imp=0.7] Frequently asks about TypeScript");
+      expect(prompt).toContain("200–400 words");
+      expect(prompt).toContain("third person");
+    });
+
+    it("renders with single memory", () => {
+      const prompt = buildProfileSynthesisPrompt({
+        memory_count: 1,
+        memories: [{ memory_type: "fact", importance: 0.5, content: "Single fact" }],
+      });
+
+      expect(prompt).toContain("1 total");
+      expect(prompt).toContain("Single fact");
     });
   });
 
