@@ -8,6 +8,7 @@ import { JobDetail } from "./components/jobs/JobDetail.js";
 import { JobsList } from "./components/jobs/JobsList.js";
 import { KBDetail } from "./components/kb/KBDetail.js";
 import { KBList } from "./components/kb/KBList.js";
+import { MemoryPage } from "./components/memory/MemoryPage.js";
 import { ModelsPage } from "./components/models/ModelsPage.js";
 import { ResearchPage } from "./components/research/ResearchPage.js";
 import { RoutingConfigEditor } from "./components/routing/RoutingConfigEditor.js";
@@ -32,6 +33,7 @@ function AppShell() {
   const isKnowledgeTab = path === "/knowledge" || path.startsWith("/knowledge/");
   const showKnowledgeList = path === "/knowledge";
   const isResearchTab = path === "/research";
+  const isMemoryTab = path === "/memory";
   const isRoutingTab = path === "/routing";
   const isModelsTab = path === "/models";
 
@@ -49,6 +51,7 @@ function AppShell() {
             <NavTab to="/workers" label="Workers" active={isWorkersTab} />
             <NavTab to="/knowledge" label="Knowledge" active={isKnowledgeTab} />
             <NavTab to="/research" label="Research" active={isResearchTab} />
+            <NavTab to="/memory" label="Memory" active={isMemoryTab} />
             <NavTab to="/routing" label="Routing" active={isRoutingTab} />
             <NavTab to="/models" label="Models" active={isModelsTab} />
           </div>
@@ -90,6 +93,7 @@ function AppShell() {
         <Route path="/chats/:id" element={<ChatDetail />} />
         <Route path="/knowledge/:id" element={<KBDetail />} />
         <Route path="/research" element={<ResearchPage />} />
+        <Route path="/memory" element={<MemoryPage />} />
         <Route path="/routing" element={<RoutingConfigEditor />} />
         <Route path="/models" element={<ModelsPage />} />
         <Route path="/jobs/new" element={<CreateJobForm />} />

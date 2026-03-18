@@ -484,6 +484,14 @@ export async function getConversation(id: string): Promise<{ conversation: Conve
   return request("GET", `/chats/${id}`);
 }
 
+export interface ChatMemoryMeta {
+  memories_used: number;
+  facts_used: number;
+  reflections_used: number;
+  profile_loaded: boolean;
+  memory_context?: string;
+}
+
 export async function sendMessage(
   conversationId: string,
   text: string,
@@ -491,6 +499,7 @@ export async function sendMessage(
   userMessage: ConversationMessage;
   assistantMessage: ConversationMessage;
   action: { command: string; taskId?: string };
+  memoryMeta?: ChatMemoryMeta;
 }> {
   return request("POST", `/chats/${conversationId}/messages`, { text });
 }
@@ -1431,4 +1440,210 @@ export function subscribeGitHubSyncLog(onEntry: (entry: SyncLogEntry) => void): 
   };
 
   return () => es.close();
+}
+
+// --- Memory System ---
+
+export type MemoryType = "fact" | "reflection" | "user_profile";
+export type InteractionSource = "slack" | "discord" | "web_chat" | "system";
+
+export type SignalType =
+  | "continuation"
+  | "gratitude"
+  | "correction"
+  | "rephrase"
+  | "follow_up_deeper"
+  | "topic_change"
+  | "no_response"
+  | "job_completed"
+  | "job_failed"
+  | "explicit_positive"
+  | "explicit_negative";
+
+export interface OutcomeSignal {
+  signal_type: SignalType;
+  detected_at: string;
+  details?: string;
+  strength: number;
+}
+
+export interface MemoryNote {
+  memory_id: string;
+  owner: string;
+  memory_type: MemoryType;
+  content: string;
+  context: string;
+  keywords: string[];
+  tags: string[];
+  source_episodes: string[];
+  source_type: InteractionSource;
+  created_at: string;
+  updated_at: string;
+  valid_from: string;
+  invalidated_at?: string;
+  invalidated_by?: string;
+  linked_memory_ids: string[];
+  link_reasons: string[];
+  access_count: number;
+  last_accessed_at?: string;
+  importance: number;
+  confidence: number;
+  embedding_text: string;
+}
+
+export interface InteractionEpisode {
+  episode_id: string;
+  owner: string;
+  source: InteractionSource;
+  source_ref: {
+    conversation_id?: string;
+    thread_ts?: string;
+    channel_id?: string;
+    thread_id?: string;
+    message_id?: string;
+  };
+  user_message: string;
+  routed_action: string;
+  action_args_summary: string;
+  response_summary: string;
+  task_id?: string;
+  research_session_id?: string;
+  signals: OutcomeSignal[];
+  timestamp: string;
+  signal_collected_at?: string;
+  extraction_status: "pending" | "extracted" | "skipped";
+  extracted_memory_ids: string[];
+}
+
+export interface MemorySearchResult {
+  memory: MemoryNote;
+  score: number;
+  similarity_score: number;
+  keyword_score?: number;
+  recency_score: number;
+  importance_score: number;
+  access_score: number;
+}
+
+export interface MemoryStats {
+  total_memories: number;
+  active_memories: number;
+  invalidated_memories: number;
+  total_episodes: number;
+  memories_by_type: Record<MemoryType, number>;
+}
+
+export interface MemoryConfig {
+  enabled: boolean;
+  extraction_model: string;
+  extraction_min_turns: number;
+  extraction_skip_actions: string[];
+  extraction_max_facts_per_call: number;
+  retrieval_max_memories: number;
+  retrieval_max_tokens: number;
+  retrieval_min_score: number;
+  retrieval_recency_halflife_days: number;
+  weight_similarity: number;
+  weight_recency: number;
+  weight_importance: number;
+  weight_access: number;
+  evolution_enabled: boolean;
+  evolution_max_neighbors: number;
+  evolution_link_threshold: number;
+  reflection_enabled: boolean;
+  reflection_interval_hours: number;
+  reflection_min_episodes: number;
+  signal_delay_ms: number;
+  signal_no_response_timeout_ms: number;
+}
+
+export async function getMemoryStats(): Promise<MemoryStats> {
+  return request("GET", "/memory/stats");
+}
+
+export async function listMemoryNotes(params?: {
+  type?: MemoryType;
+  limit?: number;
+  offset?: number;
+  tag?: string;
+}): Promise<{ memories: MemoryNote[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.type) qs.set("type", params.type);
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.offset) qs.set("offset", String(params.offset));
+  if (params?.tag) qs.set("tag", params.tag);
+  return request("GET", `/memory/memories?${qs.toString()}`);
+}
+
+export async function getMemoryNote(
+  id: string,
+): Promise<{ memory: MemoryNote; linked: MemoryNote[] }> {
+  return request("GET", `/memory/memories/${encodeURIComponent(id)}`);
+}
+
+export async function searchMemoryNotes(params: {
+  query: string;
+  owner?: string;
+  memory_types?: MemoryType[];
+  tags?: string[];
+  limit?: number;
+  min_score?: number;
+}): Promise<{ results: MemorySearchResult[] }> {
+  return request("POST", "/memory/search", params);
+}
+
+export async function editMemoryNote(
+  id: string,
+  updates: { content?: string; importance?: number; tags?: string[] },
+): Promise<{ memory: MemoryNote }> {
+  return request("PUT", `/memory/memories/${encodeURIComponent(id)}`, updates);
+}
+
+export async function invalidateMemoryNote(id: string): Promise<{ ok: boolean }> {
+  return request("DELETE", `/memory/memories/${encodeURIComponent(id)}`);
+}
+
+export async function getMemoryProfile(owner?: string): Promise<{ profile: MemoryNote | null }> {
+  const qs = new URLSearchParams();
+  if (owner) qs.set("owner", owner);
+  return request("GET", `/memory/profile?${qs.toString()}`);
+}
+
+export async function triggerReflection(owner?: string): Promise<{
+  result: {
+    episodes_reviewed: number;
+    clusters_found: number;
+    reflections_created: number;
+    profile_updated: boolean;
+  };
+}> {
+  return request("POST", "/memory/reflect", { owner });
+}
+
+export async function listMemoryEpisodes(params?: {
+  limit?: number;
+  offset?: number;
+  action?: string;
+}): Promise<{ episodes: InteractionEpisode[]; total: number }> {
+  const qs = new URLSearchParams();
+  if (params?.limit) qs.set("limit", String(params.limit));
+  if (params?.offset) qs.set("offset", String(params.offset));
+  if (params?.action) qs.set("action", params.action);
+  return request("GET", `/memory/episodes?${qs.toString()}`);
+}
+
+export async function getMemoryEpisode(
+  id: string,
+): Promise<{ episode: InteractionEpisode; memories: MemoryNote[] }> {
+  return request("GET", `/memory/episodes/${encodeURIComponent(id)}`);
+}
+
+export async function getMemoryConfig(): Promise<{ config: MemoryConfig }> {
+  return request("GET", "/memory/config");
+}
+
+export async function updateMemoryConfig(
+  overrides: Partial<MemoryConfig>,
+): Promise<{ config: MemoryConfig }> {
+  return request("PUT", "/memory/config", overrides);
 }

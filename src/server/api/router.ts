@@ -39,6 +39,7 @@ export function createRouter(
   router.use("/api/web/kb", webAuth, createKBWebRoutes());
   router.use("/api/web/memory", webAuth, createMemoryRoutes(config));
   router.use("/api/web/github", webAuth, createGitHubRoutes(config));
+  router.use("/api/web/memory", webAuth, createMemoryRoutes(config));
 
   return router;
 }

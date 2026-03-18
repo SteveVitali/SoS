@@ -98,7 +98,15 @@ export async function appendSignals(
   episodeId: string,
   signals: OutcomeSignal[],
 ): Promise<InteractionEpisode | null> {
-  if (signals.length === 0) return findEpisode(episodeId);
+  if (signals.length === 0) {
+    // Still mark as collected so the signal collector doesn't reprocess this episode
+    const result = await episodesCol().findOneAndUpdate(
+      { episode_id: episodeId },
+      { $set: { signal_collected_at: new Date() } },
+      { returnDocument: "after" },
+    );
+    return result ?? null;
+  }
 
   const result = await episodesCol().findOneAndUpdate(
     { episode_id: episodeId },
