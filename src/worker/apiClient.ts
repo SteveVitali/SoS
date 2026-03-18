@@ -411,6 +411,49 @@ export class WorkerApiClient {
     return emptyResearchResponse();
   }
 
+  // --- Unified Context ---
+
+  async getUnifiedContext(params: {
+    query: string;
+    owner: string;
+    scopes: string[];
+    allowDeep?: boolean;
+    maxTokens?: number;
+  }): Promise<{
+    context: string;
+    profile: string;
+    metadata: {
+      kb_items_used: number;
+      memory_items_used: number;
+      reranker_called: boolean;
+      deep_escalation: boolean;
+      total_duration_ms: number;
+    };
+  }> {
+    try {
+      return await this.request("POST", "/api/worker/context", {
+        query: params.query,
+        owner: params.owner,
+        scopes: params.scopes,
+        allowDeep: params.allowDeep ?? false,
+        maxTokens: params.maxTokens,
+      });
+    } catch (err: unknown) {
+      log.warn("Unified context fetch failed (non-fatal)", { error: (err as Error).message });
+      return {
+        context: "",
+        profile: "",
+        metadata: {
+          kb_items_used: 0,
+          memory_items_used: 0,
+          reranker_called: false,
+          deep_escalation: false,
+          total_duration_ms: 0,
+        },
+      };
+    }
+  }
+
   // biome-ignore lint/suspicious/noExplicitAny: Slack API type
   async fetchSlackThread(channelId: string, threadTs: string): Promise<any[]> {
     try {

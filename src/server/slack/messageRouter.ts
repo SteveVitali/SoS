@@ -4,6 +4,7 @@ import { createLogger } from "../../shared/logger.js";
 import { getModelForRole } from "../../shared/modelConfig.js";
 import type { ResearchStrategy } from "../../shared/researchTypes.js";
 import type { JobAttachment } from "../../shared/types.js";
+import { assembleContext } from "../context/index.js";
 import { queryJobs } from "../jobs/jobService.js";
 import { researchKnowledgeBases, searchKnowledgeBases } from "../kb/kbService.js";
 import type { ContentBlock, LLMProvider, ToolDefinition } from "../llm/index.js";
@@ -230,18 +231,51 @@ export async function routeMessage(
   }
 
   const { systemPromptTemplate, tools: configTools, model } = buildSystemPromptAndTools();
-  const [jobsContext, kbContext, memoryResult] = await Promise.all([
+
+  // Unified context assembly — searches KB + Memory in parallel, cross-ranks,
+  // and auto-escalates to deep retrieval when context is insufficient.
+  const [jobsContext, contextResult] = await Promise.all([
     buildJobsContext(),
-    buildKBContext(userMessage, ["chat", "all"]),
-    getMemoryContext(userMessage, slackUserId).catch(() => ({
-      memoryContext: "",
-      userContext: "",
-    })),
+    assembleContext({
+      query: userMessage,
+      owner: slackUserId,
+      scopes: ["chat", "all"],
+    }).catch((err) => {
+      log.warn("Unified context assembly failed, falling back to legacy", {
+        error: (err as Error).message,
+      });
+      return null;
+    }),
   ]);
+
   let systemPrompt = systemPromptTemplate.replace("{JOBS_CONTEXT}", jobsContext);
-  systemPrompt = systemPrompt.replace("{KB_CONTEXT}", kbContext);
-  systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", memoryResult.memoryContext);
-  systemPrompt = systemPrompt.replace("{USER_CONTEXT}", memoryResult.userContext);
+
+  // Legacy fallback: if unified context failed or template uses old placeholders
+  if (!contextResult || !systemPromptTemplate.includes("{CONTEXT}")) {
+    // Fall back to legacy independent KB + memory context
+    const [kbContext, memoryResult] = await Promise.all([
+      buildKBContext(userMessage, ["chat", "all"]),
+      getMemoryContext(userMessage, slackUserId).catch(() => ({
+        memoryContext: "",
+        userContext: "",
+      })),
+    ]);
+    systemPrompt = systemPrompt.replace("{KB_CONTEXT}", kbContext);
+    systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", memoryResult.memoryContext);
+    systemPrompt = systemPrompt.replace("{USER_CONTEXT}", memoryResult.userContext);
+  } else {
+    // Unified path — single {CONTEXT} + {USER_CONTEXT}
+    systemPrompt = systemPrompt.replace("{CONTEXT}", contextResult.context);
+    systemPrompt = systemPrompt.replace("{USER_CONTEXT}", contextResult.profile);
+    // Also replace legacy placeholders with empty strings in case template has both
+    systemPrompt = systemPrompt.replace("{KB_CONTEXT}", "");
+    systemPrompt = systemPrompt.replace("{MEMORY_CONTEXT}", "");
+  }
+
+  // Store context result for memory metadata extraction later
+  const memoryResult = contextResult
+    ? { memoryContext: contextResult.context, userContext: contextResult.profile }
+    : { memoryContext: "", userContext: "" };
   const activeModel = model || configuredModel;
 
   // Build message history from thread context

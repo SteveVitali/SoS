@@ -77,17 +77,13 @@ system_prompt: >
 
   {ACTIONS}
 
-  ## Memory Context
-  The following is relevant context from past interactions and learned knowledge.
-  Use it naturally — don't mention the memory system explicitly.
-  {MEMORY_CONTEXT}
-
-  ## User Profile
+  ## About This User
   {USER_CONTEXT}
 
-  ## Knowledge Base Context
-  The following context was retrieved from the user's knowledge bases via semantic search. Use it to inform your responses when relevant, but don't mention the knowledge base system explicitly unless asked.
-  {KB_CONTEXT}
+  ## Relevant Context
+  The following is relevant context from knowledge bases and past interactions.
+  Use it naturally — don't mention these systems explicitly.
+  {CONTEXT}
 
   ## Recent Jobs Context
 
@@ -355,16 +351,18 @@ actions:
       item_template: • `{{task_id:0:8}}…` *{{status}}* — {{task_text:0:60}}{{?pr_url}} | {{pr_url}}{{/pr_url}}
       reply_empty: _(No jobs found)_
   kb_search:
-    enabled: true
+    enabled: false
+    # DEPRECATED: The unified context layer now automatically escalates to deep
+    # KB research when the initial context is insufficient. The routing LLM no
+    # longer needs to explicitly choose between chat and kb_search — knowledge
+    # questions are handled via chat with auto-deepened context.
+    # See docs/UNIFIED_KNOWLEDGE_LAYER_DESIGN.md §6.
     description: |
-      Search the knowledge bases to answer a factual question using stored documentation,
-      design docs, or other indexed content. Use this when the user asks a question that
-      might be answered by the knowledge bases.
+      (Deprecated) Search the knowledge bases to answer a factual question.
+      This is now handled automatically by the unified context layer.
     routing_hint: >
-      The user is asking a question that could be answered by searching the knowledge
-      bases — e.g. "how does X work?", "what's our policy on Y?", "where are the docs
-      for Z?", "what did we decide about X?". Prefer this over chat when the question is
-      about something that might be documented in the knowledge bases.
+      (Deprecated) Knowledge questions are now handled via chat with automatic
+      deep retrieval. Do not use this action.
     parameters:
       query:
         type: string

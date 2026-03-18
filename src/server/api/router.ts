@@ -3,6 +3,7 @@ import { internalAuth, optionalBasicAuth } from "../auth/internalAuth.js";
 import { createChatRoutes } from "../chat/chatRoutes.js";
 import { createImageRoutes } from "../chat/imageStore.js";
 import type { ServerConfig } from "../config.js";
+import { createContextWorkerRoutes } from "../context/contextRoutes.js";
 import type { DiscordPoster } from "../discord/discordClient.js";
 import { createKBWebRoutes, createKBWorkerRoutes } from "../kb/index.js";
 import { createMemoryRoutes } from "../memory/memoryRoutes.js";
@@ -25,6 +26,11 @@ export function createRouter(
     createWorkerRoutes(slackPoster, discordPoster),
   );
   router.use("/api/worker/kb", internalAuth(config.internalApiToken), createKBWorkerRoutes());
+  router.use(
+    "/api/worker/context",
+    internalAuth(config.internalApiToken),
+    createContextWorkerRoutes(),
+  );
 
   // Image serving — no auth required (UUIDs are unguessable, images are immutable)
   router.use("/api/web/images", createImageRoutes());
