@@ -94,6 +94,8 @@ Model assignments are centralized in `src/shared/modelConfig.ts`. Each role can 
 | `SOS_RAPTOR_MODEL` | (inherits `SOS_RESEARCH_LLM_MODEL`) | RAPTOR tree cluster summarization |
 | `SOS_IMAGE_MODEL` | `gpt-image-1` | Image generation model |
 | `SOS_EMBEDDING_MODEL` | `text-embedding-3-small` | Vector embeddings for KB indexing and search |
+| `SOS_MEMORY_MODEL` | `gpt-4.1-mini` | Memory system LLM (fact extraction, curation, reflection, evolution) |
+| `SOS_CONTEXT_LLM_API_KEY` | (see Unified Context Layer) | Context reranker LLM — model set via `context` role in model-config.yaml (default: `gpt-4.1-mini`) |
 
 You can also override model assignments via `model-config.yaml` in the project root. **File overrides take highest precedence** (YAML file > env var > hardcoded default):
 
@@ -105,9 +107,30 @@ raptorSummarization: claude-opus-4.5
 imageGeneration: gpt-image-1
 embedding: text-embedding-3-small
 memory: gpt-4.1-mini
+context: gpt-4.1-mini
 ```
 
 The active model registry is exposed via `GET /api/web/models` and logged at server startup.
+
+## Unified Context Layer
+
+The unified context assembly layer (`src/server/context/`) searches both Knowledge Bases and Memory in parallel, cross-ranks results via an LLM reranker, evaluates context sufficiency, and automatically escalates to deep research when needed. The assembled context is injected into the system prompt via the `{CONTEXT}` placeholder.
+
+| Variable | Default | Description |
+|---|---|---|
+| `SOS_CONTEXT_RERANKER_ENABLED` | `true` | Enable the LLM listwise reranker for cross-source ranking when both KB and Memory return results |
+| `SOS_CONTEXT_DEEP_ENABLED` | `true` | Allow automatic escalation to deep research when the reranker assesses context as insufficient |
+| `SOS_CONTEXT_MAX_TOKENS` | `3500` | Shared token budget for the final context string injected into the system prompt |
+| `SOS_CONTEXT_MAX_CANDIDATES_PER_SOURCE` | `5` | Maximum number of candidate items to feed to the reranker from each source (KB, Memory) |
+| `SOS_CONTEXT_MAX_CONTENT_CHARS_RERANKER` | `800` | Maximum character length per candidate in the reranker prompt (content is truncated beyond this) |
+| `SOS_CONTEXT_LLM_API_KEY` | Falls back to `OPENAI_API_KEY` | API key for the context reranker LLM |
+| `SOS_CONTEXT_LLM_BASE_URL` | `https://api.openai.com/v1` | Base URL for the context reranker LLM API |
+
+The reranker model can also be overridden via `model-config.yaml`:
+
+```yaml
+context: gpt-4.1-mini
+```
 
 ## Memory System
 

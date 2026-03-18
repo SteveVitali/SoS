@@ -1,0 +1,10 @@
+# Requirements for E2E testing Demiurge on son-of-steve
+# The health endpoint exists but is broken (returns 500). Repair should fix it to return 200.
+requirements:
+  - id: server-health-check
+    type: http
+    description: Server has a GET /api/health endpoint that returns 200
+    expected: http://localhost:3100/api/health
+    timeout_ms: 10000
+    retry: 1
+    severity: required

@@ -302,6 +302,53 @@ Server fetches a Discord thread on behalf of the worker (workers don't hold Disc
 }
 ```
 
+### Unified Context Assembly
+
+```
+POST /api/worker/context
+```
+
+Assembles unified context from both Knowledge Bases and Memory for injection into LLM prompts. Searches KB and Memory in parallel, normalizes results into a common format, optionally cross-ranks via an LLM listwise reranker with sufficiency assessment, and automatically escalates to deep research when context is insufficient.
+
+**Body:**
+```json
+{
+  "query": "how does the auth module work",
+  "owner": "U12345",
+  "scopes": ["chat", "all"],
+  "allowDeep": true,
+  "maxTokens": 3500
+}
+```
+
+- `query` (required) — the user's query text
+- `owner` (required) — owner ID (e.g., Slack user ID) for memory retrieval
+- `scopes` (required) — KB scope filter array
+- `allowDeep` (optional, default: `true`) — whether to allow automatic escalation to deep research
+- `maxTokens` (optional, default: from config) — shared token budget for the final context string
+
+**Response:**
+```json
+{
+  "context": "formatted context string for prompt injection",
+  "profile": "synthesized user profile string",
+  "metadata": {
+    "kb_items_used": 3,
+    "memory_items_used": 2,
+    "reranker_called": true,
+    "deep_escalation": false,
+    "total_duration_ms": 1250
+  }
+}
+```
+
+- `context` — the assembled context string (KB + Memory items, ranked and serialized within token budget)
+- `profile` — the user profile from the memory system (always-included preamble)
+- `metadata.reranker_called` — whether the LLM reranker was invoked (only runs when both KB and Memory have results)
+- `metadata.deep_escalation` — whether the system auto-escalated to the deep research pipeline due to insufficient context
+
+---
+
 ### Search Knowledge Bases
 
 ```

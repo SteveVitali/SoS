@@ -67,6 +67,7 @@ The server is the **single source of truth** for job state. It:
 12. **Can spawn and kill worker processes** via `child_process` (detached process groups for reliable cleanup)
 13. **Serves the React SPA** as static files (production build)
 14. **Runs the persistent memory system** — an interaction-agnostic learning system that records episodes from all interaction paths (Slack, Discord, web chat), extracts facts via LLM (Mem0-style ADD/UPDATE/DELETE/NOOP curation), collects implicit feedback signals (gratitude, correction, rephrase, job outcomes), runs periodic reflection to consolidate episodes into higher-level insights and user profiles, and self-organizes memories via A-MEM-inspired link evolution. Retrieved memories are injected into the system prompt as `{MEMORY_CONTEXT}` and `{USER_CONTEXT}` alongside existing KB context, using hybrid search (LanceDB vector + SQLite FTS5 keyword + RRF) with composite scoring (similarity + recency + importance + access frequency). Five async pipelines (Episode Recording, Fact Extraction, Signal Collection, Reflection & Consolidation, Memory Evolution) run post-hoc so memory writing never blocks the interaction hot path. See [docs/MEMORY_SYSTEM_DESIGN.md](MEMORY_SYSTEM_DESIGN.md) for the full design.
+15. **Unified context assembly** (`src/server/context/`) — searches both Knowledge Bases and Memory in parallel, normalizes results into a common `ContextItem` format, optionally cross-ranks via an LLM listwise reranker (research basis: RankRAG, EverMemOS, CRAG), assesses context sufficiency, and automatically escalates to deep research when context is insufficient. The assembled context is serialized within a shared token budget and injected into the system prompt via the `{CONTEXT}` placeholder (with fallback to legacy `{KB_CONTEXT}` + `{MEMORY_CONTEXT}` placeholders). A worker-facing HTTP endpoint (`POST /api/worker/context`) exposes the same assembly pipeline to workers. See [docs/UNIFIED_KNOWLEDGE_LAYER_DESIGN.md](UNIFIED_KNOWLEDGE_LAYER_DESIGN.md) for the full design.
 
 The server **holds all Slack and Discord credentials**. Workers never touch Slack or Discord directly.
 
@@ -309,7 +310,7 @@ actions:
 custom_actions: {}  # user-defined actions (same schema as actions)
 ```
 
-The system prompt supports three placeholders: `{ACTIONS}` (replaced with the auto-generated action list), `{JOBS_CONTEXT}` (replaced with recent jobs for status awareness), and `{KB_CONTEXT}` (replaced with relevant knowledge base context from semantic search).
+The system prompt supports six placeholders: `{ACTIONS}` (replaced with the auto-generated action list), `{JOBS_CONTEXT}` (replaced with recent jobs for status awareness), `{CONTEXT}` (replaced with unified KB + Memory context from the context assembler — preferred), `{KB_CONTEXT}` (replaced with knowledge base context from semantic search — legacy), `{MEMORY_CONTEXT}` (replaced with relevant learned memories — legacy), and `{USER_CONTEXT}` (replaced with the synthesized user profile from the memory system). If `{CONTEXT}` is present, the unified context assembly layer is used; otherwise the legacy `{KB_CONTEXT}` + `{MEMORY_CONTEXT}` path is used as fallback.
 
 ### Execution Types
 
@@ -401,6 +402,7 @@ son-of-steve/
 │   │   ├── githubTypes.ts     # GitHub Hub shared types (PR docs, contributions, sync chunks, settings, API responses)
 │   │   ├── kbTypes.ts         # Knowledge base shared types (KnowledgeBase, KBDocument, KBSearchResult, IngestProgressEvent)
 │   │   ├── researchTypes.ts   # Research pipeline types (strategies, sessions, steps, metrics, RAPTOR, agent, streaming events)
+│   │   ├── memoryTypes.ts     # Memory system shared types (MemoryNote, InteractionEpisode, MemoryConfig, search results)
 │   │   ├── modelConfig.ts     # Centralized LLM model config registry (roles, defaults, YAML/env overrides)
 │   │   ├── kbUtils.ts         # KB utilities (pathToBreadcrumb, formatPathBreadcrumb)
 │   │   ├── modelPricing.ts    # Claude model pricing for cost estimation
@@ -430,6 +432,15 @@ son-of-steve/
 │   │   │   ├── conversationRepo.ts    # MongoDB CRUD for conversations
 │   │   │   ├── conversationNotifier.ts # Push job status updates into linked chats
 │   │   │   └── titleGen.ts            # LLM-based conversation title generation
+│   │   ├── context/             # Unified context assembly layer (KB + Memory → LLM prompt)
+│   │   │   ├── index.ts              # Barrel export
+│   │   │   ├── contextAssembler.ts   # Main orchestrator: parallel retrieval → reranker → deep escalation → serialization
+│   │   │   ├── contextReranker.ts    # LLM listwise reranker + sufficiency evaluator (RankRAG/CRAG-inspired)
+│   │   │   ├── contextNormalizer.ts  # Normalize KB and Memory results into common ContextItem format
+│   │   │   ├── contextSerializer.ts  # Position-aware serialization within shared token budget
+│   │   │   ├── contextConfig.ts      # Config loading from env vars (reranker, deep escalation, token budget)
+│   │   │   ├── contextTypes.ts       # ContextItem, RerankerResult, AssemblyResult, Sufficiency types
+│   │   │   └── contextRoutes.ts      # Worker-facing route: POST /api/worker/context
 │   │   ├── routing/
 │   │   │   ├── routingConfig.ts    # Load, save, reload, watch routing-config.yaml
 │   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema (13 execution types)
