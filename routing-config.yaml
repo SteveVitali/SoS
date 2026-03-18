@@ -77,6 +77,14 @@ system_prompt: >
 
   {ACTIONS}
 
+  ## Memory Context
+  The following is relevant context from past interactions and learned knowledge.
+  Use it naturally — don't mention the memory system explicitly.
+  {MEMORY_CONTEXT}
+
+  ## User Profile
+  {USER_CONTEXT}
+
   ## Knowledge Base Context
   The following context was retrieved from the user's knowledge bases via semantic search. Use it to inform your responses when relevant, but don't mention the knowledge base system explicitly unless asked.
   {KB_CONTEXT}

@@ -30,6 +30,15 @@ export async function connectMongo(uri: string, dbName: string): Promise<Db> {
       error: (err as Error).message,
     });
   }
+  // Memory system indexes (non-fatal if they fail)
+  try {
+    const { ensureMemoryIndexes } = await import("./memory/index.js");
+    await ensureMemoryIndexes();
+  } catch (err: unknown) {
+    log.warn("Failed to ensure memory indexes (non-fatal)", {
+      error: (err as Error).message,
+    });
+  }
   return db;
 }
 

@@ -63,6 +63,12 @@ export function loadServerConfig() {
     githubUsername: process.env.SOS_GITHUB_USERNAME || "",
     routingConfigPath: process.env.SOS_ROUTING_CONFIG || "",
     modelConfigPath: process.env.SOS_MODEL_CONFIG || "",
+    memoryEnabled: optional("SOS_MEMORY_ENABLED", "true") === "true",
+    memoryModel: process.env.SOS_MEMORY_MODEL || "",
+    memoryRetrievalMaxMemories: optionalInt("SOS_MEMORY_RETRIEVAL_MAX_MEMORIES", 8),
+    memoryRetrievalMaxTokens: optionalInt("SOS_MEMORY_RETRIEVAL_MAX_TOKENS", 1500),
+    memoryReflectionIntervalHours: optionalInt("SOS_MEMORY_REFLECTION_INTERVAL_HOURS", 24),
+    memorySignalDelayMs: optionalInt("SOS_MEMORY_SIGNAL_DELAY_MS", 300000),
   };
 }
 

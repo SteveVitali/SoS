@@ -1,6 +1,7 @@
 import { createLogger } from "../../shared/logger.js";
 import type { JobAttachment } from "../../shared/types.js";
 import type { ServerConfig } from "../config.js";
+import { onInteractionComplete } from "../memory/index.js";
 import { executeCommand } from "./commandExecutor.js";
 import type { ThreadMessage } from "./messageRouter.js";
 import { formatRoutingError, routeMessage } from "./messageRouter.js";
@@ -224,6 +225,17 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
 
       if (action.command === "no_op") {
         log.info("LLM chose no_op", { reason: action.args.reason, event_id: eventId });
+        onInteractionComplete({
+          owner: config.slackJobOwner,
+          source: "slack",
+          sourceRef: { channel_id: event.channel, thread_ts: threadTs },
+          userMessage: cleanText,
+          routedAction: "no_op",
+          actionArgs: action.args,
+          responseSummary: "",
+        }).catch((err) =>
+          log.warn("Memory episode recording failed", { error: (err as Error).message }),
+        );
         return { reply: "" };
       }
 
@@ -236,6 +248,19 @@ export function createAppMentionHandler(config: ServerConfig, slackPoster?: Slac
         githubTeamSlug: config.githubTeamSlug || undefined,
       });
       log.info("Command executed", { action: result.actionTaken, event_id: eventId });
+
+      onInteractionComplete({
+        owner: config.slackJobOwner,
+        source: "slack",
+        sourceRef: { channel_id: event.channel, thread_ts: threadTs },
+        userMessage: cleanText,
+        routedAction: action.command,
+        actionArgs: action.args,
+        responseSummary: result.reply.slice(0, 500),
+        taskId: result.taskId,
+      }).catch((err) =>
+        log.warn("Memory episode recording failed", { error: (err as Error).message }),
+      );
 
       return { reply: result.reply, images: result.images };
     } catch (err: unknown) {
