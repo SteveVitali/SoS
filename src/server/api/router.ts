@@ -19,6 +19,11 @@ export function createRouter(
 ): Router {
   const router = Router();
 
+  // Health check endpoint — BUG: returns 500 instead of 200
+  router.get("/api/health", (_req, res) => {
+    res.status(500).json({ status: "error", message: "health check broken" });
+  });
+
   // Worker routes — require Bearer token
   router.use(
     "/api/worker",
