@@ -550,6 +550,24 @@ export function normalizeMemoryResults(results: MemorySearchResult[]): ContextIt
 
 KB items get temporal_tag from `kb_name` + `source_file`. Memory items get temporal_tag from `memory_type` + `updated_at` date.
 
+### 7.6 Before vs. After — Chat Response Flow
+
+**Before (legacy)**: `routeMessage()` runs 3 independent searches in parallel (`buildKBContext`, `getMemoryContext`, `buildJobsContext`), injects results into 3 separate prompt sections (`{KB_CONTEXT}`, `{MEMORY_CONTEXT}`, `{USER_CONTEXT}`) with independent token budgets (2000 + 1500), no cross-ranking. The routing LLM must explicitly pick `kb_search` for deeper retrieval — a chicken-and-egg problem.
+
+**After (unified)**: `routeMessage()` calls `assembleContext()` which runs KB + Memory search in parallel, cross-ranks via a single LLM reranker call (when both sources have results), auto-escalates to deep research when insufficient, and serializes into a single `{CONTEXT}` block within a shared 3500-token budget. `kb_search` is deprecated — knowledge questions are handled via `chat` with auto-deepened context. Steve's persona is always preserved.
+
+**Backward compatibility**: If the `routing-config.yaml` template still contains `{KB_CONTEXT}` / `{MEMORY_CONTEXT}` instead of `{CONTEXT}`, or if `assembleContext()` fails, the code falls back to the exact legacy 3-independent-calls behavior.
+
+| Aspect | Before | After |
+|--------|--------|-------|
+| LLM calls for context | 0 | 0–1 (reranker, only when both sources have results) |
+| Context budget | 2000 (KB) + 1500 (memory), independent | 3500 shared, coordinated |
+| Cross-ranking | None | LLM listwise (complementarity, dedup) |
+| Deep search trigger | Manual (`kb_search` action) | Automatic (reranker sufficiency check) |
+| `kb_search` action | Active | Deprecated |
+| Answer persona | `kb_search` bypassed Steve | Always Steve via `chat` |
+| Failure mode | Empty section per source | Falls back to full legacy path |
+
 ---
 
 ## 8. Graceful Degradation & Configuration

@@ -59,6 +59,7 @@ Pre-commit hooks (via Husky + lint-staged) automatically run `biome check --writ
 - **`src/shared/`** — code imported by both server and worker (types, utilities); includes `researchTypes.ts` for research pipeline types
 - **`src/server/`** — server-only code (never imported by worker)
 - **`src/server/routing/`** — YAML-driven LLM action routing: config loading, type definitions, executors, tool building, template rendering, and the research executor
+- **`src/server/context/`** — unified context assembly layer: parallel KB + Memory retrieval, cross-source normalization, LLM listwise reranker with sufficiency evaluation, automatic deep escalation, token-budgeted serialization, worker HTTP endpoint
 - **`src/server/kb/`** — knowledge base module: vector store, FTS5 keyword index, hybrid search, chunker, embeddings, ingestion, MongoDB repo, service, API routes
 - **`src/server/kb/research/`** — advanced RAG research pipeline: pipeline runner, LLM client, audit logging, strategy profiles, and stages (queryAnalyzer, queryExpander, retriever, evaluator, reasoner, synthesizer) + agent/ (ReAct agent loop with keyword_search tool, prompts)
 - **`src/server/kb/raptor/`** — RAPTOR tree preprocessing: k-means clustering, LLM summarization, recursive tree building, MongoDB metadata
