@@ -189,6 +189,7 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack setup and [docs/DISCORD
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
    - **Repos** — edit the repo registry (YAML) directly from the browser
    - **Knowledge** — create knowledge bases, upload documents or folders (with real-time progress), test semantic search in the playground, configure scopes and chunking, RAPTOR tree visualization and build management
+   - **Memory** — browse and search persistent memories (facts, reflections, user profiles), view interaction episodes with extracted memories and feedback signals, manually edit or invalidate memories, trigger reflection, configure memory system parameters
    - **Research** — global research config (chat/Slack strategy, max context tokens), Research Playground (run queries with simple/deep/agent strategies, real-time pipeline timeline, model selector), Strategy Comparison (side-by-side benchmark), Research History (session browser with timeline drill-down)
    - **Routing** — visual editor for LLM action routing config (parameters, execution types, reply templates) with raw YAML fallback
    - **Models** — view and override model assignments for all roles with autocomplete from available models
