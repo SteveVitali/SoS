@@ -29,7 +29,7 @@
   },
   "dependencies": {
     "@anthropic-ai/sdk": "^0.78.0",
-    "@lancedb/lancedb": "^0.26.2",
+    "@lancedb/lancedb": "^0.27.1",
     "@octokit/plugin-throttling": "^11.0.3",
     "@octokit/rest": "^22.0.1",
     "@slack/bolt": "^4.1.0",
