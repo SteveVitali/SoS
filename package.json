@@ -51,12 +51,12 @@
     "zod": "^3.23.0"
   },
   "devDependencies": {
-    "@biomejs/biome": "^2.4.6",
+    "@biomejs/biome": "^2.4.15",
     "@types/adm-zip": "^0.5.7",
     "@types/better-sqlite3": "^7.6.13",
     "@types/express": "^5.0.0",
     "@types/multer": "^2.1.0",
-    "@types/node": "^25.4.0",
+    "@types/node": "^25.6.2",
     "@types/react": "^18.3.0",
     "@types/react-dom": "^18.3.0",
     "@types/supertest": "^7.2.0",
@@ -66,14 +66,14 @@
     "concurrently": "^9.0.0",
     "husky": "^9.1.7",
     "lint-staged": "^16.3.1",
-    "mongodb-memory-server": "^11.0.1",
+    "mongodb-memory-server": "^11.1.0",
     "react": "^18.3.0",
     "react-dom": "^18.3.0",
     "supertest": "^7.2.2",
     "tsx": "^4.19.0",
     "typescript": "^5.6.0",
     "vite": "^7.3.1",
-    "vitest": "^4.0.18"
+    "vitest": "^4.1.5"
   },
   "lint-staged": {
     "*.{ts,tsx,js,mjs}": [
