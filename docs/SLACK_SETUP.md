@@ -27,9 +27,9 @@
 
 Click your name in Slack → "Profile" → "⋯" → "Copy member ID". This is the `SOS_REQUESTED_BY_SLACK_USER` for the worker.
 
-## LLM-Powered Message Routing (Optional)
+## LLM-Powered Message Routing
 
-By default, every @-mention of the bot creates a new coding job. If you configure an LLM provider, the bot instead routes messages through an LLM ("Steve" — a snarky staff engineer persona) that classifies intent before acting:
+An LLM provider is required for the bot to act on mentions: every @-mention is routed through an LLM ("Steve" — a snarky staff engineer persona) that classifies intent before acting:
 
 | Intent | Example | What happens |
 |--------|---------|--------------|
@@ -42,14 +42,14 @@ By default, every @-mention of the bot creates a new coding job. If you configur
 
 Son of Steve supports **two LLM provider backends** for message routing. Choose whichever fits your setup:
 
-### Option A: Anthropic API (default)
+### Option A: Anthropic API
 
 Best for open-source / individual users. Calls the Anthropic API directly.
 
 ```bash
 # .env
-SOS_LLM_PROVIDER=anthropic                     # optional, this is the default
-SOS_LLM_MODEL=claude-sonnet-4-20250514       # optional, this is the default
+SOS_LLM_PROVIDER=anthropic                     # default is openai_compatible
+SOS_LLM_MODEL=claude-opus-4.5                  # optional, this is the default
 SOS_LLM_API_KEY=sk-ant-...                      # or set ANTHROPIC_API_KEY
 ```
 
@@ -57,13 +57,13 @@ SOS_LLM_API_KEY=sk-ant-...                      # or set ANTHROPIC_API_KEY
 2. Add the key to your `.env` as shown above
 3. Restart the server
 
-### Option B: OpenAI-Compatible / LiteLLM
+### Option B: OpenAI-Compatible / LiteLLM (default)
 
 Best for teams that run a shared LLM proxy (e.g., [LiteLLM](https://docs.litellm.ai/)). Works with any service that exposes the OpenAI Chat Completions API with tool calling support.
 
 ```bash
 # .env
-SOS_LLM_PROVIDER=openai_compatible
+SOS_LLM_PROVIDER=openai_compatible                 # optional, this is the default
 SOS_LLM_MODEL=anthropic/claude-sonnet-4-20250514   # model string your proxy expects
 SOS_LLM_BASE_URL=https://litellm.example.com       # your LiteLLM / OpenAI-compatible endpoint
 SOS_LLM_API_KEY=your-bearer-token                   # sent as Authorization: Bearer <token>
@@ -73,7 +73,7 @@ The API key is sent via the standard `Authorization: Bearer <token>` header. Che
 
 ### No LLM Key
 
-Without any key, the bot still works — it just treats every @-mention as a job creation request (the original behavior).
+Without an API key (`SOS_LLM_API_KEY` / `ANTHROPIC_API_KEY`), message routing is disabled: the server logs a warning at startup and @-mentions receive an error reply instead of being acted on. Jobs can still be created via the web UI or API.
 
 ## Thread Context & File Attachments
 

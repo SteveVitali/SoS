@@ -1,6 +1,6 @@
 # Son of Steve 🤖
 
-[![CI](https://github.com/svitali/son-of-steve/actions/workflows/ci.yml/badge.svg)](https://github.com/svitali/son-of-steve/actions/workflows/ci.yml)
+[![CI](https://github.com/SteveVitali/son-of-steve/actions/workflows/ci.yml/badge.svg)](https://github.com/SteveVitali/son-of-steve/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 [![Node.js](https://img.shields.io/badge/node-%3E%3D20-brightgreen.svg)](.nvmrc)
 
@@ -133,7 +133,7 @@ Or run both together:
 npm run dev
 ```
 
-The web UI is available at `http://localhost:3000` (or `http://localhost:5173` in dev mode with hot reload via `npm run dev:ui`).
+The web UI is available at `http://localhost:3006` (or `http://localhost:5173` in dev mode with hot reload via `npm run dev:ui`).
 
 ---
 
@@ -180,14 +180,13 @@ See [docs/SLACK_SETUP.md](docs/SLACK_SETUP.md) for Slack setup and [docs/DISCORD
 
 ### Via Web UI
 
-1. Open `http://localhost:3000`
+1. Open `http://localhost:3006`
 2. Enter your `SOS_INTERNAL_API_TOKEN`
 3. Use the dashboard:
    - **Chats** — conversational interface with the same LLM routing as Slack
    - **Jobs** — create, view, cancel, retry, or delete jobs; full event timeline with cost metrics
-   - **GitHub** — GitHub Hub dashboard: cached PRs with filtering, contribution charts and leaderboards, team/member browser, sync dashboard (backfill progress, chunk timeline, rate limit gauges, SSE activity feed, manual triggers), and settings editor
+   - **Git** — GitHub Hub dashboard: cached PRs with filtering, contribution charts and leaderboards, team/member browser, sync dashboard (backfill progress, chunk timeline, rate limit gauges, SSE activity feed, manual triggers), repo registry (YAML) editor, and settings editor
    - **Workers** — monitor worker health, view live Claude output, spawn new workers, shut down existing ones
-   - **Repos** — edit the repo registry (YAML) directly from the browser
    - **Knowledge** — create knowledge bases, upload documents or folders (with real-time progress), test semantic search in the playground, configure scopes and chunking, RAPTOR tree visualization and build management
    - **Memory** — browse and search persistent memories (facts, reflections, user profiles), view interaction episodes with extracted memories and feedback signals, manually edit or invalidate memories, trigger reflection, configure memory system parameters
    - **Research** — global research config (chat/Slack strategy, max context tokens), Research Playground (run queries with simple/deep/agent strategies, real-time pipeline timeline, model selector), Strategy Comparison (side-by-side benchmark), Research History (session browser with timeline drill-down)

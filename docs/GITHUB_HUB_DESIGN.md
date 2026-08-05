@@ -566,6 +566,8 @@ SOS_GITHUB_SYNC_HOT_INTERVAL=600         # Seconds between hot tier syncs (defau
 SOS_GITHUB_SYNC_WARM_INTERVAL=3600       # Seconds between warm tier syncs (default: 3600)
 ```
 
+> **Note (superseded):** the hot-sync default has since been changed to `900` seconds — see [CONFIGURATION.md](CONFIGURATION.md#github-hub-sync-engine) for current defaults.
+
 ### 6.3 UI-Overridable Settings
 
 Store in `github_settings` MongoDB collection (one doc, global):

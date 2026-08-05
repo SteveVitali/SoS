@@ -1,5 +1,7 @@
 # Memory System Implementation — Agent Session Prompts
 
+> **Status**: Historical — all sessions have been executed and the memory system is fully implemented (see `docs/MEMORY_SYSTEM_DESIGN.md`, Phases 1–7 complete). Retained as a record of the implementation process.
+>
 > Copy-paste each prompt into a fresh agent session. Execute in order.
 > Each session creates a branch, implements, tests, and opens a PR.
 

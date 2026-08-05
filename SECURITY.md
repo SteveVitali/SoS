@@ -6,7 +6,7 @@ If you discover a security vulnerability in Son of Steve, please report it respo
 
 **Do NOT open a public GitHub issue for security vulnerabilities.**
 
-Instead, please email **security@sonofsteve.dev** (or open a [private security advisory](https://github.com/your-org/son-of-steve/security/advisories/new) on GitHub).
+Instead, please email **security@sonofsteve.dev** (or open a [private security advisory](https://github.com/SteveVitali/son-of-steve/security/advisories/new) on GitHub).
 
 Include:
 - A description of the vulnerability

@@ -6,14 +6,14 @@ All configuration is via environment variables in a single `.env` file (see `.en
 
 | Variable | Required | Description |
 |---|---|---|
-| `SOS_SERVER_PORT` | No (default: 3000) | HTTP port |
+| `SOS_SERVER_PORT` | No (default: 3006) | HTTP port |
 | `SOS_INTERNAL_API_TOKEN` | **Yes** | Shared secret for worker ↔ server auth |
 | `MONGO_URI` | No | MongoDB connection string. If not set, built from `MONGO_USERNAME`, `MONGO_PASSWORD`, and `MONGO_HOST` (Atlas defaults). |
 | `MONGO_DB` | No (default: `son_of_steve`) | Database name |
 | `SLACK_APP_TOKEN` | No | Socket Mode app token (`xapp-...`). Slack is optional — leave blank to disable. |
 | `SLACK_BOT_TOKEN` | No | Bot OAuth token (`xoxb-...`). Required if Slack is enabled. |
 | `SLACK_BOT_USER_ID` | No | Bot's Slack user ID (`U...`). Required if Slack is enabled. |
-| `SOS_LLM_PROVIDER` | No (default: `openai_compatible`) | LLM provider: `anthropic` or `openai_compatible` ([setup](SLACK_SETUP.md#llm-powered-message-routing-optional)) |
+| `SOS_LLM_PROVIDER` | No (default: `openai_compatible`) | LLM provider: `anthropic` or `openai_compatible` ([setup](SLACK_SETUP.md#llm-powered-message-routing)) |
 | `SOS_LLM_MODEL` | No (default: `claude-opus-4.5`) | Model name/string for the LLM provider |
 | `SOS_LLM_API_KEY` | No | API key for the LLM provider. Falls back to `ANTHROPIC_API_KEY` if not set. |
 | `SOS_LLM_BASE_URL` | Only for `openai_compatible` | Base URL for OpenAI-compatible endpoint (e.g., LiteLLM proxy) |
@@ -55,7 +55,7 @@ The GitHub Hub feature provides a MongoDB-cached view of your org's GitHub activ
 | `SOS_GITHUB_CHUNK_DAYS` | No (default: `28`) | Size of each backfill chunk in days |
 | `SOS_GITHUB_CHUNK_EPOCH` | No (default: `2024-01-01`) | Epoch anchor date for deterministic chunk boundaries |
 | `SOS_GITHUB_SYNC_ENABLED` | No (default: `true`) | Set to `false` to disable background sync |
-| `SOS_GITHUB_SYNC_HOT_INTERVAL` | No (default: `600`) | Seconds between hot syncs (open PRs) |
+| `SOS_GITHUB_SYNC_HOT_INTERVAL` | No (default: `900`) | Seconds between hot syncs (open PRs) |
 | `SOS_GITHUB_SYNC_WARM_INTERVAL` | No (default: `3600`) | Seconds between warm syncs (org/team membership) |
 
 ## Knowledge Base (Embeddings)
@@ -66,6 +66,7 @@ The GitHub Hub feature provides a MongoDB-cached view of your org's GitHub activ
 | `SOS_EMBEDDING_MODEL` | No (default: `text-embedding-3-small`) | Embedding model name |
 | `SOS_EMBEDDING_API_KEY` | Only if KB is used | API key for the embedding provider. Falls back to `OPENAI_API_KEY` if not set. |
 | `SOS_EMBEDDING_BASE_URL` | No | Custom base URL for the embedding API (e.g., a LiteLLM proxy). Defaults to `https://api.openai.com/v1`. |
+| `SOS_EMBEDDING_DIMENSIONS` | No | Optional dimension override passed to the embedding API (for models that support configurable output dimensions). |
 | `SOS_KB_STORAGE_DIR` | No | Directory for LanceDB vector data and SQLite FTS5 keyword indexes. Defaults to `$SOS_WORKSPACE_ROOT/kb` or `.sos-kb` in the project root. Each KB gets a LanceDB table and a `fts_{kb_id}.sqlite` file in this directory. |
 
 ## Research Pipeline (LLM)
@@ -93,9 +94,11 @@ Model assignments are centralized in `src/shared/modelConfig.ts`. Each role can 
 | `SOS_RESEARCH_LLM_MODEL` | `claude-opus-4.5` | Research pipeline reasoning calls |
 | `SOS_RAPTOR_MODEL` | (inherits `SOS_RESEARCH_LLM_MODEL`) | RAPTOR tree cluster summarization |
 | `SOS_IMAGE_MODEL` | `gpt-image-1` | Image generation model |
+| `SOS_IMAGE_API_KEY` | Falls back to `OPENAI_API_KEY` | API key for the image generation provider (OpenAI-compatible) |
+| `SOS_IMAGE_BASE_URL` | `https://api.openai.com/v1` | Base URL for the image generation API |
 | `SOS_EMBEDDING_MODEL` | `text-embedding-3-small` | Vector embeddings for KB indexing and search |
 | `SOS_MEMORY_MODEL` | `gpt-4.1-mini` | Memory system LLM (fact extraction, curation, reflection, evolution) |
-| `SOS_CONTEXT_LLM_API_KEY` | (see Unified Context Layer) | Context reranker LLM — model set via `context` role in model-config.yaml (default: `gpt-4.1-mini`) |
+| `SOS_CONTEXT_MODEL` | `gpt-4.1-mini` | Context reranker LLM (unified context assembly; see Unified Context Layer for its API key/base URL vars) |
 
 You can also override model assignments via `model-config.yaml` in the project root. **File overrides take highest precedence** (YAML file > env var > hardcoded default):
 
@@ -159,7 +162,7 @@ The persistent memory system learns from every interaction (chat, research, jobs
 | `SOS_MEMORY_REFLECTION_MIN_EPISODES` | `10` | Minimum new episodes required to trigger reflection |
 | `SOS_MEMORY_SIGNAL_DELAY_MS` | `300000` | Delay (ms) before collecting feedback signals (default: 5 min) |
 | `SOS_MEMORY_SIGNAL_NO_RESPONSE_TIMEOUT_MS` | `1800000` | Timeout (ms) for detecting "no response" signal (default: 30 min) |
-| `SOS_MEMORY_STORAGE_DIR` | `$SOS_WORKSPACE_ROOT/memory` | Directory for memory LanceDB vector data and SQLite FTS5 keyword indexes |
+| `SOS_MEMORY_STORAGE_DIR` | `$SOS_WORKSPACE_ROOT/memory` (or `.sos-memory` in the project root if no workspace root) | Directory for memory LanceDB vector data and SQLite FTS5 keyword indexes |
 
 The memory model can also be overridden via `model-config.yaml`:
 
@@ -186,7 +189,7 @@ The worker reads from the same `.env` file.
 
 | Variable | Required | Description |
 |---|---|---|
-| `SOS_API_BASE_URL` | **Yes** | Server URL (e.g., `http://localhost:3000`) |
+| `SOS_API_BASE_URL` | **Yes** | Server URL (e.g., `http://localhost:3006`) |
 | `SOS_INTERNAL_API_TOKEN` | **Yes** | Same token as server |
 | `SOS_REQUESTED_BY_SLACK_USER` | **Yes** | Your Slack user ID |
 | `SOS_NODE_ID` | No (default: `local`) | Identifier for this machine |

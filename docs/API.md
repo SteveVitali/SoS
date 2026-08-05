@@ -1,6 +1,6 @@
 # API Reference
 
-All endpoints require authentication. Worker endpoints use `Authorization: Bearer <SOS_INTERNAL_API_TOKEN>`. Web endpoints use the same Bearer token or optional HTTP Basic Auth.
+All endpoints require authentication, with one exception: `GET /api/web/images/:id` (see [Image Endpoints](#image-endpoints-apiwebimages)). Worker endpoints use `Authorization: Bearer <SOS_INTERNAL_API_TOKEN>`. Web endpoints use the same Bearer token or optional HTTP Basic Auth.
 
 ## Worker Endpoints (`/api/worker`)
 
@@ -794,6 +794,21 @@ DELETE /api/web/chats/:id
 
 ---
 
+## Image Endpoints (`/api/web/images`)
+
+### Get Generated Image
+
+```
+GET /api/web/images/:id
+```
+
+Serves a generated image (from the `generated_images` collection) as binary data with the stored content type. **No authentication required** — image IDs are unguessable UUIDs and images are immutable, which allows `<img>` tags in the chat UI to load them directly.
+
+**Response (200):** binary image data
+**Response (404):** image not found or expired (90-day TTL)
+
+---
+
 ## Model Registry Endpoints (`/api/web`)
 
 ### Get Model Registry
@@ -802,7 +817,7 @@ DELETE /api/web/chats/:id
 GET /api/web/models
 ```
 
-Returns the active model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration, memory).
+Returns the active model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration, memory, context).
 
 **Response:**
 ```json
@@ -814,7 +829,8 @@ Returns the active model assignments for all roles (routing, titleGeneration, re
     "raptorSummarization": { "model": "claude-opus-4.5", "envVar": "SOS_RAPTOR_MODEL" },
     "embedding": { "model": "text-embedding-3-small", "envVar": "SOS_EMBEDDING_MODEL" },
     "imageGeneration": { "model": "gpt-image-1", "envVar": "SOS_IMAGE_MODEL" },
-    "memory": { "model": "gpt-4.1-mini", "envVar": "SOS_MEMORY_MODEL" }
+    "memory": { "model": "gpt-4.1-mini", "envVar": "SOS_MEMORY_MODEL" },
+    "context": { "model": "gpt-4.1-mini", "envVar": "SOS_CONTEXT_MODEL" }
   }
 }
 ```
@@ -1527,7 +1543,7 @@ Returns the current GitHub Hub settings (merged from DB + env + defaults), inclu
     "pinned_repos": ["my-app"],
     "contribution_range": "30d",
     "sync_enabled": true,
-    "hot_interval_seconds": 600,
+    "hot_interval_seconds": 900,
     "warm_interval_seconds": 3600
   },
   "db_overrides": { ... },
@@ -1848,6 +1864,14 @@ interface JobDoc {
     message_ts?: string;
     permalink?: string;
   };
+
+  discord?: {
+    channel_id?: string;
+    thread_id?: string;
+    message_id?: string;
+    guild_id?: string;
+  };
+  discord_requester?: string;         // Original Discord user (when job owner differs)
 
   title?: string;                     // LLM-generated job title
   task_text: string;
