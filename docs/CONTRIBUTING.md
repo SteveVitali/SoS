@@ -20,7 +20,7 @@ npm run dev
 # Or run components individually:
 npm run server       # Express + Slack Socket Mode
 npm run worker       # Worker pool
-npm run dev:ui       # Vite dev server on :5173 with API proxy to :3000
+npm run dev:ui       # Vite dev server on :5173 with API proxy to :3006
 ```
 
 ### Code Quality Commands

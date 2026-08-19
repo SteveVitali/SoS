@@ -1,6 +1,6 @@
 # Memory System UI — Design Specification
 
-> **Status**: Proposed. Pending confirmation before implementation.
+> **Status**: ~~Proposed. Pending confirmation before implementation.~~ **Superseded — Implemented.** The Memory UI now exists under `src/ui/src/components/memory/` (MemoryPage, MemoryDashboard, MemoryBrowser, EpisodesList, MemoryConfigEditor, etc.), mounted at the `/memory` route. This document is retained as a historical design record.
 > **Authors**: Steve Vitali + Cascade AI
 > **Date**: March 2026
 > **Depends on**: `MEMORY_SYSTEM_DESIGN.md` (Phases 1–7 fully implemented)

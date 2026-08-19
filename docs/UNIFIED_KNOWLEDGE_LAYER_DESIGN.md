@@ -1,6 +1,6 @@
 # Unified Knowledge Layer — Design Specification
 
-> **Status**: Proposed
+> **Status**: ~~Proposed~~ **Superseded — Core implemented.** The unified context assembly layer now exists at `src/server/context/` (assembler, LLM reranker with sufficiency evaluation, deep-research escalation, token-budgeted serialization, `POST /api/worker/context`), with the `{CONTEXT}` placeholder live in the routing system prompt. Note: the `kb_search` action elimination proposed in §6 has *not* been done — `kb_search` still exists in the default routing config. This document is retained as a historical design record.
 > **Authors**: Steve Vitali + Cascade AI
 > **Date**: March 2026
 > **Prerequisites**: Knowledge Base system (implemented), Memory system (implemented, Phases 1–7)

@@ -87,13 +87,13 @@ The worker also supports additional job types:
 - **`self_review_pr`** — checks out an existing PR branch, runs a self-review pass (Claude as Staff Engineer code reviewer), fixes issues found, and pushes.
 - **`add_pr_review_comments`** — reviews a PR and posts inline review comments on GitHub as the bot.
 
-On startup, the worker **registers** with the server (hostname, PID, concurrency) and opens a **WebSocket** connection for real-time log streaming and receiving commands (e.g., shutdown). Each loop reports its status (idle/busy, current task) on every poll cycle. Claude's raw stream-json output is teed to the server via WebSocket so it can be viewed live in the web UI.
+On startup, the worker **registers** with the server (worker ID, hostname, PID) and opens a **WebSocket** connection for real-time log streaming and receiving commands (e.g., shutdown). Each loop reports its status (idle/busy, current task) on every poll cycle. Claude's raw stream-json output is teed to the server via WebSocket so it can be viewed live in the web UI.
 
 Workers are **stateless** — all persistent state lives in MongoDB via the server API. If a worker crashes, its lease expires and another worker can reclaim the job.
 
 ### MongoDB
 
-Seventeen collections:
+Nineteen collections:
 
 - **`jobs`** — Full job document including status, lease info, outputs, metrics, and an append-only events log.
 - **`conversations`** — Chat conversations from the web UI (messages, linked job IDs, titles).
@@ -106,9 +106,11 @@ Seventeen collections:
 - **`github_prs`** — Cached pull request documents with review and comment stats.
 - **`github_contributions`** — Pre-aggregated contribution metrics per user.
 - **`github_sync_chunks`** — Backfill chunk state tracking (status, pages fetched, resumability).
+- **`github_sync_state`** — Sync engine cursor/state tracking (e.g., last hot/warm sync timestamps).
 - **`github_sync_log`** — Timestamped sync activity log (displayed in UI via SSE stream).
 - **`github_settings`** — UI-editable GitHub Hub configuration (org, team, sync toggles, etc.).
 - **`generated_images`** — Stored generated images (base64 data, metadata, 90-day TTL index).
+- **`raptor_trees`** — RAPTOR tree build status and metadata per knowledge base.
 - **`memories`** — Memory notes: facts extracted from interactions, reflections consolidated from episode clusters, and user profiles synthesized from accumulated knowledge. Each note has content, context, keywords, tags, temporal validity (`valid_from`/`invalidated_at`), bidirectional links to related memories, and scoring fields (`importance`, `confidence`, `access_count`).
 - **`interaction_episodes`** — Records of every user interaction across Slack, Discord, and web chat. Each episode captures the user message, routed action, response summary, downstream effects (task IDs), outcome signals (gratitude, correction, rephrase, job outcomes), and extraction processing state.
 - **`memory_config`** — Persisted memory system configuration overrides (from the web UI config editor), merged with environment-variable defaults at runtime.
@@ -137,14 +139,13 @@ A React + Vite SPA that calls `/api/web/*` endpoints. Authenticated via the same
 
 - **Chats** — conversational interface using the same LLM routing as Slack; can create jobs, check status, and chat
 - **Jobs** — list with filters (status, user, search), detail view with full event timeline and cost metrics, create/cancel/retry/delete, respond-to-PR-comments
-- **PRs** — open PRs across registered repos with review thread / unresolved comment stats
 - **Workers** — live worker health dashboard with per-loop status, spawn new workers, shutdown, live log terminal with Claude output streaming via SSE
-- **GitHub** — GitHub Hub dashboard: PRs with filtering (scope, repo, author, status), contribution charts and leaderboards, team/member browser, sync dashboard (backfill progress, chunk timeline, rate limit gauges, live SSE activity feed, manual triggers), and settings editor (org, team, history depth, sync intervals, token validation)
-- **Repos** — in-browser YAML editor for the repo registry
+- **Git** — GitHub Hub dashboard with five sub-tabs: **Pull Requests** (cached PRs with filtering by scope, repo, author, status), **Contributions** (charts and leaderboards, team/member browser), **Sync** (backfill progress, chunk timeline, rate limit gauges, live SSE activity feed, manual triggers), **Repos** (in-browser YAML editor for the repo registry), and **Settings** (org, team, history depth, sync intervals, token validation)
 - **Knowledge** — create/manage knowledge bases, upload documents or folders (with real-time per-file progress), test semantic search in the KBPlayground, configure scopes and chunking parameters, **RAPTOR tree** visualization (build/rebuild indices, interactive cluster hierarchy explorer)
 - **Research** — global research config controls (chat/Slack strategy, max context tokens persisted to routing-config.yaml), **Research Playground** (run queries with simple/deep/agent strategies, real-time NDJSON-streamed pipeline timeline, model selector), **Strategy Comparison** (side-by-side all-strategies benchmark), **Research History** (paginated session browser with timeline drill-down), and per-job **Research Audit** sections on the Jobs detail page
-- **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 13 execution types, reply template management, with a raw YAML fallback view
-- **Models** — view and override model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration, memory) with autocomplete from available models
+- **Memory** — browse and search persistent memories (facts, reflections, user profiles), view interaction episodes with extracted memories and feedback signals, manually edit or invalidate memories, trigger reflection, and edit memory system configuration
+- **Routing** — visual editor for the YAML-driven routing config: structured parameter editing, type-aware execution editors for all 14 execution types, reply template management, with a raw YAML fallback view
+- **Models** — view and override model assignments for all roles (routing, titleGeneration, research, raptorSummarization, embedding, imageGeneration, memory, context) with autocomplete from available models
 
 The UI uses a component-based architecture under `src/ui/src/components/` with shared state in `AppDataContext` (polling jobs every 3s, worktrees every 5s, workers every 5s, PRs every 10min).
 
@@ -443,9 +444,9 @@ son-of-steve/
 │   │   │   └── contextRoutes.ts      # Worker-facing route: POST /api/worker/context
 │   │   ├── routing/
 │   │   │   ├── routingConfig.ts    # Load, save, reload, watch routing-config.yaml
-│   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema (13 execution types)
+│   │   │   ├── routingTypes.ts     # TypeScript interfaces for YAML config schema (14 execution types)
 │   │   │   ├── defaultConfig.ts    # Default routing-config.yaml generation
-│   │   │   ├── executors.ts        # Action execution dispatch (13 handlers, one per execution type)
+│   │   │   ├── executors.ts        # Action execution dispatch (14 handlers, one per execution type)
 │   │   │   ├── toolBuilder.ts      # Build LLM tool definitions + prompt sections from YAML actions
 │   │   │   ├── template.ts         # Mustache-style template rendering for replies
 │   │   │   ├── researchExecutor.ts # Bridge between routing and the research pipeline (kb_search action)

@@ -74,9 +74,9 @@ The Discord integration mirrors the Slack integration exactly:
 
 ## LLM-Powered Message Routing
 
-Discord uses the **same LLM routing** as Slack. If you've already configured an LLM provider (see [SLACK_SETUP.md](SLACK_SETUP.md#llm-powered-message-routing-optional)), it works for Discord automatically — no additional LLM configuration needed.
+Discord uses the **same LLM routing** as Slack. If you've already configured an LLM provider (see [SLACK_SETUP.md](SLACK_SETUP.md#llm-powered-message-routing)), it works for Discord automatically — no additional LLM configuration needed.
 
-Without an LLM key, all @-mentions create coding jobs directly (same behavior as Slack).
+Without an LLM key, message routing is disabled and @-mentions receive an error reply instead of being acted on (same behavior as Slack).
 
 ## Thread Context & File Attachments
 
