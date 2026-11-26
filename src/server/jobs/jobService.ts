@@ -699,4 +699,4 @@ export async function confirmJob(taskId: string, revisedTaskText?: string) {
 }
 
 // --- Query ---
-export { queryJobs, getDistinctRequestedBy, findJobByTaskId };
+export { findJobByTaskId, getDistinctRequestedBy, queryJobs };
