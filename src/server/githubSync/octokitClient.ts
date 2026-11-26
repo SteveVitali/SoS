@@ -77,5 +77,5 @@ export function updateBudgetFromResponse(
     "x-ratelimit-reset": response.headers["x-ratelimit-reset"],
     "x-ratelimit-resource": response.headers["x-ratelimit-resource"],
   };
-  rateBudget.updateFromHeaders(headers as any);
+  rateBudget.updateFromHeaders(headers);
 }
